@@ -17,3 +17,29 @@ export function hoverShade(color) {
     : (v) => Math.round(v + (255 - v) * 0.45);       // dark dot → lighter tint
   return `#${[r, g, b].map((v) => shade(v).toString(16).padStart(2, "0")).join("")}`;
 }
+
+// Resolve a CSS custom property to a concrete colour.
+//
+// `dot-color="var(--color-border-100)"` should Just Work: the host already
+// keeps its palette in CSS variables, and asking it to duplicate those hex
+// values into map attributes guarantees the two drift — most visibly the
+// moment someone adds a dark mode. Accepts `var(--x)` and `var(--x, #fallback)`;
+// anything else passes through untouched.
+export function resolveColor(value, el) {
+  if (typeof value !== "string") return value;
+  const m = /^var\(\s*(--[^,)\s]+)\s*(?:,\s*([^)]+))?\)$/.exec(value.trim());
+  if (!m) return value;
+  if (typeof getComputedStyle !== "function") return (m[2] ?? "").trim() || "#000";
+
+  const root = el?.ownerDocument?.documentElement
+    ?? (typeof document !== "undefined" ? document.documentElement : null);
+  const resolved = root ? getComputedStyle(root).getPropertyValue(m[1]).trim() : "";
+  return resolved || (m[2] ?? "").trim() || "#000";
+}
+
+// Does this option bundle reference any CSS variable? Renderers use this to
+// decide whether it's worth watching the document for theme changes at all —
+// a map with literal hex colours pays nothing.
+export function usesCssVars(...values) {
+  return values.some((v) => typeof v === "string" && v.includes("var(--"));
+}

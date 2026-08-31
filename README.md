@@ -136,7 +136,102 @@ parallel the point buffer index-for-index (the same discipline as the
 animation phase fields — geometry arrays never reorder, parallel arrays
 annotate them), and the draw loop batches colour switches on flag runs.
 
+## The graticule (v0.5)
+
+```html
+<world-map mode="globe" graticule meridians="24" parallels="23"
+           graticule-color="var(--color-border)" equator-color="var(--color-accent)"
+           graticule-opacity="0.28" equator-opacity="0.6"></world-map>
+```
+
+Meridians are evenly spaced longitudes from −180; parallels are evenly spaced
+latitudes between the poles. Two rules are baked in because they are what makes
+a graticule readable rather than noisy:
+
+- **The equator is its own line**, with its own colour and opacity. It is what a
+  reader orients against; drowning it among eleven identical parallels wastes it.
+- **A parallel that would land within 5° of the equator is dropped.** Evenly
+  spacing an odd number across 180° puts one exactly on 0°, which double-draws
+  the equator at double opacity and reads as a bug. `parallels="23"` therefore
+  yields 22 lines plus the equator.
+
+Lines break at the limb and fade with depth, so the near and far side of the
+same circle never flatten into one ellipse. Globe mode today; the geometry
+(`buildGraticule`) is renderer-agnostic and exported.
+
+## Colours from CSS variables (v0.5)
+
+Any colour option accepts `var(--name)` — with an optional fallback:
+
+```html
+<world-map dot-color="var(--brand-500, #d3dce6)"
+           graticule-color="var(--border)"></world-map>
+```
+
+They resolve against `document.documentElement` and **re-resolve when the theme
+changes**: mappo watches `class`, `style` and `data-theme` on the root element,
+drops its memo, and repaints. Your dark mode just works, with no JavaScript on
+your side. A map whose colours are all literals installs no observer and pays
+nothing.
+
+## Overlays: your DOM, our geometry (v0.5)
+
+Put your own markup inside `<world-map>` with `data-lat`/`data-lon` and mappo
+positions it:
+
+```html
+<world-map mode="globe" graticule>
+  <a class="pin" data-lat="38.7" data-lon="-9.1" href="/lisbon"><span>Lisbon</span></a>
+  <a class="pin" data-lat="35.7" data-lon="139.7" href="/tokyo"><span>Tokyo</span></a>
+</world-map>
+```
+
+This exists because labels usually need to be *real*: crawlable, translatable,
+focusable, styled by your own stylesheet. Painting them into canvas forfeits all
+of that. So mappo writes exactly one thing per element — a `transform` — and
+publishes two hooks:
+
+| Hook | Meaning |
+|---|---|
+| `--mappo-depth` | `1` facing the viewer → `0` at the limb (always `1` on a flat map) |
+| `data-mappo-behind` | present while the point is on the far hemisphere |
+
+```css
+.pin > span {
+  transform: translate(-50%, -50%);            /* you own the anchor point */
+  opacity: calc(.25 + .75 * var(--mappo-depth, 1));
+}
+.pin[data-mappo-behind] { visibility: hidden; }
+```
+
+**Use a wrapper plus an inner element**, as above. mappo rewrites the wrappers
+`transform` every frame on the globe; if that same element also carried an eased
+`transform`, the transition and the frame loop would fight. Keep position on the
+outside, appearance on the inside.
+
+The overlay layer is `pointer-events: none` so it never eats drag-to-spin — a
+label that should be clickable sets `pointer-events: auto` on itself. Flat maps
+use the same attributes and CSS hooks, written once per build instead of per
+frame. Turn the whole thing off with `overlays="false"`.
+
+## Placing your own overlays (v0.5)
+
+If you would rather position something yourself — in a server template, say —
+`projectNormalized` is the contract:
+
+```js
+import { projectNormalized } from "mappo";
+const { x, y } = projectNormalized(38.9, -10.1, { latRange: [-56, 78] });
+// → { x: 0.4719, y: 0.2918 }  →  left: 47.19%, top: 29.18%
+```
+
+`project` answers in grid units and needs `rows`, which mappo derives
+internally — so asking a host for it forces that host to re-derive mappo's
+arithmetic and keep it correct forever. Normalized coordinates need nothing but
+`latRange`, and map straight onto CSS percentages.
+
 ## Backdrop
+
 
 Three knobs fill the empty space, in either mode:
 

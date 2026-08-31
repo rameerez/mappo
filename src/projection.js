@@ -26,3 +26,20 @@ export function cellCenter(col, row, { cols, rows, latRange }) {
     lon: -180 + ((col + 0.5) / cols) * 360
   };
 }
+
+// Normalized projection: lat/lon → {x, y} in 0…1 across the rendered box.
+//
+// This is the one a HOST needs. `project` above answers in grid units, which
+// requires `rows` — and rows is derived internally from cols and latRange, so
+// asking a consuming app for it forces that app to re-derive mappo's own
+// arithmetic (and to keep re-deriving it correctly forever). Normalized
+// coordinates need neither: the viewBox is linear in the grid, so 0…1 maps
+// straight onto CSS percentages, canvas pixels, or a server-rendered
+// `style="left:%"` in a template in any language.
+export function projectNormalized(lat, lon, { latRange } = {}) {
+  const [ latMin, latMax ] = latRange ?? [ -58, 84 ];
+  return {
+    x: (lon + 180) / 360,
+    y: (latMax - lat) / (latMax - latMin)
+  };
+}

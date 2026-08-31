@@ -40,7 +40,7 @@
 //   untransformed so consumer getBoundingClientRect math keeps working.
 
 import { isLand } from "./mask.js";
-import { project, cellCenter } from "./projection.js";
+import { project, cellCenter, projectNormalized } from "./projection.js";
 import { resolveCity } from "./cities.js";
 import { noise2 } from "./noise.js";
 import { GlobeRenderer } from "./globe.js";
@@ -69,7 +69,22 @@ export const DEFAULTS = {
   cities: [],                 // ["London", { name, lat, lon, color? }, …]
   markers: [],                // coordinate pins: [{ name, lat, lon }, ...] — merged with cities
   focus: null,                // { lat, lon } the globe starts facing (rotate-speed 0 holds it)
-  highlightPolygon: null,     // rings of [lat, lon] — dots inside draw in highlightColor (globe mode)
+// Graticule — the meridian/parallel grid (globe mode). The equator is
+// drawn separately so it can carry its own weight: it is the line a
+// reader orients against.
+graticule: false,
+meridians: 12,              // evenly spaced longitudes
+parallels: 11,              // evenly spaced latitudes; the equator is extra
+graticuleColor: null,       // defaults to dotColor
+equatorColor: null,         // defaults to graticuleColor
+graticuleOpacity: 0.28,
+equatorOpacity: 0.6,
+// Position host DOM carrying data-lat/data-lon over the map (globe mode).
+overlays: true,
+// Cap the canvas backing store. 3× devices buy no visible detail on a
+// dot field and pay full fill-rate for it.
+maxDpr: 2,
+highlightPolygon: null,     // rings of [lat, lon] — dots inside draw in highlightColor (globe mode)
   highlightColor: "#8fb0d8",
   markerShape: "circle",
   markerColor: "#2262fe",
@@ -217,6 +232,26 @@ export class WorldMap {
   // drag renders at most every REBUILD_MS with a guaranteed final render at
   // the resting value. This is the backpressure valve — without it, drag
   // input outruns render capacity and the tab drowns.
+// Position adopted overlay children against the flat projection.
+//
+// Percentages, not pixels: the SVG scales with its container, so a percent
+// stays correct through every resize without mappo having to watch for one.
+// Depth is published as 1 — a flat map has no limb — so a stylesheet
+// written against --mappo-depth for the globe works here unchanged.
+_placeOverlays() {
+  if (!this._overlayEls?.length) return;
+  const latRange = this.options.latRange;
+  for (const el of this._overlayEls) {
+    const lat = Number(el.dataset.lat);
+    const lon = Number(el.dataset.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const p = projectNormalized(lat, lon, { latRange });
+    el.style.left = `${(p.x * 100).toFixed(3)}%`;
+    el.style.top = `${(p.y * 100).toFixed(3)}%`;
+    el.style.setProperty("--mappo-depth", "1");
+  }
+}
+
   #scheduleRebuild() {
     // ADAPTIVE spacing (perf-harness lesson): a fixed 150ms floor against
     // 70-146ms renders is a ~50% main-thread duty cycle — the storm scenario
@@ -268,8 +303,32 @@ export class WorldMap {
       this._tiltWrap = document.createElement("div");
       this._tiltWrap.className = "wm-tilt";
       this._tiltWrap.appendChild(this.svg);
-      this.styleEl = document.createElement("style");
-      this.container.replaceChildren(this.styleEl, this._tiltWrap);
+this.styleEl = document.createElement("style");
+// Same contract as the globe: host DOM carrying data-lat/data-lon is
+// adopted and positioned. On a flat map the position is static, so it
+// is written once per build rather than per frame — but the markup,
+// the attributes and the CSS hooks are identical, which is the point
+// of having one overlay API rather than two.
+this._overlayEls = this.options.overlays === false ? []
+  : Array.from(this.container.querySelectorAll("[data-lat][data-lon]"));
+if (this._overlayEls.length) {
+  this._overlayLayer = document.createElement("div");
+  this._overlayLayer.className = "wm-overlay";
+  Object.assign(this._overlayLayer.style, {
+    position: "absolute", inset: "0", pointerEvents: "none"
+  });
+  for (const el of this._overlayEls) {
+    Object.assign(el.style, { position: "absolute" });
+    this._overlayLayer.appendChild(el);
+  }
+}
+this.container.replaceChildren(this.styleEl, this._tiltWrap);
+if (this._overlayLayer) {
+  if (getComputedStyle(this.container).position === "static") {
+    this.container.style.position = "relative";
+  }
+  this.container.appendChild(this._overlayLayer);
+}
       this.#bindEvents(this.svg); // once — handlers guard on options.interactive
     }
     const svg = this.svg;
@@ -294,6 +353,7 @@ export class WorldMap {
       }));
     }
     dbg(`render: cols=${cols} rows=${rows} · build ${buildMs.toFixed(1)}ms · parse ${parseMs.toFixed(1)}ms · total ${this._lastRenderMs.toFixed(1)}ms · ${svg.querySelectorAll("*").length} nodes`);
+    this._placeOverlays();
   }
 
   // -- cheap patches -----------------------------------------------------------

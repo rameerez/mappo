@@ -13,7 +13,16 @@ import { WorldMap } from "./renderer.js";
 const ATTR_MAP = {
   // attribute      → [option, parser]
   "mode":             ["mode", String],
-  "globe-ring":       ["globeRing", (v) => v !== "false"],
+"globe-ring":       ["globeRing", (v) => v !== "false"],
+"graticule":        ["graticule", (v) => v !== "false"],
+"meridians":        ["meridians", Number],
+"parallels":        ["parallels", Number],
+"graticule-color":  ["graticuleColor", String],
+"equator-color":    ["equatorColor", String],
+"graticule-opacity":["graticuleOpacity", Number],
+"equator-opacity":  ["equatorOpacity", Number],
+"overlays":         ["overlays", (v) => v !== "false"],
+"max-dpr":          ["maxDpr", Number],
   "background":       ["background", String],
   "ocean-color":      ["oceanColor", String],
   "rotate-speed":     ["rotateSpeed", Number],

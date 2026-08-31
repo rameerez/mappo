@@ -1,4 +1,4 @@
-// mappo v0.4.0
+// mappo v0.5.0
 // A dotted world map as a zero-dependency web component. MIT license.
 // https://github.com/rameerez/mappo
 // Land data: Natural Earth (public domain, naturalearthdata.com).
@@ -53,6 +53,84 @@ export function cellCenter(col, row, { cols, rows, latRange }) {
     lat: latMax - ((row + 0.5) / rows) * (latMax - latMin),
     lon: -180 + ((col + 0.5) / cols) * 360
   };
+}
+
+// Normalized projection: lat/lon → {x, y} in 0…1 across the rendered box.
+//
+// This is the one a HOST needs. `project` above answers in grid units, which
+// requires `rows` — and rows is derived internally from cols and latRange, so
+// asking a consuming app for it forces that app to re-derive mappo's own
+// arithmetic (and to keep re-deriving it correctly forever). Normalized
+// coordinates need neither: the viewBox is linear in the grid, so 0…1 maps
+// straight onto CSS percentages, canvas pixels, or a server-rendered
+// `style="left:%"` in a template in any language.
+export function projectNormalized(lat, lon, { latRange } = {}) {
+  const [ latMin, latMax ] = latRange ?? [ -58, 84 ];
+  return {
+    x: (lon + 180) / 360,
+    y: (latMax - lat) / (latMax - latMin)
+  };
+}
+
+// ══════════ src/graticule.js ══════════
+// The graticule: meridians, parallels, and the equator, as lat/lon polylines.
+//
+// Renderer-agnostic on purpose — the same discipline as highlight.js. This
+// module knows nothing about SVG, canvas, spheres or grids; it emits lines in
+// world coordinates and each renderer projects them its own way. That is what
+// lets the flat map and the globe share one definition of "the grid on the
+// world" instead of drifting apart.
+//
+// Two rules here are not arbitrary, they are what makes a graticule readable:
+//
+//   1. The EQUATOR IS ITS OWN LINE, returned separately, so a renderer can
+//      give it its own colour and weight. It is the line a reader orients
+//      against; drowning it in eleven identical parallels wastes it.
+//   2. A parallel that lands within `skipDeg` of the equator is DROPPED
+//      rather than drawn. Evenly spacing parallels across 180° will, for many
+//      counts, put one right on 0° — which double-draws the equator at double
+//      opacity and makes it look like a rendering bug.
+
+// Sampling step in degrees along each line. 3° gives a circle of 120
+// segments, which stays smooth at any globe size a browser will draw and
+// still costs nothing to project.
+const STEP = 3;
+
+function ring(fn) {
+  const pts = [];
+  for (let d = 0; d <= 360; d += STEP) pts.push(fn(d));
+  return pts;
+}
+
+// A full meridian: pole to pole and back is unnecessary — a half circle from
+// -90 to 90 is the whole line, and the renderer decides how much of it is
+// visible.
+function meridian(lon) {
+  const pts = [];
+  for (let lat = -90; lat <= 90; lat += STEP) pts.push([ lat, lon ]);
+  return pts;
+}
+
+function parallel(lat) {
+  return ring((d) => [ lat, -180 + d ]);
+}
+
+// meridians: how many evenly spaced longitudes (0 disables).
+// parallels: how many evenly spaced latitudes BETWEEN the poles, equator
+//            excluded (it is always returned separately).
+// skipDeg:   parallels closer than this to the equator are dropped.
+export function buildGraticule({ meridians = 12, parallels = 11, skipDeg = 5 } = {}) {
+  const mers = [];
+  for (let i = 0; i < meridians; i++) mers.push(meridian(-180 + (360 / meridians) * i));
+
+  const pars = [];
+  for (let i = 0; i < parallels; i++) {
+    const lat = -90 + (180 / (parallels + 1)) * (i + 1);
+    if (Math.abs(lat) < skipDeg) continue;
+    pars.push(parallel(lat));
+  }
+
+  return { meridians: mers, parallels: pars, equator: parallel(0) };
 }
 
 // ══════════ src/noise.js ══════════
@@ -111,6 +189,32 @@ export function hoverShade(color) {
     ? (v) => Math.round(v * 0.62)                    // light dot → darker shade
     : (v) => Math.round(v + (255 - v) * 0.45);       // dark dot → lighter tint
   return `#${[r, g, b].map((v) => shade(v).toString(16).padStart(2, "0")).join("")}`;
+}
+
+// Resolve a CSS custom property to a concrete colour.
+//
+// `dot-color="var(--color-border-100)"` should Just Work: the host already
+// keeps its palette in CSS variables, and asking it to duplicate those hex
+// values into map attributes guarantees the two drift — most visibly the
+// moment someone adds a dark mode. Accepts `var(--x)` and `var(--x, #fallback)`;
+// anything else passes through untouched.
+export function resolveColor(value, el) {
+  if (typeof value !== "string") return value;
+  const m = /^var\(\s*(--[^,)\s]+)\s*(?:,\s*([^)]+))?\)$/.exec(value.trim());
+  if (!m) return value;
+  if (typeof getComputedStyle !== "function") return (m[2] ?? "").trim() || "#000";
+
+  const root = el?.ownerDocument?.documentElement
+    ?? (typeof document !== "undefined" ? document.documentElement : null);
+  const resolved = root ? getComputedStyle(root).getPropertyValue(m[1]).trim() : "";
+  return resolved || (m[2] ?? "").trim() || "#000";
+}
+
+// Does this option bundle reference any CSS variable? Renderers use this to
+// decide whether it's worth watching the document for theme changes at all —
+// a map with literal hex colours pays nothing.
+export function usesCssVars(...values) {
+  return values.some((v) => typeof v === "string" && v.includes("var(--"));
 }
 
 // ══════════ src/cities.js ══════════
@@ -364,13 +468,51 @@ export class GlobeRenderer {
         getComputedStyle(container).display === "inline") {
       container.style.display = "block";
     }
+    // Harvest host overlay markup BEFORE the canvas replaces the
+    // container's children, or replaceChildren would delete the very
+    // labels the caller asked us to position. mappo adopts them: they are
+    // re-parented into an absolutely-positioned layer over the canvas and
+    // given a transform every frame. The host keeps ownership of
+    // everything else — markup, styling, and whether they are links.
+    this._overlayEls = this.o.overlays === false ? []
+      : Array.from(container.querySelectorAll("[data-lat][data-lon]"));
+
     this.canvas = document.createElement("canvas");
     this.canvas.className = "wm-globe";
     this.canvas.style.display = "block";
     this.canvas.style.width = "100%";
     this.canvas.style.aspectRatio = "1 / 1";
     container.replaceChildren(this.canvas);
+    if (this._overlayEls.length) {
+      if (getComputedStyle(container).position === "static") container.style.position = "relative";
+      this._overlayLayer = document.createElement("div");
+      this._overlayLayer.className = "wm-overlay";
+      // pointer-events:none on the LAYER, not the children: the layer must
+      // not swallow drag-to-spin, but a label that wants to be clickable
+      // only has to set pointer-events:auto on itself.
+      Object.assign(this._overlayLayer.style, {
+        position: "absolute", inset: "0", pointerEvents: "none"
+      });
+      for (const el of this._overlayEls) {
+        Object.assign(el.style, { position: "absolute", left: "0", top: "0", willChange: "transform" });
+        this._overlayLayer.appendChild(el);
+      }
+      container.appendChild(this._overlayLayer);
+    }
     this.ctx = this.canvas.getContext("2d");
+
+    // Colours given as CSS variables follow the host's theme. Watch the
+    // document element for the class/style flips theme switches are made
+    // of, drop the memo, repaint. Costs nothing when every colour is a
+    // literal — the observer is only installed if a var is in play.
+    if (usesCssVars(this.o.dotColor, this.o.graticuleColor, this.o.equatorColor,
+                    this.o.markerColor, this.o.oceanColor, this.o.background) &&
+        typeof MutationObserver === "function") {
+      this._themeObserver = new MutationObserver(() => { this._cvCache = null; this._draw(); });
+      this._themeObserver.observe(document.documentElement, {
+        attributes: true, attributeFilter: [ "class", "style", "data-theme" ]
+      });
+    }
 
     this._rebuildData();
 
@@ -408,8 +550,18 @@ export class GlobeRenderer {
   // buffer is a few ms even at max resolution — just do it. The rotation
   // angle deliberately survives.
   update() {
+    this._cvCache = null;
     this._rebuildData();
     this._draw();
+  }
+
+  // Resolve a colour option, memoized. `var(--x)` costs one
+  // getComputedStyle the first time and nothing after, until the theme moves.
+  _c(value) {
+    if (typeof value !== "string" || !value.includes("var(--")) return value;
+    this._cvCache ??= new Map();
+    if (!this._cvCache.has(value)) this._cvCache.set(value, resolveColor(value, this.container));
+    return this._cvCache.get(value);
   }
 
   destroy() {
@@ -417,6 +569,8 @@ export class GlobeRenderer {
     this._raf = null;
     this._io?.disconnect();
     this._ro?.disconnect();
+    this._themeObserver?.disconnect();
+    this._overlayLayer?.remove();
     const c = this.canvas;
     c.removeEventListener("pointerdown", this._onDown);
     c.removeEventListener("pointermove", this._onMove);
@@ -611,6 +765,11 @@ export class GlobeRenderer {
   _rebuildData() {
     const cols = this.o.cols ?? 170; // auto: globes want density — foreshortening thins the limb
     this.points = buildGlobePoints(cols, this.o.latRange);
+    // The graticule is pure lat/lon geometry — built once per option change,
+    // projected per frame. Cheap enough to rebuild unconditionally.
+    this._graticule = this.o.graticule
+      ? buildGraticule({ meridians: this.o.meridians, parallels: this.o.parallels })
+      : null;
     // Region highlight: flags parallel the land points (never reorder
     // geometry — annotate it).
     if (this.o.highlightPolygon?.length) {
@@ -640,7 +799,12 @@ export class GlobeRenderer {
   _resize() {
     const rect = this.canvas.getBoundingClientRect();
     const side = rect.width || this.container.clientWidth || 300;
-    const dpr = (typeof devicePixelRatio === "number" && devicePixelRatio) || 1;
+    // Cap the backing store. A 3× phone painting a 400px globe would other-
+    // wise allocate 1200² and burn the fill rate for detail no eye resolves;
+    // 2 is where the returns stop on a dot field. (Cloudflare's WebGL globe
+    // caps at the same number, and pins mobile to 1.)
+    const raw = (typeof devicePixelRatio === "number" && devicePixelRatio) || 1;
+    const dpr = Math.min(raw, this.o.maxDpr ?? 2);
     this.side = side;
     this.canvas.width = Math.max(1, Math.round(side * dpr));
     this.canvas.height = Math.max(1, Math.round(side * dpr));
@@ -671,6 +835,85 @@ export class GlobeRenderer {
 
   // One transformed, culled, depth-faded pass over a point buffer — land
   // and water share it; only color, size and alpha band differ.
+  // One place that knows how a lat/lon becomes a pixel on this sphere.
+  // The dot loop keeps its own inlined copy (it runs tens of thousands of
+  // times a frame and every property read shows up); everything else —
+  // graticule, DOM overlays, future arcs — goes through here so there is a
+  // single definition of the transform to keep correct.
+  #project(lat, lon, { cx, cy, R, sinR, cosR, sinT, cosT }) {
+    const p = latLonToXYZ(lat, lon);
+    const x1 = p.x * cosR + p.z * sinR;
+    const z1 = -p.x * sinR + p.z * cosR;
+    const y2 = p.y * cosT - z1 * sinT;
+    const z2 = p.y * sinT + z1 * cosT;
+    return { sx: cx + x1 * R, sy: cy - y2 * R, z: z2, front: z2 > 0.01 };
+  }
+
+  // The graticule, stroked as polylines that break at the limb.
+  //
+  // Depth is carried by ALPHA rather than by clipping alone: a meridian
+  // fades as it turns away, which is what stops the front and back of the
+  // same circle from reading as one flat ellipse. The equator is stroked
+  // last and separately — it is the line a reader orients against, so it
+  // gets its own colour and weight instead of being one of eleven.
+  #drawGraticule(T) {
+    const o = this.o;
+    if (!o.graticule || !this._graticule) return;
+    const ctx = this.ctx;
+    const color = this._c(o.graticuleColor ?? o.dotColor);
+    const equator = this._c(o.equatorColor ?? o.graticuleColor ?? o.dotColor);
+
+    const stroke = (lines, strokeColor, peak) => {
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 1;
+      for (const line of lines) {
+        let drawing = false;
+        for (const [ lat, lon ] of line) {
+          const p = this.#project(lat, lon, T);
+          if (!p.front) {                       // crossed to the far side
+            if (drawing) { ctx.stroke(); drawing = false; }
+            continue;
+          }
+          if (!drawing) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); drawing = true; }
+          else ctx.lineTo(p.sx, p.sy);
+          ctx.globalAlpha = peak * (0.25 + 0.75 * p.z);
+        }
+        if (drawing) ctx.stroke();
+      }
+    };
+
+    stroke(this._graticule.meridians, color, o.graticuleOpacity);
+    stroke(this._graticule.parallels, color, o.graticuleOpacity);
+    stroke([ this._graticule.equator ], equator, o.equatorOpacity);
+    ctx.globalAlpha = 1;
+  }
+
+  // Position host-supplied DOM against the sphere.
+  //
+  // mappo writes ONE thing per element — a translate3d on the element that
+  // carries data-lat/data-lon — and publishes depth as a custom property.
+  // It deliberately does not touch scale, opacity or transition: those belong
+  // to the host's own stylesheet, and an element whose position is rewritten
+  // every frame must not also carry an eased transform, or the two fight.
+  // The documented pattern is therefore a positioned root with a freely
+  // styled child inside it.
+  #placeOverlays(T) {
+    if (this.o.overlays === false || !this._overlayEls) return;
+    for (const el of this._overlayEls) {
+      const lat = Number(el.dataset.lat);
+      const lon = Number(el.dataset.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      const p = this.#project(lat, lon, T);
+      // Park far offscreen rather than hiding: no reflow, no flash at the
+      // origin before the first projection lands.
+      el.style.transform = p.front
+        ? `translate3d(${p.sx.toFixed(2)}px, ${p.sy.toFixed(2)}px, 0)`
+        : "translate3d(-9999px, -9999px, 0)";
+      el.style.setProperty("--mappo-depth", p.front ? p.z.toFixed(3) : "0");
+      el.toggleAttribute("data-mappo-behind", !p.front);
+    }
+  }
+
   #drawPoints(pts, { cx, cy, R, sinR, cosR, sinT, cosT, base, shape, alphaLo, alphaHi, anim, flags, baseColor, hiColor }) {
     const ctx = this.ctx;
     let currentHi = null;
@@ -738,7 +981,7 @@ export class GlobeRenderer {
     if (o.background && o.background !== "none") {
       ctx.beginPath();
       ctx.arc(cx, cy, R * 1.02, 0, Math.PI * 2);
-      ctx.fillStyle = o.background;
+      ctx.fillStyle = this._c(o.background);
       ctx.fill();
     }
 
@@ -746,7 +989,7 @@ export class GlobeRenderer {
     if (o.globeRing !== false) {
       ctx.beginPath();
       ctx.arc(cx, cy, R * 1.08, 0, Math.PI * 2);
-      ctx.strokeStyle = o.dotColor;
+      ctx.strokeStyle = this._c(o.dotColor);
       ctx.globalAlpha = 0.35;
       ctx.lineWidth = 1;
       ctx.stroke();
@@ -757,6 +1000,12 @@ export class GlobeRenderer {
     const sinR = Math.sin(rot), cosR = Math.cos(rot);
     const sinT = Math.sin(tilt), cosT = Math.cos(tilt);
 
+    const T = { cx, cy, R, sinR, cosR, sinT, cosT };
+
+    // Graticule under the dots: it is the grid the world sits on, not an
+    // overlay drawn across it.
+    this.#drawGraticule(T);
+
     // Dot footprint ≈ visible cell spacing: cols spans 360° of longitude,
     // so the front hemisphere shows cols/2 dots across 2R.
     const base = Math.max(0.75, (4 * R) / (o.cols ?? 170)) * o.dotSize * 1.6;
@@ -765,7 +1014,7 @@ export class GlobeRenderer {
     // Water first — smaller, dimmer, same transform — so land reads on top.
     // Water never animates: the ocean is ground, the land is figure.
     if (this.waterPoints) {
-      ctx.fillStyle = o.oceanColor;
+      ctx.fillStyle = this._c(o.oceanColor);
       this.#drawPoints(this.waterPoints, { cx, cy, R, sinR, cosR, sinT, cosT, base: base * 0.62, shape, alphaLo: 0.15, alphaHi: 0.55 });
     }
 
@@ -781,9 +1030,9 @@ export class GlobeRenderer {
       phases: this.phases
     } : null;
 
-    ctx.fillStyle = o.dotColor;
+    ctx.fillStyle = this._c(o.dotColor);
     this.#drawPoints(this.points, { cx, cy, R, sinR, cosR, sinT, cosT, base, shape, alphaLo: 0.25, alphaHi: 0.75, anim,
-      flags: this.highlightFlags, baseColor: o.dotColor, hiColor: o.highlightColor });
+      flags: this.highlightFlags, baseColor: this._c(o.dotColor), hiColor: this._c(o.highlightColor) });
 
     // Hovered dot re-draws bigger in the hover color (cheap overdraw).
     if (this._hover?.kind === "dot") {
@@ -793,7 +1042,7 @@ export class GlobeRenderer {
       const y2 = hp.y * cosT - z1 * sinT;
       const z2 = hp.y * sinT + z1 * cosT;
       if (z2 > 0.01) {
-        ctx.fillStyle = o.dotHoverColor ?? hoverShade(o.dotColor);
+        ctx.fillStyle = this._c(o.dotHoverColor) ?? hoverShade(this._c(o.dotColor));
         ctx.globalAlpha = 1;
         const s = base * (0.45 + 0.55 * z2) * o.dotHoverScale;
         this.#drawShape(cx + x1 * R, cy - y2 * R, s, shape);
@@ -802,7 +1051,7 @@ export class GlobeRenderer {
 
     // City markers ride the same transform, drawn on top at full strength;
     // the hovered one swells by markerHoverScale.
-    ctx.fillStyle = o.markerColor;
+    ctx.fillStyle = this._c(o.markerColor);
     for (const city of this.cityData) {
       const x1 = city.p.x * cosR + city.p.z * sinR;
       const z1 = -city.p.x * sinR + city.p.z * cosR;
@@ -816,6 +1065,10 @@ export class GlobeRenderer {
       this.#drawShape(cx + x1 * R, cy - y2 * R, ms * 2, mshape);
     }
     ctx.globalAlpha = 1;
+
+    // DOM last: the overlay reads the same transform the frame just drew,
+    // so labels can never lag the sphere by a frame.
+    this.#placeOverlays(T);
   }
 }
 
@@ -885,7 +1138,22 @@ export const DEFAULTS = {
   cities: [],                 // ["London", { name, lat, lon, color? }, …]
   markers: [],                // coordinate pins: [{ name, lat, lon }, ...] — merged with cities
   focus: null,                // { lat, lon } the globe starts facing (rotate-speed 0 holds it)
-  highlightPolygon: null,     // rings of [lat, lon] — dots inside draw in highlightColor (globe mode)
+// Graticule — the meridian/parallel grid (globe mode). The equator is
+// drawn separately so it can carry its own weight: it is the line a
+// reader orients against.
+graticule: false,
+meridians: 12,              // evenly spaced longitudes
+parallels: 11,              // evenly spaced latitudes; the equator is extra
+graticuleColor: null,       // defaults to dotColor
+equatorColor: null,         // defaults to graticuleColor
+graticuleOpacity: 0.28,
+equatorOpacity: 0.6,
+// Position host DOM carrying data-lat/data-lon over the map (globe mode).
+overlays: true,
+// Cap the canvas backing store. 3× devices buy no visible detail on a
+// dot field and pay full fill-rate for it.
+maxDpr: 2,
+highlightPolygon: null,     // rings of [lat, lon] — dots inside draw in highlightColor (globe mode)
   highlightColor: "#8fb0d8",
   markerShape: "circle",
   markerColor: "#2262fe",
@@ -1033,6 +1301,26 @@ export class WorldMap {
   // drag renders at most every REBUILD_MS with a guaranteed final render at
   // the resting value. This is the backpressure valve — without it, drag
   // input outruns render capacity and the tab drowns.
+// Position adopted overlay children against the flat projection.
+//
+// Percentages, not pixels: the SVG scales with its container, so a percent
+// stays correct through every resize without mappo having to watch for one.
+// Depth is published as 1 — a flat map has no limb — so a stylesheet
+// written against --mappo-depth for the globe works here unchanged.
+_placeOverlays() {
+  if (!this._overlayEls?.length) return;
+  const latRange = this.options.latRange;
+  for (const el of this._overlayEls) {
+    const lat = Number(el.dataset.lat);
+    const lon = Number(el.dataset.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const p = projectNormalized(lat, lon, { latRange });
+    el.style.left = `${(p.x * 100).toFixed(3)}%`;
+    el.style.top = `${(p.y * 100).toFixed(3)}%`;
+    el.style.setProperty("--mappo-depth", "1");
+  }
+}
+
   #scheduleRebuild() {
     // ADAPTIVE spacing (perf-harness lesson): a fixed 150ms floor against
     // 70-146ms renders is a ~50% main-thread duty cycle — the storm scenario
@@ -1084,8 +1372,32 @@ export class WorldMap {
       this._tiltWrap = document.createElement("div");
       this._tiltWrap.className = "wm-tilt";
       this._tiltWrap.appendChild(this.svg);
-      this.styleEl = document.createElement("style");
-      this.container.replaceChildren(this.styleEl, this._tiltWrap);
+this.styleEl = document.createElement("style");
+// Same contract as the globe: host DOM carrying data-lat/data-lon is
+// adopted and positioned. On a flat map the position is static, so it
+// is written once per build rather than per frame — but the markup,
+// the attributes and the CSS hooks are identical, which is the point
+// of having one overlay API rather than two.
+this._overlayEls = this.options.overlays === false ? []
+  : Array.from(this.container.querySelectorAll("[data-lat][data-lon]"));
+if (this._overlayEls.length) {
+  this._overlayLayer = document.createElement("div");
+  this._overlayLayer.className = "wm-overlay";
+  Object.assign(this._overlayLayer.style, {
+    position: "absolute", inset: "0", pointerEvents: "none"
+  });
+  for (const el of this._overlayEls) {
+    Object.assign(el.style, { position: "absolute" });
+    this._overlayLayer.appendChild(el);
+  }
+}
+this.container.replaceChildren(this.styleEl, this._tiltWrap);
+if (this._overlayLayer) {
+  if (getComputedStyle(this.container).position === "static") {
+    this.container.style.position = "relative";
+  }
+  this.container.appendChild(this._overlayLayer);
+}
       this.#bindEvents(this.svg); // once — handlers guard on options.interactive
     }
     const svg = this.svg;
@@ -1110,6 +1422,7 @@ export class WorldMap {
       }));
     }
     dbg(`render: cols=${cols} rows=${rows} · build ${buildMs.toFixed(1)}ms · parse ${parseMs.toFixed(1)}ms · total ${this._lastRenderMs.toFixed(1)}ms · ${svg.querySelectorAll("*").length} nodes`);
+    this._placeOverlays();
   }
 
   // -- cheap patches -----------------------------------------------------------
@@ -1542,7 +1855,16 @@ function escapeAttr(value) {
 const ATTR_MAP = {
   // attribute      → [option, parser]
   "mode":             ["mode", String],
-  "globe-ring":       ["globeRing", (v) => v !== "false"],
+"globe-ring":       ["globeRing", (v) => v !== "false"],
+"graticule":        ["graticule", (v) => v !== "false"],
+"meridians":        ["meridians", Number],
+"parallels":        ["parallels", Number],
+"graticule-color":  ["graticuleColor", String],
+"equator-color":    ["equatorColor", String],
+"graticule-opacity":["graticuleOpacity", Number],
+"equator-opacity":  ["equatorOpacity", Number],
+"overlays":         ["overlays", (v) => v !== "false"],
+"max-dpr":          ["maxDpr", Number],
   "background":       ["background", String],
   "ocean-color":      ["oceanColor", String],
   "rotate-speed":     ["rotateSpeed", Number],
