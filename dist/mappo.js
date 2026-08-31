@@ -1762,6 +1762,9 @@ const CALLBACK_KEYS = new Set(["onDotClick", "onDotEnter", "onCityClick", "onCit
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const CELL = 10;        // internal SVG units per grid cell — never exposed
+
+// Every instance scopes its own stylesheet to itself with this.
+let instanceSeq = 0;
 const MAX_COLS = 260;   // above this, SVG node count degrades interaction
 const REBUILD_MS = 150; // min spacing between geometry rebuilds
 // Animation noise field frequencies. PHASE picks when a dot moves, AMP how
@@ -1972,7 +1975,7 @@ if (this._overlayLayer) {
     const [markup, buildMs] = span("wm:build-markup", () =>
       this.#defsMarkup(o) + this.#backdropMarkup(cols, rows) + (parseLandStyle(o.land).dots ? this.#dotsMarkup(this.grid) : this.#landMarkup(this.grid, o)) + this.#markersMarkup(this.grid, o));
     const [, parseMs] = span("wm:parse-innerHTML", () => { svg.innerHTML = markup; });
-    this.styleEl.textContent = this.#css(o);
+    this.#applyStyle(this.#css(o));
     // Calibration (perf-harness lesson #2): the JS-side cost is only ~25%
     // of a rebuild — the style recalc, layout and paint land AFTER this
     // function returns. Double-rAF closes the window after the browser has
@@ -1993,7 +1996,7 @@ if (this._overlayLayer) {
   // -- cheap patches -----------------------------------------------------------
 
   #patchStyle() {
-    this.styleEl.textContent = this.#css(this.options);
+    this.#applyStyle(this.#css(this.options));
   }
 
   #patchDefs() {
@@ -2238,6 +2241,46 @@ if (this._overlayLayer) {
   }
 
   // The component stylesheet — defaults, not law; outside CSS wins.
+// Write the instance stylesheet, SCOPED TO THIS MAP.
+//
+// The rules are generated per instance but their selectors are generic
+// (.wm-dot, .wm-marker …) and a <style> in the document applies to the whole
+// document — so on a page with two maps the LAST one to render silently
+// repainted every other one. Eight maps on the demo page all took the last
+// map`s marker colour; only land escaped, because it carries an inline fill.
+//
+// Two things leak and both are handled: selectors get an attribute scope, and
+// @keyframes NAMES get the same suffix, since two maps animating at different
+// periods would otherwise define the same animation twice.
+//
+// Selectors are rewritten through the CSSOM rather than by regex on the text:
+// the browser has already parsed the structure, so keyframe stops (`0%, 100%`)
+// and at-rule preludes cannot be mistaken for selectors.
+#applyStyle(css) {
+  const uid = (this._uid ??= ++instanceSeq);
+  // Node-safe, like the rest of this class's seams: the update-tier tests
+    // drive the renderer with a stub container.
+    this.container.setAttribute?.("data-wm", uid);
+  this.styleEl.textContent = css
+    .replace(/@keyframes\s+(wm-[\w-]+)/g, (_m, name) => `@keyframes ${name}-i${uid}`)
+    .replace(/animation:\s*(wm-[\w-]+)/g, (_m, name) => `animation: ${name}-i${uid}`);
+
+  const sheet = this.styleEl.sheet;
+  if (!sheet) return;                      // not yet in the document; next render scopes it
+  const scope = `[data-wm="${uid}"]`;
+  const walk = (rules) => {
+    for (const rule of rules) {
+      if (rule.selectorText) {
+        rule.selectorText = rule.selectorText.split(",")
+          .map((sel) => `${scope} ${sel.trim()}`).join(", ");
+      } else if (rule.cssRules && !rule.name) {   // @media etc; @keyframes has .name
+        walk(rule.cssRules);
+      }
+    }
+  };
+  try { walk(sheet.cssRules); } catch { /* cross-origin or unparsed: leave global */ }
+}
+
   #css(o) {
     return `
       .wm-bg { fill: ${o.background === "none" ? "none" : o.background}; pointer-events: none; }

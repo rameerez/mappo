@@ -4,9 +4,9 @@
 <title>mappo — demos</title>
 <style>
  :root{--bg:#fffbf5;--card:#fff;--ink:#16181d;--muted:#6b7280;--line:#e6e1d8;
-       --land:#c9d3bd;--coast:#5f7a4a;--grid:#ddd8cd;--accent:#c2410c;--pill:#fff}
+       --land:#c9d3bd;--coast:#5f7a4a;--grid:#ddd8cd;--accent:#c2410c;--pill:#fff;--sea:#f4f6f2;--ocean:#dfe6da}
  html[data-theme="dark"]{--bg:#0e1116;--card:#151a21;--ink:#e7ecf3;--muted:#93a0b4;--line:#242c37;
-       --land:#2b3646;--coast:#7aa2f7;--grid:#232b36;--accent:#fb923c;--pill:#1d2229}
+       --land:#2b3646;--coast:#7aa2f7;--grid:#232b36;--accent:#fb923c;--pill:#1d2229;--sea:#0f141b;--ocean:#1a2230}
  *{box-sizing:border-box}
  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 ui-sans-serif,system-ui,sans-serif}
  .wrap{max-width:1200px;margin:0 auto;padding:28px 24px 90px}
@@ -106,6 +106,44 @@
 .pin[data-mappo-behind] { visibility: hidden }</code></pre>
   </div>
 </div>
+
+  <!-- ───────────────────────── FLAT SHOWCASE ───────────────────────── -->
+  <h2>The flat map <span>— every feature at once, and exact in all of them</span></h2>
+  <div class="card">
+    <div class="art" style="padding:18px 18px 0">
+      <world-map id="flatshow"
+        cols="220"
+        lat-min="-58" lat-max="80"
+        land="solid outline" land-source="vector" borders
+        land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="0.7"
+        borders-color="var(--coast)" borders-width="0.4" borders-opacity="0.5"
+        background="var(--sea)" ocean-color="var(--ocean)"
+        cities="Tokyo, London, New York, Lagos, Sydney, Santiago, Mumbai, Cairo"
+        marker-shape="pin" marker-color="var(--accent)" marker-scale="2.2" marker-pulse="true">
+        <a class="pin" data-lat="38.72" data-lon="-9.14" href="#f-lis"><span>Lisbon</span></a>
+        <a class="pin" data-lat="-33.45" data-lon="-70.67" href="#f-scl"><span>Santiago</span></a>
+        <a class="pin" data-lat="1.35" data-lon="103.82" href="#f-sin"><span>Singapore</span></a>
+        <a class="pin" data-lat="64.13" data-lon="-21.9" href="#f-rvk"><span>Reykjavík</span></a>
+      </world-map>
+    </div>
+    <div class="meta">
+      <h3>Real coastlines, national borders, a dotted sea, pulsing city pins, and your own labels</h3>
+      <p>One element. The flat renderer is SVG, so every one of those is a real node your stylesheet can
+      reach — vector-crisp at any zoom, and correct in every combination of options, which the globe cannot
+      yet claim for filled vector land.</p>
+      <span class="tag">land="solid outline"</span><span class="tag">land-source="vector"</span><span class="tag">borders</span><span class="tag">ocean-color</span><span class="tag">background</span><span class="tag">cities</span><span class="tag">marker-shape="pin"</span><span class="tag">marker-pulse</span><span class="tag">data-lat/data-lon</span><span class="tag">lat-min/lat-max</span>
+      <pre style="margin-top:12px"><code>&lt;world-map cols="220" lat-min="-58" lat-max="80"
+  land="solid outline" land-source="vector" borders
+  land-color="#c9d3bd" land-stroke="#5f7a4a" land-stroke-width="0.7"
+  borders-color="#5f7a4a" borders-width="0.4" borders-opacity="0.5"
+  background="#f4f6f2" ocean-color="#dfe6da"
+  cities="Tokyo, London, New York, Lagos, Sydney, Santiago, Mumbai, Cairo"
+  marker-shape="pin" marker-color="#c2410c" marker-scale="2.2" marker-pulse="true"&gt;
+  &lt;a data-lat="38.72" data-lon="-9.14"&gt;&lt;span&gt;Lisbon&lt;/span&gt;&lt;/a&gt;
+  &lt;a data-lat="1.35"  data-lon="103.82"&gt;&lt;span&gt;Singapore&lt;/span&gt;&lt;/a&gt;
+&lt;/world-map&gt;</code></pre>
+    </div>
+  </div>
 
 <!-- ───────────────────────── ORBIT ───────────────────────── -->
 <h2>Earth in orbit <span>— a fixed 23.44° axis, carried around a sun</span></h2>
