@@ -76,8 +76,8 @@
   <div>
     <world-map id="hero" mode="globe" cols="160" rotate-speed="6"
       tilt="18" roll="-14.3"
-      land="solid outline" land-source="vector"
-      land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="0.9"
+      land="outline" land-source="vector"
+      land-stroke="var(--coast)" land-stroke-width="0.9"
       graticule meridians="24" parallels="11"
       graticule-color="var(--grid)" equator-color="var(--coast)"
       graticule-opacity="0.45" equator-opacity="0.8" globe-ring="true">
@@ -184,14 +184,14 @@ carrier.style.transform =
 <div class="grid">
   <div class="card"><div class="art">
     <world-map mode="globe" cols="140" rotate-speed="0" roll="0" tilt="0"
-      land="solid outline" land-source="vector" land-color="var(--land)" land-stroke="var(--coast)"></world-map>
+      land="outline" land-source="vector" land-stroke="var(--coast)"></world-map>
   </div><div class="meta"><h3>Upright</h3>
     <p>No lean, no tilt — the reference frame.</p>
     <pre><code>roll="0" tilt="0"</code></pre></div></div>
 
   <div class="card"><div class="art">
     <world-map mode="globe" cols="140" rotate-speed="0" roll="-14.3" tilt="0"
-      land="solid outline" land-source="vector" land-color="var(--land)" land-stroke="var(--coast)"></world-map>
+      land="outline" land-source="vector" land-stroke="var(--coast)"></world-map>
   </div><div class="meta"><h3>Roll — the lean</h3>
     <p>Turns the finished disc in the plane of the screen. Watch the equator.</p>
     <pre><code>roll="-14.3"</code></pre></div></div>
@@ -280,6 +280,8 @@ highlight-color="#c2410c"</code></pre></div></div>
 </div>
 
 <!-- ───────────────────────── REFERENCE ───────────────────────── -->
+<p class="foot" style="margin:34px 0 0"><strong>One caveat, stated plainly:</strong> on the GLOBE a filled land style draws from the 512×256 mask, not the vector outlines — clipping a vector polygon to the visible hemisphere needs an algorithm mappo does not have yet, and every shortcut for it was measured painting open ocean. Fill and coast therefore both come from the grid there, where they agree by construction. <code>land="outline"</code> with <code>land-source="vector"</code> is exact on the globe, and the flat map is exact in every combination.</p>
+
 <h2>Every option</h2>
 <div class="hero" style="grid-template-columns:1fr 1fr">
   <pre><code>land            "dots" | "solid" | "outline" | "solid outline"

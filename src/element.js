@@ -133,5 +133,20 @@ class WorldMapElement extends HTMLElement {
 
 export function register(tag = "world-map") {
   if (!WorldMapElement || customElements.get(tag)) return;
+  hideOverlaysUntilDefined(tag);
   customElements.define(tag, WorldMapElement);
+}
+
+// Overlay children are ordinary markup, which means the browser lays them out
+// the moment it parses them — before this module has loaded and long before
+// the map knows where they belong. Without this they appear stacked in the
+// corner of the element for a frame or two and then jump to their coordinates,
+// which reads as broken. `:not(:defined)` holds them until the element upgrades;
+// after that mappo owns their transform and the rule stops matching.
+function hideOverlaysUntilDefined(tag) {
+  if (typeof document === "undefined" || document.getElementById("mappo-upgrade-style")) return;
+  const style = document.createElement("style");
+  style.id = "mappo-upgrade-style";
+  style.textContent = `${tag}:not(:defined) [data-lat][data-lon]{visibility:hidden}`;
+  document.head?.prepend(style);
 }

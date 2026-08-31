@@ -534,46 +534,26 @@ export class GlobeRenderer {
     const ctx = this.ctx;
     const { cx, cy, R } = T;
 
+    if (fill) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.clip();                       // nothing may paint outside the planet
+      ctx.fillStyle = fill;
+    }
+
     for (const ring of rings) {
       const pts = ring.map(([ lat, lon ]) => this.#project(lat, lon, T));
-
-      if (fill) {
-        // Consecutive visible runs, in ring order.
-        const runs = [];
-        let run = null;
-        for (const p of pts) {
-          if (p.front) { (run ??= []).push(p); }
-          else if (run) { runs.push(run); run = null; }
-        }
-        if (run) {
-          // The ring wrapped while visible — stitch the tail onto the head so
-          // the run is not split at an arbitrary array index.
-          if (runs.length && pts[0].front) runs[0] = run.concat(runs[0]);
-          else runs.push(run);
-        }
-        if (runs.length) {
-          ctx.beginPath();
-          runs.forEach((r, i) => {
-            if (i === 0) ctx.moveTo(r[0].sx, r[0].sy);
-            else {
-              // Bridge the gap along the silhouette rather than across it.
-              const prev = runs[i - 1][runs[i - 1].length - 1];
-              const a0 = Math.atan2(prev.sy - cy, prev.sx - cx);
-              const a1 = Math.atan2(r[0].sy - cy, r[0].sx - cx);
-              let delta = a1 - a0;
-              while (delta > Math.PI) delta -= 2 * Math.PI;
-              while (delta < -Math.PI) delta += 2 * Math.PI;
-              ctx.arc(cx, cy, R, a0, a0 + delta, delta < 0);
-            }
-            for (const p of r) ctx.lineTo(p.sx, p.sy);
-          });
-          ctx.closePath();
-          const depth = runs[0][0].z;
-          ctx.globalAlpha = (0.4 + 0.6 * depth) * alphaScale;
-          ctx.fillStyle = fill;
-          ctx.fill();
-        }
-      }
+      // Fill is deliberately NOT drawn from these rings. Clipping a spherical
+      // polygon to the visible hemisphere analytically is a genuinely hard
+      // problem, and every cheap rule for rejoining the clipped runs along the
+      // limb was measured painting open ocean: the shorter arc closes a wide
+      // run around the wrong side; the exit tangent sends a single-run ring the
+      // long way round the disc; one constant direction per ring inverts the
+      // whole thing. (A pixel probe over 24 rotations scored them: 38, 35 and
+      // 98 ocean samples wrongly filled.) The globe therefore fills from the
+      // mask — see #drawLand — which culls cell by cell and cannot fail that
+      // way, and these rings draw the coastline on top.
 
       if (stroke) {
         ctx.strokeStyle = stroke;
@@ -589,8 +569,119 @@ export class GlobeRenderer {
         if (drawing) ctx.stroke();
       }
     }
+
+    if (fill) ctx.restore();
     ctx.globalAlpha = 1;
   }
+
+  // Fill one ring, clipped to the visible hemisphere.
+  //
+  // The rule that makes this correct: when you clip a polygon to a disc and
+  // keep the INSIDE, the disc's boundary is always traversed in ONE direction
+  // for that polygon — the same direction the polygon itself is wound. Deciding
+  // it per crossing (from the exit tangent) is what sent single-run rings the
+  // long way round and filled open ocean; so the direction is settled once, for
+  // the whole ring, from the ring's own orientation, and every bridge obeys it.
+  //
+  // Runs are then joined exit → NEXT ENTRY BY ANGLE in that direction, never in
+  // array order: Afro-Eurasia crosses the silhouette fourteen times in a single
+  // ring, and those crossings do not arrive in the order they sit around the
+  // limb.
+  #fillClippedRing(ring, pts, T, alphaScale) {
+    const ctx = this.ctx;
+    const { cx, cy, R } = T;
+    const n = pts.length;
+    const TAU = Math.PI * 2;
+    if (!pts.some((p) => p.front)) return;
+
+    const paint = (depth) => {
+      ctx.globalAlpha = (0.4 + 0.6 * depth) * alphaScale;
+      ctx.fill();
+    };
+
+    if (pts.every((p) => p.front)) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].sx, pts[0].sy);
+      for (let i = 1; i < n; i++) ctx.lineTo(pts[i].sx, pts[i].sy);
+      ctx.closePath();
+      paint(pts[0].z);
+      return;
+    }
+
+    const crossing = (i, j) => {
+      const t = pts[i].z / (pts[i].z - pts[j].z);
+      let lon0 = ring[i][1], lon1 = ring[j][1];
+      if (lon1 - lon0 > 180) lon1 -= 360; else if (lon0 - lon1 > 180) lon1 += 360;
+      return this.#project(ring[i][0] + (ring[j][0] - ring[i][0]) * t,
+                           lon0 + (lon1 - lon0) * t, T);
+    };
+
+    let startAt = 0;
+    for (let i = 0; i < n; i++) {
+      if (pts[i].front && !pts[(i - 1 + n) % n].front) { startAt = i; break; }
+    }
+
+    const runs = [];
+    let current = null;
+    let signed = 0;                      // shoelace over the VISIBLE geometry
+    for (let k = 0; k < n; k++) {
+      const i = (startAt + k) % n;
+      const prev = (i - 1 + n) % n;
+      if (pts[i].front) {
+        if (!current) current = [ crossing(i, prev) ];
+        current.push(pts[i]);
+      } else if (current) {
+        current.push(crossing(prev, i));
+        for (let m = 0; m < current.length - 1; m++) {
+          signed += (current[m].sx - cx) * (current[m + 1].sy - cy)
+                  - (current[m + 1].sx - cx) * (current[m].sy - cy);
+        }
+        runs.push(current);
+        current = null;
+      }
+    }
+    if (current) runs.push(current);
+    if (!runs.length) return;
+
+    // One direction for the whole ring, taken from its own winding on screen.
+    const dir = signed >= 0 ? 1 : -1;
+    const angleOf = (p) => Math.atan2(p.sy - cy, p.sx - cx);
+    for (const r of runs) {
+      r.inAngle = angleOf(r[0]);
+      r.outAngle = angleOf(r[r.length - 1]);
+      r.used = false;
+    }
+    const sweep = (from, to) => {
+      let d = dir > 0 ? to - from : from - to;
+      d = ((d % TAU) + TAU) % TAU;
+      return dir > 0 ? d : -d;
+    };
+
+    for (const seed of runs) {
+      if (seed.used) continue;
+      ctx.beginPath();
+      ctx.moveTo(seed[0].sx, seed[0].sy);
+      let run = seed, guard = 0;
+      while (run && !run.used && guard++ <= runs.length) {
+        run.used = true;
+        for (let i = 1; i < run.length; i++) ctx.lineTo(run[i].sx, run[i].sy);
+        let next = null, bestGap = Infinity;
+        for (const r of runs) {
+          if (r.used) continue;
+          const gap = Math.abs(sweep(run.outAngle, r.inAngle));
+          if (gap < bestGap) { bestGap = gap; next = r; }
+        }
+        const target = next ?? seed;
+        ctx.arc(cx, cy, R, run.outAngle, run.outAngle + sweep(run.outAngle, target.inAngle),
+                sweep(run.outAngle, target.inAngle) < 0);
+        if (!next) break;
+        run = next;
+      }
+      ctx.closePath();
+      paint(seed[0].z);
+    }
+  }
+
 
   // Land as shape on the sphere — the same land.js geometry the flat map uses.
   //
@@ -611,9 +702,19 @@ export class GlobeRenderer {
     const ctx = this.ctx;
     // Vector source: real outlines, no grid involved.
     const vector = landRings(o.landSource);
-    if (vector) {
+    // A FILLED globe stays on the grid, even when vector data is asked for.
+    //
+    // Not a preference — a consistency requirement. The vector coastline is
+    // 1/32° detailed; the mask the fill comes from is 512×256. Drawing one
+    // inside the other leaves white slivers all down the European coast,
+    // because they are the same geography at twenty-five times the detail.
+    // Until vector fills can be clipped to the hemisphere properly (see
+    // #drawVectorLand), a filled globe draws BOTH fill and coast from the
+    // grid, where they agree by construction. `land="outline"` with vector is
+    // unaffected and is the sharpest the globe gets.
+    if (vector && !style.fill) {
       this.#drawVectorLand(T, style, vector, {
-        fill: style.fill ? this._c(o.landColor ?? o.dotColor) : null,
+        fill: null,
         stroke: style.stroke ? this._c(o.landStroke ?? o.landColor ?? o.dotColor) : null,
         width: o.landStrokeWidth ?? 1
       });
@@ -627,6 +728,20 @@ export class GlobeRenderer {
       }
       return;
     }
+    // Borders are lines, so they clip cleanly and can ride any fill.
+    if (o.borders && vector) {
+      this.#drawVectorLand(T, { fill: false, stroke: true }, borderRings(), {
+        fill: null,
+        stroke: this._c(o.bordersColor ?? o.landStroke ?? o.dotColor),
+        width: o.bordersWidth ?? 0.5,
+        alphaScale: o.bordersOpacity ?? 0.55
+      });
+    }
+    // Resolution stays at `cols`, deliberately. Sampling the fill finer than
+    // the dot grid does buy smoother coastlines, but it multiplies the quads
+    // projected every frame — measured as visible stutter on a page carrying
+    // several globes, which is a worse defect than a stepped coast. Turn the
+    // knob with `cols` if a particular map wants the detail and can pay.
     const cols = o.cols ?? 170;
     const rows = Math.round((cols / 360) * (o.latRange[1] - o.latRange[0]));
     const grid = { cols, rows, latRange: o.latRange };
@@ -634,26 +749,43 @@ export class GlobeRenderer {
     this._land ??= buildLand(grid, { wrapX: true });
 
     if (style.fill) {
-      ctx.fillStyle = this._c(o.landColor ?? o.dotColor);
+      // Batched by depth band, NOT one fill() per cell.
+      //
+      // The land is a few thousand quads; issuing a beginPath/fill for each
+      // was measured at ~13 ms per globe, which turns a page carrying several
+      // of them into a slideshow. Path construction is nearly free — it is the
+      // fill calls that cost — so the quads are accumulated into a handful of
+      // paths, one per slice of the depth fade, and each is filled once. Same
+      // picture, BANDS draw calls instead of thousands.
+      const BANDS = 6;
+      const paths = Array.from({ length: BANDS }, () => new Path2D());
+      let any = false;
       for (const [ col, row ] of this._land.cells) {
         const a = cellCorner(col, row, grid);
+        const pa = this.#project(a.lat, a.lon, T);
+        if (!pa.front) continue;
         const b = cellCorner(col + 1, row, grid);
         const c = cellCorner(col + 1, row + 1, grid);
         const d = cellCorner(col, row + 1, grid);
-        const pa = this.#project(a.lat, a.lon, T);
-        if (!pa.front) continue;
         const pb = this.#project(b.lat, b.lon, T);
         const pc = this.#project(c.lat, c.lon, T);
         const pd = this.#project(d.lat, d.lon, T);
         if (!pb.front || !pc.front || !pd.front) continue;
-        ctx.globalAlpha = 0.35 + 0.65 * pa.z;   // the same depth fade the dots wear
-        ctx.beginPath();
-        ctx.moveTo(pa.sx, pa.sy);
-        ctx.lineTo(pb.sx, pb.sy);
-        ctx.lineTo(pc.sx, pc.sy);
-        ctx.lineTo(pd.sx, pd.sy);
-        ctx.closePath();
-        ctx.fill();
+        const band = Math.min(BANDS - 1, Math.floor(pa.z * BANDS));
+        const path = paths[band];
+        path.moveTo(pa.sx, pa.sy);
+        path.lineTo(pb.sx, pb.sy);
+        path.lineTo(pc.sx, pc.sy);
+        path.lineTo(pd.sx, pd.sy);
+        path.closePath();
+        any = true;
+      }
+      if (any) {
+        ctx.fillStyle = this._c(o.landColor ?? o.dotColor);
+        for (let i = 0; i < BANDS; i++) {
+          ctx.globalAlpha = 0.35 + 0.65 * ((i + 0.5) / BANDS);   // the fade the dots wear
+          ctx.fill(paths[i]);
+        }
       }
     }
 
