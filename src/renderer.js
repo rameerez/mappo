@@ -42,6 +42,7 @@
 import { isLand } from "./mask.js";
 import { project, cellCenter, projectNormalized } from "./projection.js";
 import { normalizeRings, pointInRings } from "./highlight.js";
+import { buildLand, parseLandStyle } from "./land.js";
 import { resolveCity } from "./cities.js";
 import { noise2 } from "./noise.js";
 import { GlobeRenderer } from "./globe.js";
@@ -73,11 +74,17 @@ export const DEFAULTS = {
   // Graticule — the meridian/parallel grid (globe mode). The equator is
   // drawn separately so it can carry its own weight: it is the line a
   // reader orients against.
-    // Land rendering: "dots" (the dot field mappo is named for) or "solid"
-    // (one filled path — the same mask, drawn as shape).
-    land: "dots",
-    landColor: null,            // defaults to dotColor
-    roll: 0,                    // globe LEAN, in the plane of the screen (deg)
+  // How land is drawn. A space-separated token list, so combinations read
+  // the way you would say them out loud. Works identically on both renderers:
+  //   "dots"           the dot field mappo is named for (default)
+  //   "solid"          filled landmass
+  //   "outline"        coastline only
+  //   "solid outline"  filled, with the coast drawn on top
+  land: "dots",
+  landColor: null,            // fill; defaults to dotColor
+  landStroke: null,           // coastline; defaults to landColor, then dotColor
+  landStrokeWidth: 1,
+  roll: 0,                    // globe LEAN, in the plane of the screen (deg)
   graticule: false,
   meridians: 12,              // evenly spaced longitudes
   parallels: 11,              // evenly spaced latitudes; the equator is extra
@@ -342,7 +349,7 @@ if (this._overlayLayer) {
     svg.setAttribute("aria-label", this.#ariaLabel());
     // One parse for the whole scene — the fast path for full builds.
     const [markup, buildMs] = span("wm:build-markup", () =>
-      this.#defsMarkup(o) + this.#backdropMarkup(cols, rows) + (o.land === "solid" ? this.#landMarkup(this.grid, o) : this.#dotsMarkup(this.grid)) + this.#markersMarkup(this.grid, o));
+      this.#defsMarkup(o) + this.#backdropMarkup(cols, rows) + (parseLandStyle(o.land).dots ? this.#dotsMarkup(this.grid) : this.#landMarkup(this.grid, o)) + this.#markersMarkup(this.grid, o));
     const [, parseMs] = span("wm:parse-innerHTML", () => { svg.innerHTML = markup; });
     this.styleEl.textContent = this.#css(o);
     // Calibration (perf-harness lesson #2): the JS-side cost is only ~25%
@@ -452,72 +459,54 @@ if (this._overlayLayer) {
   // animation all live elsewhere — so the markup string caches perfectly per
   // resolution. Both animation phases ship on every dot (~30 bytes each):
   // that's what makes animation a style-only knob.
-  // Solid land: the same mask, drawn as filled shape instead of a dot field.
-  //
-  // ONE <path> for the whole world, not a rect per cell. Land cells are merged
-  // into horizontal runs per row and each run becomes a rectangle subpath, so a
-  // 128-column map that would be ~2000 dot nodes becomes a single node with a
-  // few hundred subpaths. Adjacent rows share edges exactly, so the runs fuse
-  // into continents with no seams and no overdraw.
-  //
-  // Why not marching squares for a smooth coastline: at the resolutions a
-  // symbolic map uses, the blockiness IS the visual language — the same grid
-  // the dot mode celebrates. A smoothed outline would read as a bad tracing of
-  // a real map rather than a deliberate abstraction. (If that changes, the run
-  // list here is the right input for it.)
-  //
-  // Fill goes through `style`, not the `fill` attribute, because
-  // `fill="var(--x)"` is invalid while `style="fill:var(--x)"` resolves — so
-  // solid land follows a host's CSS variables for free, with no colour
-  // resolver on this side.
+  // Land as shape. `solid`, `outline` and `solid outline` are three renderings
+  // of ONE geometry: the closed boundary contours from land.js. Because the
+  // loops are closed and consistently wound, the same `d` both fills (holes
+  // correct under fill-rule: nonzero) and strokes as a true coastline — no
+  // internal cell edges, because a contour is only ever drawn where land meets
+  // sea. Tracing per-cell rectangles instead would stroke a wireframe.
   #landMarkup(grid, o) {
-  const key = `solid|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
-  const cached = this._dotsCache.get(key);
-  if (cached) { this._dotCount = cached.dots; return cached.markup; }
-
-  const runs = [];
-  let cells = 0;
-  for (let row = 0; row < grid.rows; row++) {
-    let from = -1;
-    for (let col = 0; col <= grid.cols; col++) {
-      const land = col < grid.cols &&
-        isLand(cellCenter(col, row, grid).lat, cellCenter(col, row, grid).lon);
-      if (land) { cells++; if (from < 0) from = col; }
-      else if (from >= 0) {
-        runs.push(`M${from * CELL} ${row * CELL}h${(col - from) * CELL}v${CELL}h-${(col - from) * CELL}Z`);
-        from = -1;
-      }
+    const style = parseLandStyle(o.land);
+    const key = `land|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
+    let geom = this._dotsCache.get(key);
+    if (!geom) {
+      const { cells, loops } = buildLand(grid);
+      geom = {
+        d: loops.map((loop) => `M${loop.map(([ x, y ]) => `${x * CELL} ${y * CELL}`).join("L")}Z`).join(""),
+        cells
+      };
+      this._dotsCache.set(key, geom);
     }
+    this._dotCount = geom.cells.length;
+
+    const fill = style.fill ? (o.landColor ?? o.dotColor) : "none";
+    const stroke = style.stroke ? (o.landStroke ?? o.landColor ?? o.dotColor) : "none";
+    const width = o.landStrokeWidth ?? 1;
+    // style= rather than fill=/stroke=: `fill="var(--x)"` is invalid, while the
+    // style property resolves — so land follows the host's CSS variables with
+    // no colour resolver on this side.
+    const css = `fill:${escapeAttr(fill)};stroke:${escapeAttr(stroke)};` +
+      `stroke-width:${width * (CELL / 10)};stroke-linejoin:round;fill-rule:nonzero`;
+    return `<g class="wm-land"><path class="wm-land-path" style="${css}" d="${geom.d}"/>` +
+      `${this.#landHighlightMarkup(grid, o)}</g>`;
   }
 
-  const fill = o.landColor ?? o.dotColor;
-  const markup = `<g class="wm-land"><path class="wm-land-path" style="fill:${escapeAttr(fill)}" d="${runs.join("")}"/>${this.#landHighlightMarkup(grid, o)}</g>`;
-  this._dotsCache.set(key, { markup, dots: cells });
-  this._dotCount = cells;
-  return markup;
-  }
-
-  // The highlight polygon, in FLAT mode: the same ray-cast highlight.js does
-  // for the globe, painting a second path on top of the land. This is what
-  // "light up this country" means on a flat map — the region glows, not a pin.
+  // The highlight polygon in FLAT mode — the same ray-cast highlight.js already
+  // did for the globe. A highlight is a FILL, so it paints the land cells inside
+  // the region rather than tracing them: it reads as a lit area, and it reuses
+  // the very cell list the contours were traced from.
   #landHighlightMarkup(grid, o) {
-  if (!o.highlightPolygon?.length) return "";
-  const normalized = normalizeRings(o.highlightPolygon);
-  const runs = [];
-  for (let row = 0; row < grid.rows; row++) {
-    let from = -1;
-    for (let col = 0; col <= grid.cols; col++) {
-      const c = col < grid.cols ? cellCenter(col, row, grid) : null;
-      const hit = c && isLand(c.lat, c.lon) && pointInRings(c.lat, c.lon, normalized);
-      if (hit) { if (from < 0) from = col; }
-      else if (from >= 0) {
-        runs.push(`M${from * CELL} ${row * CELL}h${(col - from) * CELL}v${CELL}h-${(col - from) * CELL}Z`);
-        from = -1;
-      }
+    if (!o.highlightPolygon?.length) return "";
+    const normalized = normalizeRings(o.highlightPolygon);
+    const { cells } = buildLand(grid);
+    const parts = [];
+    for (const [ col, row ] of cells) {
+      const c = cellCenter(col, row, grid);
+      if (!pointInRings(c.lat, c.lon, normalized)) continue;
+      parts.push(`M${col * CELL} ${row * CELL}h${CELL}v${CELL}h-${CELL}Z`);
     }
-  }
-  if (!runs.length) return "";
-  return `<path class="wm-land-highlight" style="fill:${escapeAttr(o.highlightColor)}" d="${runs.join("")}"/>`;
+    if (!parts.length) return "";
+    return `<path class="wm-land-highlight" style="fill:${escapeAttr(o.highlightColor)}" d="${parts.join("")}"/>`;
   }
 
   #dotsMarkup(grid) {

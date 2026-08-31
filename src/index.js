@@ -11,8 +11,9 @@ export { WorldMap, DEFAULTS, snapToLand } from "./renderer.js";
 export { WorldMapElement, register } from "./element.js";
 export { CITIES, resolveCity } from "./cities.js";
 export { isLand, MASK_W, MASK_H } from "./mask.js";
-export { project, cellCenter, projectNormalized } from "./projection.js";
+export { project, cellCenter, cellCorner, projectNormalized } from "./projection.js";
 export { buildGraticule } from "./graticule.js";
+export { buildLand, parseLandStyle } from "./land.js";
 export { noise2 } from "./noise.js";
 export { hoverShade, resolveColor, usesCssVars } from "./color.js";
 

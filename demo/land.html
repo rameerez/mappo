@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>mappo — land styles</title>
+<style>
+ :root{--page:#fffbf5;--land:#c9d3bd;--coast:#5f7a4a;--ink:#1b1a19;--grid:#ddd8cd}
+ html[data-theme="dark"]{--page:#14161a;--land:#2a3340;--coast:#7aa2f7;--ink:#e7ecf3;--grid:#2a3038}
+ body{margin:0;padding:24px;background:var(--page);color:var(--ink);font:14px/1.5 system-ui,sans-serif}
+ h2{font-size:11px;text-transform:uppercase;letter-spacing:.12em;opacity:.6;margin:22px 0 6px}
+ code{background:rgb(0 0 0/.06);padding:1px 5px;border-radius:4px;font-size:12px}
+ .row{display:grid;grid-template-columns:repeat(2,1fr);gap:26px}
+ .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+ button{font:inherit;padding:6px 12px;border-radius:8px;border:1px solid var(--grid);background:#fff0;color:var(--ink);cursor:pointer}
+</style></head><body>
+<button id="t">Toggle dark</button>
+
+<h2>FLAT — <code>land="dots"</code> · <code>"solid"</code> · <code>"outline"</code> · <code>"solid outline"</code></h2>
+<div class="row">
+  <world-map cols="120" dot-color="var(--land)"></world-map>
+  <world-map cols="120" land="solid"  land-color="var(--land)"></world-map>
+  <world-map cols="120" land="outline" land-stroke="var(--coast)"></world-map>
+  <world-map cols="120" land="solid outline" land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="1.5"></world-map>
+</div>
+
+<h2>GLOBE — the same four values, identical option names</h2>
+<div class="row3">
+  <world-map mode="globe" cols="150" rotate-speed="0" roll="-14.3" dot-color="var(--land)"></world-map>
+  <world-map mode="globe" cols="150" rotate-speed="0" roll="-14.3" land="solid" land-color="var(--land)"></world-map>
+  <world-map mode="globe" cols="150" rotate-speed="0" roll="-14.3" land="outline" land-stroke="var(--coast)"></world-map>
+</div>
+<div class="row3" style="margin-top:20px">
+  <world-map mode="globe" cols="150" rotate-speed="0" roll="-14.3" land="solid outline"
+    land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="1.2"></world-map>
+  <world-map mode="globe" cols="150" rotate-speed="0" roll="-14.3" land="solid outline" graticule
+    meridians="24" parallels="23" land-color="var(--land)" land-stroke="var(--coast)"
+    graticule-color="var(--grid)" equator-color="var(--coast)" equator-opacity="0.8"></world-map>
+  <world-map mode="globe" cols="150" rotate-speed="7" roll="-14.3" tilt="10" land="solid outline"
+    land-color="var(--land)" land-stroke="var(--coast)"></world-map>
+</div>
+
+<script type="module" src="../dist/mappo.js"></script>
+<script>t.onclick=()=>{const e=document.documentElement;e.dataset.theme=e.dataset.theme==="dark"?"light":"dark"}</script>
+</body></html>

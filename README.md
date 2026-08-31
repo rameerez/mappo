@@ -136,34 +136,54 @@ parallel the point buffer index-for-index (the same discipline as the
 animation phase fields — geometry arrays never reorder, parallel arrays
 annotate them), and the draw loop batches colour switches on flag runs.
 
-## Solid land (v0.5)
+## Land styles (v0.5)
+
+One option, four values, **identical on the flat map and the globe**:
 
 ```html
-<world-map land="solid" land-color="var(--land)"></world-map>
+<world-map land="dots"></world-map>           <!-- the dot field (default) -->
+<world-map land="solid"></world-map>          <!-- filled landmass -->
+<world-map land="outline"></world-map>        <!-- coastline only -->
+<world-map land="solid outline"></world-map>  <!-- filled, coast on top -->
 ```
 
-The same mask, drawn as filled shape instead of a dot field. Land cells are
-merged into horizontal runs per row and the whole world becomes **one `<path>`**
-— a 150-column map is ~300 subpaths in a single node instead of ~2000 dot
-nodes. Adjacent rows share edges exactly, so runs fuse into continents with no
-seams and no overdraw.
+`land` is a space-separated token list, so combinations read the way you would
+say them. `filled` and `stroke` are accepted as synonyms; order and case do not
+matter.
 
-The blockiness is deliberate: at the resolution a symbolic map uses, the grid IS
-the visual language — the same grid the dot mode celebrates. A smoothed
-coastline would read as a poor tracing of a real map rather than an abstraction.
+| Option | Default | What it paints |
+|---|---|---|
+| `land-color` | `dot-color` | the fill |
+| `land-stroke` | `land-color` → `dot-color` | the coastline |
+| `land-stroke-width` | `1` | coastline weight |
 
-Fill is written as `style="fill:…"` rather than the `fill` attribute, because
-`fill="var(--x)"` is invalid CSS while the style property resolves — so solid
-land follows your CSS variables with no colour plumbing.
+All three accept `var(--x)`, like every other colour.
 
-Pair it with `highlight-polygon` (now supported in flat mode too) to light a
-whole country rather than pin it:
+### One geometry, not three renderers
 
-```html
-<world-map land="solid" highlight-color="#5f8a3f"
-           highlight-polygon="[[[42.1,-8.2],[41.9,-6.2],…]]"></world-map>
+`solid`, `outline` and `solid outline` are three renderings of a **single**
+geometry — the closed boundary contours traced once in `land.js` and exported as
+`buildLand(grid)`. That matters for a reason you can see: an outline traced from
+per-cell rectangles strokes every internal cell edge and draws a wireframe. A
+contour is only ever drawn where land meets sea, so the coast is a coast. The
+rings are closed and consistently wound (outer clockwise, holes
+counter-clockwise), so the same path data also fills correctly with inland seas
+left empty — no second code path, nothing to drift.
+
+The globe splits fill and stroke deliberately, because a sphere is not a plane:
+the coastline is stroked from those same contours and broken at the limb, while
+the fill is painted as projected per-cell quads — a closed ring that crosses the
+limb is no longer closed in screen space and cannot be filled, whereas quads
+tile into the same landmass and cull one by one. Same geometry, same option
+names, same result to the eye.
+
+```js
+import { buildLand, parseLandStyle } from "mappo";
+const { cells, loops } = buildLand({ cols: 120, rows: 47, latRange: [-58, 84] });
+// loops: closed rings in grid-corner coordinates — yours to project or stroke
 ```
 
+## Roll — the lean (v0.5)
 ## Roll — the lean (v0.5)
 
 ```html

@@ -16,6 +16,8 @@ const ATTR_MAP = {
   "globe-ring":       ["globeRing", (v) => v !== "false"],
   "land":             ["land", String],
   "land-color":       ["landColor", String],
+  "land-stroke":      ["landStroke", String],
+  "land-stroke-width":["landStrokeWidth", Number],
   "roll":             ["roll", Number],
   "graticule":        ["graticule", (v) => v !== "false"],
   "meridians":        ["meridians", Number],

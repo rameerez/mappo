@@ -43,3 +43,15 @@ export function projectNormalized(lat, lon, { latRange } = {}) {
     y: (latMax - lat) / (latMax - latMin)
   };
 }
+
+// The lat/lon of a grid CORNER — where cell boundaries live, and therefore
+// where coastline geometry lives. cellCenter answers for the middle of a cell;
+// contours are traced along its edges, so they need this. Same linear mapping,
+// no +0.5 offset.
+export function cellCorner(col, row, { cols, rows, latRange }) {
+  const [ latMin, latMax ] = latRange;
+  return {
+    lat: latMax - (row / rows) * (latMax - latMin),
+    lon: -180 + (col / cols) * 360
+  };
+}

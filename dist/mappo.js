@@ -72,6 +72,18 @@ export function projectNormalized(lat, lon, { latRange } = {}) {
   };
 }
 
+// The lat/lon of a grid CORNER — where cell boundaries live, and therefore
+// where coastline geometry lives. cellCenter answers for the middle of a cell;
+// contours are traced along its edges, so they need this. Same linear mapping,
+// no +0.5 offset.
+export function cellCorner(col, row, { cols, rows, latRange }) {
+  const [ latMin, latMax ] = latRange;
+  return {
+    lat: latMax - (row / rows) * (latMax - latMin),
+    lon: -180 + (col / cols) * 360
+  };
+}
+
 // ══════════ src/graticule.js ══════════
 // The graticule: meridians, parallels, and the equator, as lat/lon polylines.
 //
@@ -131,6 +143,123 @@ export function buildGraticule({ meridians = 12, parallels = 11, skipDeg = 5 } =
   }
 
   return { meridians: mers, parallels: pars, equator: parallel(0) };
+}
+
+// ══════════ src/land.js ══════════
+// Land as SHAPE — the single source of truth behind every non-dot land style,
+// on both renderers.
+//
+// One sampling pass produces two things:
+//
+//   cells — the land cells themselves, for anything that fills by cell (the
+//           globe fills projected quads, because a filled outline that crosses
+//           the limb cannot be closed correctly on a sphere).
+//   loops — the CLOSED boundary contours of the landmass, in grid-corner
+//           coordinates, for anything that draws the coastline (the flat map
+//           fills and strokes the very same path; the globe strokes it).
+//
+// Why contours and not "a rectangle per cell": a rectangle grid strokes every
+// internal cell edge, which draws a wireframe, not a coastline. Tracing the
+// boundary means the outline is exactly where land meets sea and nowhere else —
+// and because the loops are closed and consistently wound, the SAME path data
+// fills correctly, holes included. That is what lets `solid`, `outline` and
+// `solid outline` be three renderings of one geometry rather than three
+// implementations that can disagree.
+//
+// Winding: outer rings run clockwise in screen space (y down), holes run
+// counter-clockwise, which is what `fill-rule: nonzero` wants — inland seas
+// stay empty without anyone declaring them.
+
+
+const cache = new Map();
+
+// wrapX: treat column -1 and column `cols` as the far side of the map. The
+// globe wants this (there is no edge at the antimeridian, only more world);
+// the flat map does not (its frame really does end at ±180).
+function landAt(col, row, grid, wrapX) {
+  if (row < 0 || row >= grid.rows) return false;
+  let c = col;
+  if (c < 0 || c >= grid.cols) {
+    if (!wrapX) return false;
+    c = ((c % grid.cols) + grid.cols) % grid.cols;
+  }
+  const p = cellCenter(c, row, grid);
+  return isLand(p.lat, p.lon);
+}
+
+// Chain directed boundary edges into closed rings. Each edge is stored under
+// its start point; walking successors always terminates because every corner
+// has as many outgoing as incoming edges (a cell boundary is a closed curve).
+function chain(edges) {
+  const from = new Map();
+  for (const e of edges) {
+    const key = `${e[0]},${e[1]}`;
+    if (!from.has(key)) from.set(key, []);
+    from.get(key).push(e);
+  }
+
+  const loops = [];
+  for (const [ , bucket ] of from) {
+    while (bucket.length) {
+      const start = bucket.pop();
+      const loop = [ [ start[0], start[1] ] ];
+      let x = start[2], y = start[3];
+      // Guard the walk: a malformed edge set must not spin forever.
+      for (let guard = 0; guard <= edges.length; guard++) {
+        loop.push([ x, y ]);
+        if (x === start[0] && y === start[1]) break;
+        const next = from.get(`${x},${y}`);
+        if (!next?.length) break;
+        const e = next.pop();
+        x = e[2]; y = e[3];
+      }
+      if (loop.length > 2) loops.push(loop);
+    }
+  }
+  return loops;
+}
+
+// grid: { cols, rows, latRange }. Returns { cells, loops } in GRID units —
+// cells as [col, row], loop vertices as grid corners [col, row]. Renderers
+// scale (flat: × CELL) or project (globe: corner → lat/lon → sphere).
+export function buildLand(grid, { wrapX = false } = {}) {
+  const key = `${grid.cols}|${grid.rows}|${grid.latRange[0]}|${grid.latRange[1]}|${wrapX}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+
+  const cells = [];
+  const edges = [];
+  for (let row = 0; row < grid.rows; row++) {
+    for (let col = 0; col < grid.cols; col++) {
+      if (!landAt(col, row, grid, wrapX)) continue;
+      cells.push([ col, row ]);
+      // Clockwise with y pointing down.
+      if (!landAt(col, row - 1, grid, wrapX)) edges.push([ col, row, col + 1, row ]);
+      if (!landAt(col + 1, row, grid, wrapX)) edges.push([ col + 1, row, col + 1, row + 1 ]);
+      if (!landAt(col, row + 1, grid, wrapX)) edges.push([ col + 1, row + 1, col, row + 1 ]);
+      if (!landAt(col - 1, row, grid, wrapX)) edges.push([ col, row + 1, col, row ]);
+    }
+  }
+
+  const out = { cells, loops: chain(edges) };
+  cache.set(key, out);
+  return out;
+}
+
+// The land styles, parsed once so both renderers agree on what a value means.
+// `land` is a space-separated token list so combinations read naturally:
+//   land="dots"           the dot field mappo is named for (default)
+//   land="solid"          filled landmass
+//   land="outline"        coastline only
+//   land="solid outline"  filled, with the coast drawn on top
+export function parseLandStyle(value) {
+  const tokens = String(value ?? "dots").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const dots = tokens.includes("dots") || tokens.length === 0;
+  return {
+    dots,
+    fill: tokens.includes("solid") || tokens.includes("filled"),
+    stroke: tokens.includes("outline") || tokens.includes("stroke")
+  };
 }
 
 // ══════════ src/noise.js ══════════
@@ -551,6 +680,7 @@ export class GlobeRenderer {
   // angle deliberately survives.
   update() {
     this._cvCache = null;
+    this._land = null;
     this._rebuildData();
     this._draw();
   }
@@ -862,6 +992,76 @@ export class GlobeRenderer {
     };
   }
 
+  // Land as shape on the sphere — the same land.js geometry the flat map uses.
+  //
+  // The two halves are drawn differently ON PURPOSE, because a sphere is not a
+  // plane:
+  //
+  //   fill    — per-cell quads. A closed coastline loop that crosses the limb
+  //             cannot be filled correctly (half of it is on the far side and
+  //             the ring is no longer closed in screen space). Projected quads
+  //             tile edge-to-edge into the same landmass and cull individually,
+  //             so the limb is handled by simply not drawing what faces away.
+  //   outline — the contour loops, stroked and broken at the limb, exactly like
+  //             the graticule. A coastline is a line, so it has no such problem.
+  //
+  // Same source geometry, same option names, same result to the eye.
+  #drawLand(T, style) {
+    const o = this.o;
+    const ctx = this.ctx;
+    const cols = o.cols ?? 170;
+    const rows = Math.round((cols / 360) * (o.latRange[1] - o.latRange[0]));
+    const grid = { cols, rows, latRange: o.latRange };
+    // wrapX: on a globe there is no edge at the antimeridian, only more world.
+    this._land ??= buildLand(grid, { wrapX: true });
+
+    if (style.fill) {
+      ctx.fillStyle = this._c(o.landColor ?? o.dotColor);
+      for (const [ col, row ] of this._land.cells) {
+        const a = cellCorner(col, row, grid);
+        const b = cellCorner(col + 1, row, grid);
+        const c = cellCorner(col + 1, row + 1, grid);
+        const d = cellCorner(col, row + 1, grid);
+        const pa = this.#project(a.lat, a.lon, T);
+        if (!pa.front) continue;
+        const pb = this.#project(b.lat, b.lon, T);
+        const pc = this.#project(c.lat, c.lon, T);
+        const pd = this.#project(d.lat, d.lon, T);
+        if (!pb.front || !pc.front || !pd.front) continue;
+        ctx.globalAlpha = 0.35 + 0.65 * pa.z;   // the same depth fade the dots wear
+        ctx.beginPath();
+        ctx.moveTo(pa.sx, pa.sy);
+        ctx.lineTo(pb.sx, pb.sy);
+        ctx.lineTo(pc.sx, pc.sy);
+        ctx.lineTo(pd.sx, pd.sy);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    if (style.stroke) {
+      ctx.strokeStyle = this._c(o.landStroke ?? o.landColor ?? o.dotColor);
+      ctx.lineWidth = o.landStrokeWidth ?? 1;
+      ctx.lineJoin = "round";
+      for (const loop of this._land.loops) {
+        let drawing = false;
+        for (const [ col, row ] of loop) {
+          const g = cellCorner(col, row, grid);
+          const p = this.#project(g.lat, g.lon, T);
+          if (!p.front) {
+            if (drawing) { ctx.stroke(); drawing = false; }
+            continue;
+          }
+          if (!drawing) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); drawing = true; }
+          else ctx.lineTo(p.sx, p.sy);
+          ctx.globalAlpha = 0.3 + 0.7 * p.z;
+        }
+        if (drawing) ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // The graticule, stroked as polylines that break at the limb.
   //
   // Depth is carried by ALPHA rather than by clipping alone: a meridian
@@ -1051,9 +1251,14 @@ export class GlobeRenderer {
       phases: this.phases
     } : null;
 
-    ctx.fillStyle = this._c(o.dotColor);
-    this.#drawPoints(this.points, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, base, shape, alphaLo: 0.25, alphaHi: 0.75, anim,
-      flags: this.highlightFlags, baseColor: this._c(o.dotColor), hiColor: this._c(o.highlightColor) });
+    const landStyle = parseLandStyle(o.land);
+    if (landStyle.dots) {
+      ctx.fillStyle = this._c(o.dotColor);
+      this.#drawPoints(this.points, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, base, shape, alphaLo: 0.25, alphaHi: 0.75, anim,
+        flags: this.highlightFlags, baseColor: this._c(o.dotColor), hiColor: this._c(o.highlightColor) });
+    } else {
+      this.#drawLand(T, landStyle);
+    }
 
     // Hovered dot re-draws bigger in the hover color (cheap overdraw).
     if (this._hover?.kind === "dot") {
@@ -1164,11 +1369,17 @@ export const DEFAULTS = {
   // Graticule — the meridian/parallel grid (globe mode). The equator is
   // drawn separately so it can carry its own weight: it is the line a
   // reader orients against.
-    // Land rendering: "dots" (the dot field mappo is named for) or "solid"
-    // (one filled path — the same mask, drawn as shape).
-    land: "dots",
-    landColor: null,            // defaults to dotColor
-    roll: 0,                    // globe LEAN, in the plane of the screen (deg)
+  // How land is drawn. A space-separated token list, so combinations read
+  // the way you would say them out loud. Works identically on both renderers:
+  //   "dots"           the dot field mappo is named for (default)
+  //   "solid"          filled landmass
+  //   "outline"        coastline only
+  //   "solid outline"  filled, with the coast drawn on top
+  land: "dots",
+  landColor: null,            // fill; defaults to dotColor
+  landStroke: null,           // coastline; defaults to landColor, then dotColor
+  landStrokeWidth: 1,
+  roll: 0,                    // globe LEAN, in the plane of the screen (deg)
   graticule: false,
   meridians: 12,              // evenly spaced longitudes
   parallels: 11,              // evenly spaced latitudes; the equator is extra
@@ -1433,7 +1644,7 @@ if (this._overlayLayer) {
     svg.setAttribute("aria-label", this.#ariaLabel());
     // One parse for the whole scene — the fast path for full builds.
     const [markup, buildMs] = span("wm:build-markup", () =>
-      this.#defsMarkup(o) + this.#backdropMarkup(cols, rows) + (o.land === "solid" ? this.#landMarkup(this.grid, o) : this.#dotsMarkup(this.grid)) + this.#markersMarkup(this.grid, o));
+      this.#defsMarkup(o) + this.#backdropMarkup(cols, rows) + (parseLandStyle(o.land).dots ? this.#dotsMarkup(this.grid) : this.#landMarkup(this.grid, o)) + this.#markersMarkup(this.grid, o));
     const [, parseMs] = span("wm:parse-innerHTML", () => { svg.innerHTML = markup; });
     this.styleEl.textContent = this.#css(o);
     // Calibration (perf-harness lesson #2): the JS-side cost is only ~25%
@@ -1543,72 +1754,54 @@ if (this._overlayLayer) {
   // animation all live elsewhere — so the markup string caches perfectly per
   // resolution. Both animation phases ship on every dot (~30 bytes each):
   // that's what makes animation a style-only knob.
-  // Solid land: the same mask, drawn as filled shape instead of a dot field.
-  //
-  // ONE <path> for the whole world, not a rect per cell. Land cells are merged
-  // into horizontal runs per row and each run becomes a rectangle subpath, so a
-  // 128-column map that would be ~2000 dot nodes becomes a single node with a
-  // few hundred subpaths. Adjacent rows share edges exactly, so the runs fuse
-  // into continents with no seams and no overdraw.
-  //
-  // Why not marching squares for a smooth coastline: at the resolutions a
-  // symbolic map uses, the blockiness IS the visual language — the same grid
-  // the dot mode celebrates. A smoothed outline would read as a bad tracing of
-  // a real map rather than a deliberate abstraction. (If that changes, the run
-  // list here is the right input for it.)
-  //
-  // Fill goes through `style`, not the `fill` attribute, because
-  // `fill="var(--x)"` is invalid while `style="fill:var(--x)"` resolves — so
-  // solid land follows a host's CSS variables for free, with no colour
-  // resolver on this side.
+  // Land as shape. `solid`, `outline` and `solid outline` are three renderings
+  // of ONE geometry: the closed boundary contours from land.js. Because the
+  // loops are closed and consistently wound, the same `d` both fills (holes
+  // correct under fill-rule: nonzero) and strokes as a true coastline — no
+  // internal cell edges, because a contour is only ever drawn where land meets
+  // sea. Tracing per-cell rectangles instead would stroke a wireframe.
   #landMarkup(grid, o) {
-  const key = `solid|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
-  const cached = this._dotsCache.get(key);
-  if (cached) { this._dotCount = cached.dots; return cached.markup; }
-
-  const runs = [];
-  let cells = 0;
-  for (let row = 0; row < grid.rows; row++) {
-    let from = -1;
-    for (let col = 0; col <= grid.cols; col++) {
-      const land = col < grid.cols &&
-        isLand(cellCenter(col, row, grid).lat, cellCenter(col, row, grid).lon);
-      if (land) { cells++; if (from < 0) from = col; }
-      else if (from >= 0) {
-        runs.push(`M${from * CELL} ${row * CELL}h${(col - from) * CELL}v${CELL}h-${(col - from) * CELL}Z`);
-        from = -1;
-      }
+    const style = parseLandStyle(o.land);
+    const key = `land|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
+    let geom = this._dotsCache.get(key);
+    if (!geom) {
+      const { cells, loops } = buildLand(grid);
+      geom = {
+        d: loops.map((loop) => `M${loop.map(([ x, y ]) => `${x * CELL} ${y * CELL}`).join("L")}Z`).join(""),
+        cells
+      };
+      this._dotsCache.set(key, geom);
     }
+    this._dotCount = geom.cells.length;
+
+    const fill = style.fill ? (o.landColor ?? o.dotColor) : "none";
+    const stroke = style.stroke ? (o.landStroke ?? o.landColor ?? o.dotColor) : "none";
+    const width = o.landStrokeWidth ?? 1;
+    // style= rather than fill=/stroke=: `fill="var(--x)"` is invalid, while the
+    // style property resolves — so land follows the host's CSS variables with
+    // no colour resolver on this side.
+    const css = `fill:${escapeAttr(fill)};stroke:${escapeAttr(stroke)};` +
+      `stroke-width:${width * (CELL / 10)};stroke-linejoin:round;fill-rule:nonzero`;
+    return `<g class="wm-land"><path class="wm-land-path" style="${css}" d="${geom.d}"/>` +
+      `${this.#landHighlightMarkup(grid, o)}</g>`;
   }
 
-  const fill = o.landColor ?? o.dotColor;
-  const markup = `<g class="wm-land"><path class="wm-land-path" style="fill:${escapeAttr(fill)}" d="${runs.join("")}"/>${this.#landHighlightMarkup(grid, o)}</g>`;
-  this._dotsCache.set(key, { markup, dots: cells });
-  this._dotCount = cells;
-  return markup;
-  }
-
-  // The highlight polygon, in FLAT mode: the same ray-cast highlight.js does
-  // for the globe, painting a second path on top of the land. This is what
-  // "light up this country" means on a flat map — the region glows, not a pin.
+  // The highlight polygon in FLAT mode — the same ray-cast highlight.js already
+  // did for the globe. A highlight is a FILL, so it paints the land cells inside
+  // the region rather than tracing them: it reads as a lit area, and it reuses
+  // the very cell list the contours were traced from.
   #landHighlightMarkup(grid, o) {
-  if (!o.highlightPolygon?.length) return "";
-  const normalized = normalizeRings(o.highlightPolygon);
-  const runs = [];
-  for (let row = 0; row < grid.rows; row++) {
-    let from = -1;
-    for (let col = 0; col <= grid.cols; col++) {
-      const c = col < grid.cols ? cellCenter(col, row, grid) : null;
-      const hit = c && isLand(c.lat, c.lon) && pointInRings(c.lat, c.lon, normalized);
-      if (hit) { if (from < 0) from = col; }
-      else if (from >= 0) {
-        runs.push(`M${from * CELL} ${row * CELL}h${(col - from) * CELL}v${CELL}h-${(col - from) * CELL}Z`);
-        from = -1;
-      }
+    if (!o.highlightPolygon?.length) return "";
+    const normalized = normalizeRings(o.highlightPolygon);
+    const { cells } = buildLand(grid);
+    const parts = [];
+    for (const [ col, row ] of cells) {
+      const c = cellCenter(col, row, grid);
+      if (!pointInRings(c.lat, c.lon, normalized)) continue;
+      parts.push(`M${col * CELL} ${row * CELL}h${CELL}v${CELL}h-${CELL}Z`);
     }
-  }
-  if (!runs.length) return "";
-  return `<path class="wm-land-highlight" style="fill:${escapeAttr(o.highlightColor)}" d="${runs.join("")}"/>`;
+    if (!parts.length) return "";
+    return `<path class="wm-land-highlight" style="fill:${escapeAttr(o.highlightColor)}" d="${parts.join("")}"/>`;
   }
 
   #dotsMarkup(grid) {
@@ -1954,6 +2147,8 @@ const ATTR_MAP = {
   "globe-ring":       ["globeRing", (v) => v !== "false"],
   "land":             ["land", String],
   "land-color":       ["landColor", String],
+  "land-stroke":      ["landStroke", String],
+  "land-stroke-width":["landStrokeWidth", Number],
   "roll":             ["roll", Number],
   "graticule":        ["graticule", (v) => v !== "false"],
   "meridians":        ["meridians", Number],

@@ -20,6 +20,8 @@ import { normalizeRings, pointInRings } from "./highlight.js";
 import { noise2 } from "./noise.js";
 import { hoverShade, resolveColor, usesCssVars } from "./color.js";
 import { buildGraticule } from "./graticule.js";
+import { buildLand, parseLandStyle } from "./land.js";
+import { cellCorner } from "./projection.js";
 
 // Unit-sphere position for a lat/lon. At rotation 0, lon 0 faces the
 // viewer (+z out of the screen), +y is north.
@@ -202,6 +204,7 @@ export class GlobeRenderer {
   // angle deliberately survives.
   update() {
     this._cvCache = null;
+    this._land = null;
     this._rebuildData();
     this._draw();
   }
@@ -513,6 +516,76 @@ export class GlobeRenderer {
     };
   }
 
+  // Land as shape on the sphere — the same land.js geometry the flat map uses.
+  //
+  // The two halves are drawn differently ON PURPOSE, because a sphere is not a
+  // plane:
+  //
+  //   fill    — per-cell quads. A closed coastline loop that crosses the limb
+  //             cannot be filled correctly (half of it is on the far side and
+  //             the ring is no longer closed in screen space). Projected quads
+  //             tile edge-to-edge into the same landmass and cull individually,
+  //             so the limb is handled by simply not drawing what faces away.
+  //   outline — the contour loops, stroked and broken at the limb, exactly like
+  //             the graticule. A coastline is a line, so it has no such problem.
+  //
+  // Same source geometry, same option names, same result to the eye.
+  #drawLand(T, style) {
+    const o = this.o;
+    const ctx = this.ctx;
+    const cols = o.cols ?? 170;
+    const rows = Math.round((cols / 360) * (o.latRange[1] - o.latRange[0]));
+    const grid = { cols, rows, latRange: o.latRange };
+    // wrapX: on a globe there is no edge at the antimeridian, only more world.
+    this._land ??= buildLand(grid, { wrapX: true });
+
+    if (style.fill) {
+      ctx.fillStyle = this._c(o.landColor ?? o.dotColor);
+      for (const [ col, row ] of this._land.cells) {
+        const a = cellCorner(col, row, grid);
+        const b = cellCorner(col + 1, row, grid);
+        const c = cellCorner(col + 1, row + 1, grid);
+        const d = cellCorner(col, row + 1, grid);
+        const pa = this.#project(a.lat, a.lon, T);
+        if (!pa.front) continue;
+        const pb = this.#project(b.lat, b.lon, T);
+        const pc = this.#project(c.lat, c.lon, T);
+        const pd = this.#project(d.lat, d.lon, T);
+        if (!pb.front || !pc.front || !pd.front) continue;
+        ctx.globalAlpha = 0.35 + 0.65 * pa.z;   // the same depth fade the dots wear
+        ctx.beginPath();
+        ctx.moveTo(pa.sx, pa.sy);
+        ctx.lineTo(pb.sx, pb.sy);
+        ctx.lineTo(pc.sx, pc.sy);
+        ctx.lineTo(pd.sx, pd.sy);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    if (style.stroke) {
+      ctx.strokeStyle = this._c(o.landStroke ?? o.landColor ?? o.dotColor);
+      ctx.lineWidth = o.landStrokeWidth ?? 1;
+      ctx.lineJoin = "round";
+      for (const loop of this._land.loops) {
+        let drawing = false;
+        for (const [ col, row ] of loop) {
+          const g = cellCorner(col, row, grid);
+          const p = this.#project(g.lat, g.lon, T);
+          if (!p.front) {
+            if (drawing) { ctx.stroke(); drawing = false; }
+            continue;
+          }
+          if (!drawing) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); drawing = true; }
+          else ctx.lineTo(p.sx, p.sy);
+          ctx.globalAlpha = 0.3 + 0.7 * p.z;
+        }
+        if (drawing) ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // The graticule, stroked as polylines that break at the limb.
   //
   // Depth is carried by ALPHA rather than by clipping alone: a meridian
@@ -702,9 +775,14 @@ export class GlobeRenderer {
       phases: this.phases
     } : null;
 
-    ctx.fillStyle = this._c(o.dotColor);
-    this.#drawPoints(this.points, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, base, shape, alphaLo: 0.25, alphaHi: 0.75, anim,
-      flags: this.highlightFlags, baseColor: this._c(o.dotColor), hiColor: this._c(o.highlightColor) });
+    const landStyle = parseLandStyle(o.land);
+    if (landStyle.dots) {
+      ctx.fillStyle = this._c(o.dotColor);
+      this.#drawPoints(this.points, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, base, shape, alphaLo: 0.25, alphaHi: 0.75, anim,
+        flags: this.highlightFlags, baseColor: this._c(o.dotColor), hiColor: this._c(o.highlightColor) });
+    } else {
+      this.#drawLand(T, landStyle);
+    }
 
     // Hovered dot re-draws bigger in the hover color (cheap overdraw).
     if (this._hover?.kind === "dot") {
