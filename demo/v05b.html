@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>mappo v0.5 — solid land + roll</title>
+<style>
+ :root{--page:#fffbf5;--land:#c9d3bd;--hi:#5f8a3f;--grid:#d8d2c8;--eq:#b08a4a;--ink:#1b1a19;--pill:#fff}
+ html[data-theme="dark"]{--page:#14161a;--land:#2f3540;--hi:#7aa2f7;--grid:#2a3038;--eq:#6ea8ff;--ink:#e7ecf3;--pill:#1d2229}
+ body{margin:0;padding:28px;background:var(--page);color:var(--ink);font:14px/1.5 system-ui,sans-serif}
+ h2{font-size:12px;text-transform:uppercase;letter-spacing:.1em;opacity:.55;margin:26px 0 8px}
+ .row{display:grid;grid-template-columns:1fr 1fr;gap:32px}
+ button{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--grid);background:var(--pill);color:var(--ink);cursor:pointer}
+ .pin{pointer-events:auto}
+ .pin>span{display:flex;align-items:center;gap:6px;white-space:nowrap;transform:translate(-50%,-50%);
+   background:var(--pill);color:var(--ink);border:1px solid var(--grid);border-radius:999px;padding:3px 9px;
+   font-size:11px;font-weight:600;box-shadow:0 2px 8px rgb(0 0 0/.16);
+   opacity:calc(.3 + .7*var(--mappo-depth,1))}
+ .pin>span::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--hi)}
+ .pin[data-mappo-behind]{visibility:hidden}
+</style></head><body>
+<button id="t">Toggle dark</button>
+
+<h2>1 · FLAT, SOLID LAND (land="solid") — the filled landmass</h2>
+<world-map cols="150" land="solid" land-color="var(--land)"></world-map>
+
+<h2>2 · SOLID + highlight-polygon (flat) — a country lit, not a pin</h2>
+<world-map cols="150" land="solid" land-color="var(--land)" highlight-color="var(--hi)"
+  highlight-polygon='[[[42.1,-8.2],[41.9,-6.2],[39.7,-7.0],[38.0,-7.0],[37.0,-7.4],[37.0,-8.9],[38.7,-9.5],[41.0,-8.9],[42.1,-8.2]]]'>
+  <a class="pin" data-lat="39.6" data-lon="-8.0" href="#pt"><span>Portugal</span></a>
+</world-map>
+
+<h2>3 · GLOBE ROLL — the lean. roll=0 / -14.3° (Cloudflare's) / -30°, all with tilt=0</h2>
+<div class="row" style="grid-template-columns:repeat(3,1fr)">
+  <world-map mode="globe" cols="140" rotate-speed="0" roll="0"     graticule meridians="24" parallels="23"
+    dot-color="var(--land)" graticule-color="var(--grid)" equator-color="var(--eq)" equator-opacity="0.9"></world-map>
+  <world-map mode="globe" cols="140" rotate-speed="0" roll="-14.3" graticule meridians="24" parallels="23"
+    dot-color="var(--land)" graticule-color="var(--grid)" equator-color="var(--eq)" equator-opacity="0.9">
+    <a class="pin" data-lat="38.7" data-lon="-9.1" href="#l"><span>Lisbon</span></a>
+  </world-map>
+  <world-map mode="globe" cols="140" rotate-speed="0" roll="-30"   graticule meridians="24" parallels="23"
+    dot-color="var(--land)" graticule-color="var(--grid)" equator-color="var(--eq)" equator-opacity="0.9"></world-map>
+</div>
+
+<h2>4 · ROLL + TILT compose (roll=-14.3, tilt=25) · and a spinning one</h2>
+<div class="row">
+  <world-map mode="globe" cols="140" rotate-speed="0" roll="-14.3" tilt="25" graticule meridians="24" parallels="23"
+    dot-color="var(--land)" graticule-color="var(--grid)" equator-color="var(--eq)" equator-opacity="0.9"></world-map>
+  <world-map mode="globe" cols="140" rotate-speed="8" roll="-14.3" tilt="12" graticule meridians="24" parallels="23"
+    dot-color="var(--land)" graticule-color="var(--grid)" equator-color="var(--eq)" equator-opacity="0.9">
+    <a class="pin" data-lat="35.7" data-lon="139.7" href="#t2"><span>Tokyo</span></a>
+    <a class="pin" data-lat="-23.5" data-lon="-46.6" href="#s"><span>São Paulo</span></a>
+  </world-map>
+</div>
+
+<script type="module" src="../dist/mappo.js"></script>
+<script>t.onclick=()=>{const e=document.documentElement;e.dataset.theme=e.dataset.theme==="dark"?"light":"dark"}</script>
+</body></html>

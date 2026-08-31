@@ -41,6 +41,7 @@
 
 import { isLand } from "./mask.js";
 import { project, cellCenter, projectNormalized } from "./projection.js";
+import { normalizeRings, pointInRings } from "./highlight.js";
 import { resolveCity } from "./cities.js";
 import { noise2 } from "./noise.js";
 import { GlobeRenderer } from "./globe.js";
@@ -69,22 +70,27 @@ export const DEFAULTS = {
   cities: [],                 // ["London", { name, lat, lon, color? }, …]
   markers: [],                // coordinate pins: [{ name, lat, lon }, ...] — merged with cities
   focus: null,                // { lat, lon } the globe starts facing (rotate-speed 0 holds it)
-// Graticule — the meridian/parallel grid (globe mode). The equator is
-// drawn separately so it can carry its own weight: it is the line a
-// reader orients against.
-graticule: false,
-meridians: 12,              // evenly spaced longitudes
-parallels: 11,              // evenly spaced latitudes; the equator is extra
-graticuleColor: null,       // defaults to dotColor
-equatorColor: null,         // defaults to graticuleColor
-graticuleOpacity: 0.28,
-equatorOpacity: 0.6,
-// Position host DOM carrying data-lat/data-lon over the map (globe mode).
-overlays: true,
-// Cap the canvas backing store. 3× devices buy no visible detail on a
-// dot field and pay full fill-rate for it.
-maxDpr: 2,
-highlightPolygon: null,     // rings of [lat, lon] — dots inside draw in highlightColor (globe mode)
+  // Graticule — the meridian/parallel grid (globe mode). The equator is
+  // drawn separately so it can carry its own weight: it is the line a
+  // reader orients against.
+    // Land rendering: "dots" (the dot field mappo is named for) or "solid"
+    // (one filled path — the same mask, drawn as shape).
+    land: "dots",
+    landColor: null,            // defaults to dotColor
+    roll: 0,                    // globe LEAN, in the plane of the screen (deg)
+  graticule: false,
+  meridians: 12,              // evenly spaced longitudes
+  parallels: 11,              // evenly spaced latitudes; the equator is extra
+  graticuleColor: null,       // defaults to dotColor
+  equatorColor: null,         // defaults to graticuleColor
+  graticuleOpacity: 0.28,
+  equatorOpacity: 0.6,
+  // Position host DOM carrying data-lat/data-lon over the map (globe mode).
+  overlays: true,
+  // Cap the canvas backing store. 3× devices buy no visible detail on a
+  // dot field and pay full fill-rate for it.
+  maxDpr: 2,
+  highlightPolygon: null,     // rings of [lat, lon] — dots inside draw in highlightColor (globe mode)
   highlightColor: "#8fb0d8",
   markerShape: "circle",
   markerColor: "#2262fe",
@@ -336,7 +342,7 @@ if (this._overlayLayer) {
     svg.setAttribute("aria-label", this.#ariaLabel());
     // One parse for the whole scene — the fast path for full builds.
     const [markup, buildMs] = span("wm:build-markup", () =>
-      this.#defsMarkup(o) + this.#backdropMarkup(cols, rows) + this.#dotsMarkup(this.grid) + this.#markersMarkup(this.grid, o));
+      this.#defsMarkup(o) + this.#backdropMarkup(cols, rows) + (o.land === "solid" ? this.#landMarkup(this.grid, o) : this.#dotsMarkup(this.grid)) + this.#markersMarkup(this.grid, o));
     const [, parseMs] = span("wm:parse-innerHTML", () => { svg.innerHTML = markup; });
     this.styleEl.textContent = this.#css(o);
     // Calibration (perf-harness lesson #2): the JS-side cost is only ~25%
@@ -446,6 +452,74 @@ if (this._overlayLayer) {
   // animation all live elsewhere — so the markup string caches perfectly per
   // resolution. Both animation phases ship on every dot (~30 bytes each):
   // that's what makes animation a style-only knob.
+  // Solid land: the same mask, drawn as filled shape instead of a dot field.
+  //
+  // ONE <path> for the whole world, not a rect per cell. Land cells are merged
+  // into horizontal runs per row and each run becomes a rectangle subpath, so a
+  // 128-column map that would be ~2000 dot nodes becomes a single node with a
+  // few hundred subpaths. Adjacent rows share edges exactly, so the runs fuse
+  // into continents with no seams and no overdraw.
+  //
+  // Why not marching squares for a smooth coastline: at the resolutions a
+  // symbolic map uses, the blockiness IS the visual language — the same grid
+  // the dot mode celebrates. A smoothed outline would read as a bad tracing of
+  // a real map rather than a deliberate abstraction. (If that changes, the run
+  // list here is the right input for it.)
+  //
+  // Fill goes through `style`, not the `fill` attribute, because
+  // `fill="var(--x)"` is invalid while `style="fill:var(--x)"` resolves — so
+  // solid land follows a host's CSS variables for free, with no colour
+  // resolver on this side.
+  #landMarkup(grid, o) {
+  const key = `solid|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
+  const cached = this._dotsCache.get(key);
+  if (cached) { this._dotCount = cached.dots; return cached.markup; }
+
+  const runs = [];
+  let cells = 0;
+  for (let row = 0; row < grid.rows; row++) {
+    let from = -1;
+    for (let col = 0; col <= grid.cols; col++) {
+      const land = col < grid.cols &&
+        isLand(cellCenter(col, row, grid).lat, cellCenter(col, row, grid).lon);
+      if (land) { cells++; if (from < 0) from = col; }
+      else if (from >= 0) {
+        runs.push(`M${from * CELL} ${row * CELL}h${(col - from) * CELL}v${CELL}h-${(col - from) * CELL}Z`);
+        from = -1;
+      }
+    }
+  }
+
+  const fill = o.landColor ?? o.dotColor;
+  const markup = `<g class="wm-land"><path class="wm-land-path" style="fill:${escapeAttr(fill)}" d="${runs.join("")}"/>${this.#landHighlightMarkup(grid, o)}</g>`;
+  this._dotsCache.set(key, { markup, dots: cells });
+  this._dotCount = cells;
+  return markup;
+  }
+
+  // The highlight polygon, in FLAT mode: the same ray-cast highlight.js does
+  // for the globe, painting a second path on top of the land. This is what
+  // "light up this country" means on a flat map — the region glows, not a pin.
+  #landHighlightMarkup(grid, o) {
+  if (!o.highlightPolygon?.length) return "";
+  const normalized = normalizeRings(o.highlightPolygon);
+  const runs = [];
+  for (let row = 0; row < grid.rows; row++) {
+    let from = -1;
+    for (let col = 0; col <= grid.cols; col++) {
+      const c = col < grid.cols ? cellCenter(col, row, grid) : null;
+      const hit = c && isLand(c.lat, c.lon) && pointInRings(c.lat, c.lon, normalized);
+      if (hit) { if (from < 0) from = col; }
+      else if (from >= 0) {
+        runs.push(`M${from * CELL} ${row * CELL}h${(col - from) * CELL}v${CELL}h-${(col - from) * CELL}Z`);
+        from = -1;
+      }
+    }
+  }
+  if (!runs.length) return "";
+  return `<path class="wm-land-highlight" style="fill:${escapeAttr(o.highlightColor)}" d="${runs.join("")}"/>`;
+  }
+
   #dotsMarkup(grid) {
     const key = `${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
     const cached = this._dotsCache.get(key);

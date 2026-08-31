@@ -366,6 +366,14 @@ export class GlobeRenderer {
     const tilt = ((this.o.tilt || 0) * Math.PI) / 180;
     const sinR = Math.sin(rot), cosR = Math.cos(rot);
     const sinT = Math.sin(tilt), cosT = Math.cos(tilt);
+    // Un-roll the pointer first: roll is applied last when drawing, so it
+    // is undone first when inverting. Everything below then works in the
+    // unrolled frame exactly as it did before roll existed.
+    const roll = ((this.o.roll || 0) * Math.PI) / 180;
+    const sinRo = Math.sin(-roll), cosRo = Math.cos(-roll);
+    const rdx = mx - cx, rdy = my - cy;
+    const ux = cx + rdx * cosRo - rdy * sinRo;
+    const uy = cy + rdx * sinRo + rdy * cosRo;
     const base = Math.max(0.75, (4 * R) / (this.o.cols ?? 170)) * this.o.dotSize * 1.6;
 
     for (const city of this.cityData) {
@@ -374,13 +382,13 @@ export class GlobeRenderer {
       const y2 = city.p.y * cosT - z1 * sinT;
       const z2 = city.p.y * sinT + z1 * cosT;
       if (z2 <= 0.01) continue;
-      if (Math.hypot(mx - (cx + x1 * R), my - (cy - y2 * R)) <= Math.max(10, base * this.o.markerScale * 0.9)) {
+      if (Math.hypot(ux - (cx + x1 * R), uy - (cy - y2 * R)) <= Math.max(10, base * this.o.markerScale * 0.9)) {
         return { kind: "city", detail: { name: city.name, lat: city.lat, lon: city.lon, element: this.canvas } };
       }
     }
 
-    const X = (mx - cx) / R;
-    const Y = -(my - cy) / R;
+    const X = (ux - cx) / R;
+    const Y = -(uy - cy) / R;
     const rr = X * X + Y * Y;
     if (rr > 1) return null;
     const Z = Math.sqrt(1 - rr);
@@ -491,13 +499,18 @@ export class GlobeRenderer {
   // times a frame and every property read shows up); everything else —
   // graticule, DOM overlays, future arcs — goes through here so there is a
   // single definition of the transform to keep correct.
-  #project(lat, lon, { cx, cy, R, sinR, cosR, sinT, cosT }) {
+  #project(lat, lon, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo = 0, cosRo = 1 }) {
     const p = latLonToXYZ(lat, lon);
     const x1 = p.x * cosR + p.z * sinR;
     const z1 = -p.x * sinR + p.z * cosR;
     const y2 = p.y * cosT - z1 * sinT;
     const z2 = p.y * sinT + z1 * cosT;
-    return { sx: cx + x1 * R, sy: cy - y2 * R, z: z2, front: z2 > 0.01 };
+    const dx = x1 * R, dy = -y2 * R;
+    return {
+  sx: cx + dx * cosRo - dy * sinRo,
+  sy: cy + dx * sinRo + dy * cosRo,
+  z: z2, front: z2 > 0.01
+    };
   }
 
   // The graticule, stroked as polylines that break at the limb.
@@ -565,7 +578,7 @@ export class GlobeRenderer {
     }
   }
 
-  #drawPoints(pts, { cx, cy, R, sinR, cosR, sinT, cosT, base, shape, alphaLo, alphaHi, anim, flags, baseColor, hiColor }) {
+  #drawPoints(pts, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo = 0, cosRo = 1, base, shape, alphaLo, alphaHi, anim, flags, baseColor, hiColor }) {
     const ctx = this.ctx;
     let currentHi = null;
     for (let i = 0; i < pts.length; i += 3) {
@@ -596,9 +609,10 @@ export class GlobeRenderer {
           else lift = (anim.heightPx * bump) / R;
         }
       }
-      const k = 1 + lift;
-      const sx = cx + x1 * R * k;
-      const sy = cy - y2 * R * k;
+    const k = 1 + lift;
+    const dx = x1 * R * k, dy = -y2 * R * k;
+    const sx = cx + dx * cosRo - dy * sinRo;
+    const sy = cy + dx * sinRo + dy * cosRo;
       const s = base * (0.45 + 0.55 * z2) * sizeMul; // foreshortening at the limb
       ctx.globalAlpha = alphaLo + alphaHi * z2; // …and a depth fade
       if (shape === "circle") {
@@ -650,8 +664,15 @@ export class GlobeRenderer {
     const tilt = ((o.tilt || 0) * Math.PI) / 180;
     const sinR = Math.sin(rot), cosR = Math.cos(rot);
     const sinT = Math.sin(tilt), cosT = Math.cos(tilt);
+    // roll: the LEAN. tilt leans the axis away from the viewer (a
+    // foreshortening, in 3D); roll turns the finished disc in the plane of
+    // the screen, which is the "globe sitting at an angle" look. They are
+    // different gestures and compose — so roll is applied last, to the
+    // projected point, where it is a plain 2D rotation about the centre.
+    const roll = ((o.roll || 0) * Math.PI) / 180;
+    const sinRo = Math.sin(roll), cosRo = Math.cos(roll);
 
-    const T = { cx, cy, R, sinR, cosR, sinT, cosT };
+    const T = { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo };
 
     // Graticule under the dots: it is the grid the world sits on, not an
     // overlay drawn across it.
@@ -666,7 +687,7 @@ export class GlobeRenderer {
     // Water never animates: the ocean is ground, the land is figure.
     if (this.waterPoints) {
       ctx.fillStyle = this._c(o.oceanColor);
-      this.#drawPoints(this.waterPoints, { cx, cy, R, sinR, cosR, sinT, cosT, base: base * 0.62, shape, alphaLo: 0.15, alphaHi: 0.55 });
+      this.#drawPoints(this.waterPoints, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, base: base * 0.62, shape, alphaLo: 0.15, alphaHi: 0.55 });
     }
 
     // The six animation modes on a sphere: the phase/amp fields decide when
@@ -682,7 +703,7 @@ export class GlobeRenderer {
     } : null;
 
     ctx.fillStyle = this._c(o.dotColor);
-    this.#drawPoints(this.points, { cx, cy, R, sinR, cosR, sinT, cosT, base, shape, alphaLo: 0.25, alphaHi: 0.75, anim,
+    this.#drawPoints(this.points, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, base, shape, alphaLo: 0.25, alphaHi: 0.75, anim,
       flags: this.highlightFlags, baseColor: this._c(o.dotColor), hiColor: this._c(o.highlightColor) });
 
     // Hovered dot re-draws bigger in the hover color (cheap overdraw).
@@ -695,8 +716,9 @@ export class GlobeRenderer {
       if (z2 > 0.01) {
         ctx.fillStyle = this._c(o.dotHoverColor) ?? hoverShade(this._c(o.dotColor));
         ctx.globalAlpha = 1;
-        const s = base * (0.45 + 0.55 * z2) * o.dotHoverScale;
-        this.#drawShape(cx + x1 * R, cy - y2 * R, s, shape);
+    const s = base * (0.45 + 0.55 * z2) * o.dotHoverScale;
+    const hdx = x1 * R, hdy = -y2 * R;
+    this.#drawShape(cx + hdx * cosRo - hdy * sinRo, cy + hdx * sinRo + hdy * cosRo, s, shape);
       }
     }
 
@@ -712,8 +734,9 @@ export class GlobeRenderer {
       const hovered = this._hover?.kind === "city" && this._hover.detail.name === city.name;
       ctx.globalAlpha = 1;
       const ms = base * o.markerScale * 0.6 * (hovered ? o.markerHoverScale : 1);
-      const mshape = ["circle", "square", "triangle", "pin"].includes(o.markerShape) ? o.markerShape : "circle";
-      this.#drawShape(cx + x1 * R, cy - y2 * R, ms * 2, mshape);
+    const mshape = ["circle", "square", "triangle", "pin"].includes(o.markerShape) ? o.markerShape : "circle";
+    const mdx = x1 * R, mdy = -y2 * R;
+    this.#drawShape(cx + mdx * cosRo - mdy * sinRo, cy + mdx * sinRo + mdy * cosRo, ms * 2, mshape);
     }
     ctx.globalAlpha = 1;
 

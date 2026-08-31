@@ -715,6 +715,14 @@ export class GlobeRenderer {
     const tilt = ((this.o.tilt || 0) * Math.PI) / 180;
     const sinR = Math.sin(rot), cosR = Math.cos(rot);
     const sinT = Math.sin(tilt), cosT = Math.cos(tilt);
+    // Un-roll the pointer first: roll is applied last when drawing, so it
+    // is undone first when inverting. Everything below then works in the
+    // unrolled frame exactly as it did before roll existed.
+    const roll = ((this.o.roll || 0) * Math.PI) / 180;
+    const sinRo = Math.sin(-roll), cosRo = Math.cos(-roll);
+    const rdx = mx - cx, rdy = my - cy;
+    const ux = cx + rdx * cosRo - rdy * sinRo;
+    const uy = cy + rdx * sinRo + rdy * cosRo;
     const base = Math.max(0.75, (4 * R) / (this.o.cols ?? 170)) * this.o.dotSize * 1.6;
 
     for (const city of this.cityData) {
@@ -723,13 +731,13 @@ export class GlobeRenderer {
       const y2 = city.p.y * cosT - z1 * sinT;
       const z2 = city.p.y * sinT + z1 * cosT;
       if (z2 <= 0.01) continue;
-      if (Math.hypot(mx - (cx + x1 * R), my - (cy - y2 * R)) <= Math.max(10, base * this.o.markerScale * 0.9)) {
+      if (Math.hypot(ux - (cx + x1 * R), uy - (cy - y2 * R)) <= Math.max(10, base * this.o.markerScale * 0.9)) {
         return { kind: "city", detail: { name: city.name, lat: city.lat, lon: city.lon, element: this.canvas } };
       }
     }
 
-    const X = (mx - cx) / R;
-    const Y = -(my - cy) / R;
+    const X = (ux - cx) / R;
+    const Y = -(uy - cy) / R;
     const rr = X * X + Y * Y;
     if (rr > 1) return null;
     const Z = Math.sqrt(1 - rr);
@@ -840,13 +848,18 @@ export class GlobeRenderer {
   // times a frame and every property read shows up); everything else —
   // graticule, DOM overlays, future arcs — goes through here so there is a
   // single definition of the transform to keep correct.
-  #project(lat, lon, { cx, cy, R, sinR, cosR, sinT, cosT }) {
+  #project(lat, lon, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo = 0, cosRo = 1 }) {
     const p = latLonToXYZ(lat, lon);
     const x1 = p.x * cosR + p.z * sinR;
     const z1 = -p.x * sinR + p.z * cosR;
     const y2 = p.y * cosT - z1 * sinT;
     const z2 = p.y * sinT + z1 * cosT;
-    return { sx: cx + x1 * R, sy: cy - y2 * R, z: z2, front: z2 > 0.01 };
+    const dx = x1 * R, dy = -y2 * R;
+    return {
+  sx: cx + dx * cosRo - dy * sinRo,
+  sy: cy + dx * sinRo + dy * cosRo,
+  z: z2, front: z2 > 0.01
+    };
   }
 
   // The graticule, stroked as polylines that break at the limb.
@@ -914,7 +927,7 @@ export class GlobeRenderer {
     }
   }
 
-  #drawPoints(pts, { cx, cy, R, sinR, cosR, sinT, cosT, base, shape, alphaLo, alphaHi, anim, flags, baseColor, hiColor }) {
+  #drawPoints(pts, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo = 0, cosRo = 1, base, shape, alphaLo, alphaHi, anim, flags, baseColor, hiColor }) {
     const ctx = this.ctx;
     let currentHi = null;
     for (let i = 0; i < pts.length; i += 3) {
@@ -945,9 +958,10 @@ export class GlobeRenderer {
           else lift = (anim.heightPx * bump) / R;
         }
       }
-      const k = 1 + lift;
-      const sx = cx + x1 * R * k;
-      const sy = cy - y2 * R * k;
+    const k = 1 + lift;
+    const dx = x1 * R * k, dy = -y2 * R * k;
+    const sx = cx + dx * cosRo - dy * sinRo;
+    const sy = cy + dx * sinRo + dy * cosRo;
       const s = base * (0.45 + 0.55 * z2) * sizeMul; // foreshortening at the limb
       ctx.globalAlpha = alphaLo + alphaHi * z2; // …and a depth fade
       if (shape === "circle") {
@@ -999,8 +1013,15 @@ export class GlobeRenderer {
     const tilt = ((o.tilt || 0) * Math.PI) / 180;
     const sinR = Math.sin(rot), cosR = Math.cos(rot);
     const sinT = Math.sin(tilt), cosT = Math.cos(tilt);
+    // roll: the LEAN. tilt leans the axis away from the viewer (a
+    // foreshortening, in 3D); roll turns the finished disc in the plane of
+    // the screen, which is the "globe sitting at an angle" look. They are
+    // different gestures and compose — so roll is applied last, to the
+    // projected point, where it is a plain 2D rotation about the centre.
+    const roll = ((o.roll || 0) * Math.PI) / 180;
+    const sinRo = Math.sin(roll), cosRo = Math.cos(roll);
 
-    const T = { cx, cy, R, sinR, cosR, sinT, cosT };
+    const T = { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo };
 
     // Graticule under the dots: it is the grid the world sits on, not an
     // overlay drawn across it.
@@ -1015,7 +1036,7 @@ export class GlobeRenderer {
     // Water never animates: the ocean is ground, the land is figure.
     if (this.waterPoints) {
       ctx.fillStyle = this._c(o.oceanColor);
-      this.#drawPoints(this.waterPoints, { cx, cy, R, sinR, cosR, sinT, cosT, base: base * 0.62, shape, alphaLo: 0.15, alphaHi: 0.55 });
+      this.#drawPoints(this.waterPoints, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, base: base * 0.62, shape, alphaLo: 0.15, alphaHi: 0.55 });
     }
 
     // The six animation modes on a sphere: the phase/amp fields decide when
@@ -1031,7 +1052,7 @@ export class GlobeRenderer {
     } : null;
 
     ctx.fillStyle = this._c(o.dotColor);
-    this.#drawPoints(this.points, { cx, cy, R, sinR, cosR, sinT, cosT, base, shape, alphaLo: 0.25, alphaHi: 0.75, anim,
+    this.#drawPoints(this.points, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, base, shape, alphaLo: 0.25, alphaHi: 0.75, anim,
       flags: this.highlightFlags, baseColor: this._c(o.dotColor), hiColor: this._c(o.highlightColor) });
 
     // Hovered dot re-draws bigger in the hover color (cheap overdraw).
@@ -1044,8 +1065,9 @@ export class GlobeRenderer {
       if (z2 > 0.01) {
         ctx.fillStyle = this._c(o.dotHoverColor) ?? hoverShade(this._c(o.dotColor));
         ctx.globalAlpha = 1;
-        const s = base * (0.45 + 0.55 * z2) * o.dotHoverScale;
-        this.#drawShape(cx + x1 * R, cy - y2 * R, s, shape);
+    const s = base * (0.45 + 0.55 * z2) * o.dotHoverScale;
+    const hdx = x1 * R, hdy = -y2 * R;
+    this.#drawShape(cx + hdx * cosRo - hdy * sinRo, cy + hdx * sinRo + hdy * cosRo, s, shape);
       }
     }
 
@@ -1061,8 +1083,9 @@ export class GlobeRenderer {
       const hovered = this._hover?.kind === "city" && this._hover.detail.name === city.name;
       ctx.globalAlpha = 1;
       const ms = base * o.markerScale * 0.6 * (hovered ? o.markerHoverScale : 1);
-      const mshape = ["circle", "square", "triangle", "pin"].includes(o.markerShape) ? o.markerShape : "circle";
-      this.#drawShape(cx + x1 * R, cy - y2 * R, ms * 2, mshape);
+    const mshape = ["circle", "square", "triangle", "pin"].includes(o.markerShape) ? o.markerShape : "circle";
+    const mdx = x1 * R, mdy = -y2 * R;
+    this.#drawShape(cx + mdx * cosRo - mdy * sinRo, cy + mdx * sinRo + mdy * cosRo, ms * 2, mshape);
     }
     ctx.globalAlpha = 1;
 
@@ -1138,22 +1161,27 @@ export const DEFAULTS = {
   cities: [],                 // ["London", { name, lat, lon, color? }, …]
   markers: [],                // coordinate pins: [{ name, lat, lon }, ...] — merged with cities
   focus: null,                // { lat, lon } the globe starts facing (rotate-speed 0 holds it)
-// Graticule — the meridian/parallel grid (globe mode). The equator is
-// drawn separately so it can carry its own weight: it is the line a
-// reader orients against.
-graticule: false,
-meridians: 12,              // evenly spaced longitudes
-parallels: 11,              // evenly spaced latitudes; the equator is extra
-graticuleColor: null,       // defaults to dotColor
-equatorColor: null,         // defaults to graticuleColor
-graticuleOpacity: 0.28,
-equatorOpacity: 0.6,
-// Position host DOM carrying data-lat/data-lon over the map (globe mode).
-overlays: true,
-// Cap the canvas backing store. 3× devices buy no visible detail on a
-// dot field and pay full fill-rate for it.
-maxDpr: 2,
-highlightPolygon: null,     // rings of [lat, lon] — dots inside draw in highlightColor (globe mode)
+  // Graticule — the meridian/parallel grid (globe mode). The equator is
+  // drawn separately so it can carry its own weight: it is the line a
+  // reader orients against.
+    // Land rendering: "dots" (the dot field mappo is named for) or "solid"
+    // (one filled path — the same mask, drawn as shape).
+    land: "dots",
+    landColor: null,            // defaults to dotColor
+    roll: 0,                    // globe LEAN, in the plane of the screen (deg)
+  graticule: false,
+  meridians: 12,              // evenly spaced longitudes
+  parallels: 11,              // evenly spaced latitudes; the equator is extra
+  graticuleColor: null,       // defaults to dotColor
+  equatorColor: null,         // defaults to graticuleColor
+  graticuleOpacity: 0.28,
+  equatorOpacity: 0.6,
+  // Position host DOM carrying data-lat/data-lon over the map (globe mode).
+  overlays: true,
+  // Cap the canvas backing store. 3× devices buy no visible detail on a
+  // dot field and pay full fill-rate for it.
+  maxDpr: 2,
+  highlightPolygon: null,     // rings of [lat, lon] — dots inside draw in highlightColor (globe mode)
   highlightColor: "#8fb0d8",
   markerShape: "circle",
   markerColor: "#2262fe",
@@ -1405,7 +1433,7 @@ if (this._overlayLayer) {
     svg.setAttribute("aria-label", this.#ariaLabel());
     // One parse for the whole scene — the fast path for full builds.
     const [markup, buildMs] = span("wm:build-markup", () =>
-      this.#defsMarkup(o) + this.#backdropMarkup(cols, rows) + this.#dotsMarkup(this.grid) + this.#markersMarkup(this.grid, o));
+      this.#defsMarkup(o) + this.#backdropMarkup(cols, rows) + (o.land === "solid" ? this.#landMarkup(this.grid, o) : this.#dotsMarkup(this.grid)) + this.#markersMarkup(this.grid, o));
     const [, parseMs] = span("wm:parse-innerHTML", () => { svg.innerHTML = markup; });
     this.styleEl.textContent = this.#css(o);
     // Calibration (perf-harness lesson #2): the JS-side cost is only ~25%
@@ -1515,6 +1543,74 @@ if (this._overlayLayer) {
   // animation all live elsewhere — so the markup string caches perfectly per
   // resolution. Both animation phases ship on every dot (~30 bytes each):
   // that's what makes animation a style-only knob.
+  // Solid land: the same mask, drawn as filled shape instead of a dot field.
+  //
+  // ONE <path> for the whole world, not a rect per cell. Land cells are merged
+  // into horizontal runs per row and each run becomes a rectangle subpath, so a
+  // 128-column map that would be ~2000 dot nodes becomes a single node with a
+  // few hundred subpaths. Adjacent rows share edges exactly, so the runs fuse
+  // into continents with no seams and no overdraw.
+  //
+  // Why not marching squares for a smooth coastline: at the resolutions a
+  // symbolic map uses, the blockiness IS the visual language — the same grid
+  // the dot mode celebrates. A smoothed outline would read as a bad tracing of
+  // a real map rather than a deliberate abstraction. (If that changes, the run
+  // list here is the right input for it.)
+  //
+  // Fill goes through `style`, not the `fill` attribute, because
+  // `fill="var(--x)"` is invalid while `style="fill:var(--x)"` resolves — so
+  // solid land follows a host's CSS variables for free, with no colour
+  // resolver on this side.
+  #landMarkup(grid, o) {
+  const key = `solid|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
+  const cached = this._dotsCache.get(key);
+  if (cached) { this._dotCount = cached.dots; return cached.markup; }
+
+  const runs = [];
+  let cells = 0;
+  for (let row = 0; row < grid.rows; row++) {
+    let from = -1;
+    for (let col = 0; col <= grid.cols; col++) {
+      const land = col < grid.cols &&
+        isLand(cellCenter(col, row, grid).lat, cellCenter(col, row, grid).lon);
+      if (land) { cells++; if (from < 0) from = col; }
+      else if (from >= 0) {
+        runs.push(`M${from * CELL} ${row * CELL}h${(col - from) * CELL}v${CELL}h-${(col - from) * CELL}Z`);
+        from = -1;
+      }
+    }
+  }
+
+  const fill = o.landColor ?? o.dotColor;
+  const markup = `<g class="wm-land"><path class="wm-land-path" style="fill:${escapeAttr(fill)}" d="${runs.join("")}"/>${this.#landHighlightMarkup(grid, o)}</g>`;
+  this._dotsCache.set(key, { markup, dots: cells });
+  this._dotCount = cells;
+  return markup;
+  }
+
+  // The highlight polygon, in FLAT mode: the same ray-cast highlight.js does
+  // for the globe, painting a second path on top of the land. This is what
+  // "light up this country" means on a flat map — the region glows, not a pin.
+  #landHighlightMarkup(grid, o) {
+  if (!o.highlightPolygon?.length) return "";
+  const normalized = normalizeRings(o.highlightPolygon);
+  const runs = [];
+  for (let row = 0; row < grid.rows; row++) {
+    let from = -1;
+    for (let col = 0; col <= grid.cols; col++) {
+      const c = col < grid.cols ? cellCenter(col, row, grid) : null;
+      const hit = c && isLand(c.lat, c.lon) && pointInRings(c.lat, c.lon, normalized);
+      if (hit) { if (from < 0) from = col; }
+      else if (from >= 0) {
+        runs.push(`M${from * CELL} ${row * CELL}h${(col - from) * CELL}v${CELL}h-${(col - from) * CELL}Z`);
+        from = -1;
+      }
+    }
+  }
+  if (!runs.length) return "";
+  return `<path class="wm-land-highlight" style="fill:${escapeAttr(o.highlightColor)}" d="${runs.join("")}"/>`;
+  }
+
   #dotsMarkup(grid) {
     const key = `${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
     const cached = this._dotsCache.get(key);
@@ -1855,16 +1951,19 @@ function escapeAttr(value) {
 const ATTR_MAP = {
   // attribute      → [option, parser]
   "mode":             ["mode", String],
-"globe-ring":       ["globeRing", (v) => v !== "false"],
-"graticule":        ["graticule", (v) => v !== "false"],
-"meridians":        ["meridians", Number],
-"parallels":        ["parallels", Number],
-"graticule-color":  ["graticuleColor", String],
-"equator-color":    ["equatorColor", String],
-"graticule-opacity":["graticuleOpacity", Number],
-"equator-opacity":  ["equatorOpacity", Number],
-"overlays":         ["overlays", (v) => v !== "false"],
-"max-dpr":          ["maxDpr", Number],
+  "globe-ring":       ["globeRing", (v) => v !== "false"],
+  "land":             ["land", String],
+  "land-color":       ["landColor", String],
+  "roll":             ["roll", Number],
+  "graticule":        ["graticule", (v) => v !== "false"],
+  "meridians":        ["meridians", Number],
+  "parallels":        ["parallels", Number],
+  "graticule-color":  ["graticuleColor", String],
+  "equator-color":    ["equatorColor", String],
+  "graticule-opacity":["graticuleOpacity", Number],
+  "equator-opacity":  ["equatorOpacity", Number],
+  "overlays":         ["overlays", (v) => v !== "false"],
+  "max-dpr":          ["maxDpr", Number],
   "background":       ["background", String],
   "ocean-color":      ["oceanColor", String],
   "rotate-speed":     ["rotateSpeed", Number],

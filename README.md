@@ -136,7 +136,48 @@ parallel the point buffer index-for-index (the same discipline as the
 animation phase fields — geometry arrays never reorder, parallel arrays
 annotate them), and the draw loop batches colour switches on flag runs.
 
+## Solid land (v0.5)
+
+```html
+<world-map land="solid" land-color="var(--land)"></world-map>
+```
+
+The same mask, drawn as filled shape instead of a dot field. Land cells are
+merged into horizontal runs per row and the whole world becomes **one `<path>`**
+— a 150-column map is ~300 subpaths in a single node instead of ~2000 dot
+nodes. Adjacent rows share edges exactly, so runs fuse into continents with no
+seams and no overdraw.
+
+The blockiness is deliberate: at the resolution a symbolic map uses, the grid IS
+the visual language — the same grid the dot mode celebrates. A smoothed
+coastline would read as a poor tracing of a real map rather than an abstraction.
+
+Fill is written as `style="fill:…"` rather than the `fill` attribute, because
+`fill="var(--x)"` is invalid CSS while the style property resolves — so solid
+land follows your CSS variables with no colour plumbing.
+
+Pair it with `highlight-polygon` (now supported in flat mode too) to light a
+whole country rather than pin it:
+
+```html
+<world-map land="solid" highlight-color="#5f8a3f"
+           highlight-polygon="[[[42.1,-8.2],[41.9,-6.2],…]]"></world-map>
+```
+
+## Roll — the lean (v0.5)
+
+```html
+<world-map mode="globe" roll="-14.3" tilt="12"></world-map>
+```
+
+`roll` turns the finished globe in the plane of the screen; `tilt` leans its
+axis away from the viewer. They are different gestures and they compose — roll
+is the "globe sitting at an angle" look, tilt is foreshortening. Roll is applied
+last, to the projected point, so dots, graticule, markers, hit-testing and DOM
+overlays all rotate together. Hit-testing un-rolls the pointer first.
+
 ## The graticule (v0.5)
+
 
 ```html
 <world-map mode="globe" graticule meridians="24" parallels="23"
