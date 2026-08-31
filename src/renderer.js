@@ -99,7 +99,10 @@ export const DEFAULTS = {
   graticuleColor: null,       // defaults to dotColor
   equatorColor: null,         // defaults to graticuleColor
   graticuleOpacity: 0.28,
-  equatorOpacity: 0.6,
+  // Only a touch above the other lines. The equator earns its own colour
+  // and weight option so it CAN be emphasised, but emphasising it by default
+  // reads as a bug — one parallel inexplicably darker than its neighbours.
+  equatorOpacity: 0.36,
   // Position host DOM carrying data-lat/data-lon over the map (globe mode).
   overlays: true,
   // Cap the canvas backing store. 3× devices buy no visible detail on a

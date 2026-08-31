@@ -555,19 +555,10 @@ export class GlobeRenderer {
       // mask — see #drawLand — which culls cell by cell and cannot fail that
       // way, and these rings draw the coastline on top.
 
-      if (stroke) {
-        ctx.strokeStyle = stroke;
-        ctx.lineWidth = width;
-        ctx.lineJoin = "round";
-        let drawing = false;
-        for (const p of pts) {
-          if (!p.front) { if (drawing) { ctx.stroke(); drawing = false; } continue; }
-          if (!drawing) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); drawing = true; }
-          else ctx.lineTo(p.sx, p.sy);
-          ctx.globalAlpha = (0.3 + 0.7 * p.z) * alphaScale;
-        }
-        if (drawing) ctx.stroke();
-      }
+      // Depth-banded, for the same reason the graticule is: a single stroke()
+      // can only carry one alpha, so a per-point globalAlpha silently paints
+      // each coastline at the tone of its final vertex.
+      if (stroke) this.#strokeBanded([ pts ], stroke, width, 1, alphaScale);
     }
 
     if (fill) ctx.restore();
@@ -826,28 +817,48 @@ export class GlobeRenderer {
     const color = this._c(o.graticuleColor ?? o.dotColor);
     const equator = this._c(o.equatorColor ?? o.graticuleColor ?? o.dotColor);
 
-    const stroke = (lines, strokeColor, peak) => {
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 1;
-      for (const line of lines) {
-        let drawing = false;
-        for (const [ lat, lon ] of line) {
-          const p = this.#project(lat, lon, T);
-          if (!p.front) {                       // crossed to the far side
-            if (drawing) { ctx.stroke(); drawing = false; }
-            continue;
-          }
-          if (!drawing) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); drawing = true; }
-          else ctx.lineTo(p.sx, p.sy);
-          ctx.globalAlpha = peak * (0.25 + 0.75 * p.z);
-        }
-        if (drawing) ctx.stroke();
-      }
-    };
+    const project = (lines) => lines.map((line) => line.map(([ lat, lon ]) => this.#project(lat, lon, T)));
+    this.#strokeBanded(project(this._graticule.meridians), color, 1, o.graticuleOpacity);
+    this.#strokeBanded(project(this._graticule.parallels), color, 1, o.graticuleOpacity);
+    this.#strokeBanded(project([ this._graticule.equator ]), equator, 1, o.equatorOpacity);
+  }
 
-    stroke(this._graticule.meridians, color, o.graticuleOpacity);
-    stroke(this._graticule.parallels, color, o.graticuleOpacity);
-    stroke([ this._graticule.equator ], equator, o.equatorOpacity);
+  // Stroke polylines with a depth fade that is actually per-segment.
+  //
+  // The obvious way is wrong in a way that is easy to miss: setting
+  // ctx.globalAlpha inside the point loop and calling stroke() once at the end
+  // does NOT fade the line, because canvas reads globalAlpha when you stroke,
+  // not when you add a point. Every polyline came out flat-toned at whatever
+  // alpha its LAST vertex happened to set — which is why one coastline looked
+  // dark, its neighbour looked faint, and half the Pacific's meridians differed
+  // from the other half. Arbitrary, and it moved as the globe turned.
+  //
+  // So segments are bucketed by depth and each bucket is stroked once. Same
+  // fade, honestly applied, and far fewer draw calls than stroking per segment.
+  #strokeBanded(lines, color, width, peak, alphaScale = 1) {
+    const ctx = this.ctx;
+    const BANDS = 7;
+    const paths = Array.from({ length: BANDS }, () => new Path2D());
+    let any = false;
+    for (const pts of lines) {
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i], b = pts[i + 1];
+        if (!a.front || !b.front) continue;     // the far side, or crossing it
+        const band = Math.min(BANDS - 1, Math.max(0, Math.floor(((a.z + b.z) / 2) * BANDS)));
+        paths[band].moveTo(a.sx, a.sy);
+        paths[band].lineTo(b.sx, b.sy);
+        any = true;
+      }
+    }
+    if (!any) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";                       // keeps segments reading as one line
+    for (let i = 0; i < BANDS; i++) {
+      ctx.globalAlpha = peak * (0.25 + 0.75 * ((i + 0.5) / BANDS)) * alphaScale;
+      ctx.stroke(paths[i]);
+    }
     ctx.globalAlpha = 1;
   }
 

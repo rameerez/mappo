@@ -80,7 +80,7 @@
       land-stroke="var(--coast)" land-stroke-width="0.9"
       graticule meridians="24" parallels="11"
       graticule-color="var(--grid)" equator-color="var(--coast)"
-      graticule-opacity="0.45" equator-opacity="0.8" globe-ring="true">
+      graticule-opacity="0.45" equator-opacity="0.4" globe-ring="true">
       <a class="pin" data-lat="38.7"  data-lon="-9.1"   href="#"><span>Lisbon</span></a>
       <a class="pin" data-lat="35.7"  data-lon="139.7"  href="#"><span>Tokyo</span></a>
       <a class="pin" data-lat="-23.5" data-lon="-46.6"  href="#"><span>São Paulo</span></a>
@@ -119,7 +119,7 @@
           land="solid outline" land-source="vector"
           land-color="#6ea8ff" land-stroke="#bcd4ff" land-stroke-width="0.8"
           background="#0d1b33" graticule meridians="24" parallels="11"
-          graticule-color="#1e2a3d" equator-color="#6ea8ff" equator-opacity="0.75"
+          graticule-color="#1e2a3d" equator-color="#6ea8ff" equator-opacity="0.4"
           globe-ring="true"></world-map>
       </div>
       <div class="hud">
@@ -200,7 +200,7 @@ carrier.style.transform =
     <world-map mode="globe" cols="140" rotate-speed="0" roll="0" tilt="30"
       land="solid outline" land-source="vector" land-color="var(--land)" land-stroke="var(--coast)"
       graticule meridians="24" parallels="11" graticule-color="var(--grid)"
-      equator-color="var(--coast)" equator-opacity="0.85"></world-map>
+      equator-color="var(--coast)" equator-opacity="0.4"></world-map>
   </div><div class="meta"><h3>Tilt — the axis</h3>
     <p>Leans the axis away from you. A foreshortening, not a rotation.</p>
     <pre><code>tilt="30" graticule</code></pre></div></div>
@@ -209,7 +209,7 @@ carrier.style.transform =
     <world-map mode="globe" cols="140" rotate-speed="0" roll="-14.3" tilt="25"
       land="solid outline" land-source="vector" land-color="var(--land)" land-stroke="var(--coast)"
       graticule meridians="24" parallels="11" graticule-color="var(--grid)"
-      equator-color="var(--coast)" equator-opacity="0.85"></world-map>
+      equator-color="var(--coast)" equator-opacity="0.4"></world-map>
   </div><div class="meta"><h3>Both, composed</h3>
     <p>Different gestures; they stack.</p>
     <pre><code>roll="-14.3" tilt="25"</code></pre></div></div>
@@ -225,7 +225,7 @@ carrier.style.transform =
   <div class="card"><div class="art">
     <world-map mode="globe" cols="150" rotate-speed="0" roll="-10" dot-color="var(--coast)"
       graticule meridians="24" parallels="23"
-      graticule-color="var(--grid)" equator-color="var(--accent)" equator-opacity="0.9"></world-map>
+      graticule-color="var(--grid)" equator-color="var(--accent)" equator-opacity="0.4"></world-map>
   </div><div class="meta"><h3>Dots + dense graticule</h3>
     <p>24 meridians, 23 parallels — one lands on 0° and is dropped, so the equator is never double-drawn.</p>
     <pre><code>graticule meridians="24" parallels="23"</code></pre></div></div>
