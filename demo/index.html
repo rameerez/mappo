@@ -59,6 +59,25 @@ world-map{display:block;width:100%}
        width:1px;height:11px;background:linear-gradient(#4fd1c5,transparent)}
 .lead:hover > span{color:#fff}
 .lead:hover > i{box-shadow:0 0 0 6px rgb(249 115 22 / .26)}
+
+/* ── day / night ────────────────────────────────────────────────────── */
+.night-wrap{position:relative}
+.night{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+/* The glow is a DOM layer, not an SVG circle: the overlay above is stretched
+   by preserveAspectRatio="none", which would squash a gradient into a lozenge. */
+.sunglow{position:absolute;width:32%;aspect-ratio:1;transform:translate(-50%,-50%);
+  border-radius:50%;pointer-events:none;z-index:1;
+  background:radial-gradient(circle,rgba(255,233,168,.42) 0%,rgba(255,199,90,.14) 45%,transparent 70%)}
+/* Labels sit above the shadow, so a city in darkness is still readable. */
+.stage .lead{z-index:3}
+.lead > span b{display:block;font-weight:600}
+.lead > span em{display:block;font-style:normal;font-weight:500;letter-spacing:.1em;
+  color:#5f7f93;margin-top:2px}
+/* A city whose sun is down: the dot lights up and its clock warms. */
+.lead.is-night > i{background:#ffc75a;
+  box-shadow:0 0 0 4px rgb(255 199 90 / .18), 0 0 12px 2px rgb(255 199 90 / .5)}
+.lead.is-night > span em{color:#ffc75a}
+.lead.is-night > span::after{background:linear-gradient(#ffc75a,transparent)}
  /* hero */
  .hero{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:26px;align-items:center;
        background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;margin-top:18px}
@@ -134,55 +153,56 @@ world-map{display:block;width:100%}
   </div>
 </div>
 
-  <!-- ───────────────────────── FLAT SHOWCASE ───────────────────────── -->
-  <h2>The flat map <span>— SVG, and exact in every combination</span></h2>
+  <!-- ───────────────────────── FLAT SHOWCASE: TERMINATOR ───────────────────────── -->
+  <h2>Right now <span>— where the sun is, computed from your clock</span></h2>
   <div class="stage">
     <div class="stage-glow"></div>
-    <world-map id="flatshow"
-      cols="300"
-      lat-min="-56" lat-max="76"
-      land="solid outline" land-source="vector" borders
-      land-color="#12212e" land-stroke="#4fd1c5" land-stroke-width="0.55"
-      borders-color="#4fd1c5" borders-width="0.35" borders-opacity="0.22"
-      background="#070b11" ocean-color="#0d1622">
-      <a class="lead" data-lat="38.72"  data-lon="-9.14"   href="#s-lis"><i></i><span>Lisbon</span></a>
-      <a class="lead" data-lat="35.68"  data-lon="139.69"  href="#s-tyo"><i></i><span>Tokyo</span></a>
-      <a class="lead" data-lat="-23.55" data-lon="-46.63"  href="#s-sao"><i></i><span>São Paulo</span></a>
-      <a class="lead" data-lat="6.52"   data-lon="3.37"    href="#s-los"><i></i><span>Lagos</span></a>
-      <a class="lead" data-lat="40.71"  data-lon="-74.01"  href="#s-nyc"><i></i><span>New York</span></a>
-      <a class="lead" data-lat="-33.87" data-lon="151.21"  href="#s-syd"><i></i><span>Sydney</span></a>
-      <a class="lead" data-lat="55.75"  data-lon="37.62"   href="#s-mow"><i></i><span>Moscow</span></a>
-      <a class="lead" data-lat="19.08"  data-lon="72.88"   href="#s-bom"><i></i><span>Mumbai</span></a>
-    </world-map>
+    <div class="night-wrap">
+      <world-map id="flatshow"
+        cols="300"
+        lat-min="-58" lat-max="76"
+        land="solid outline" land-source="vector" borders
+        land-color="#1d3346" land-stroke="#5fe3d6" land-stroke-width="0.55"
+        borders-color="#4fd1c5" borders-width="0.35" borders-opacity="0.2"
+        background="#081019" ocean-color="#0e1b2a">
+        <a class="lead" data-lat="38.72"  data-lon="-9.14"  data-tz="Europe/Lisbon"    href="#t1"><i></i><span><b>Lisbon</b><em></em></span></a>
+        <a class="lead" data-lat="35.68"  data-lon="139.69" data-tz="Asia/Tokyo"       href="#t2"><i></i><span><b>Tokyo</b><em></em></span></a>
+        <a class="lead" data-lat="-23.55" data-lon="-46.63" data-tz="America/Sao_Paulo" href="#t3"><i></i><span><b>São Paulo</b><em></em></span></a>
+        <a class="lead" data-lat="6.52"   data-lon="3.37"   data-tz="Africa/Lagos"     href="#t4"><i></i><span><b>Lagos</b><em></em></span></a>
+        <a class="lead" data-lat="40.71"  data-lon="-74.01" data-tz="America/New_York" href="#t5"><i></i><span><b>New York</b><em></em></span></a>
+        <a class="lead" data-lat="-33.87" data-lon="151.21" data-tz="Australia/Sydney" href="#t6"><i></i><span><b>Sydney</b><em></em></span></a>
+        <a class="lead" data-lat="55.75"  data-lon="37.62"  data-tz="Europe/Moscow"    href="#t7"><i></i><span><b>Moscow</b><em></em></span></a>
+        <a class="lead" data-lat="37.77"  data-lon="-122.42" data-tz="America/Los_Angeles" href="#t8"><i></i><span><b>San Francisco</b><em></em></span></a>
+      </world-map>
+      <!-- The night, drawn over the map in normalized coordinates. -->
+      <div class="sunglow" id="sunglow-c" aria-hidden="true"></div>
+      <svg class="night" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+        <g id="shadow-bands"></g>
+        <circle id="sun" r="5" fill="#ffe9a8"/>
+      </svg>
+    </div>
     <div class="stage-cap">
-      <strong>300 columns · 119 coastline rings · 277 national borders · 8 anchored labels</strong>
-      <span>every one of them a real SVG node your stylesheet can reach</span>
+      <strong id="sun-clock">—</strong>
+      <span id="sun-where">—</span>
     </div>
   </div>
   <div class="card" style="margin-top:16px">
     <div class="meta">
-      <h3>One element, no canvas, no dependencies</h3>
-      <p>The flat renderer draws to SVG, so the coastline is vector-crisp at any zoom and in print, the
-      borders are a single path, and the sea is one pattern node rather than thousands of circles. Labels
-      here use a different language from the globe above — a hairline stalk and tracked caption instead of a
-      pill — to make the point that mappo positions your markup and never dictates how it looks.</p>
-      <span class="tag">land="solid outline"</span><span class="tag">land-source="vector"</span><span class="tag">borders</span><span class="tag">ocean-color</span><span class="tag">background</span><span class="tag">cols="300"</span><span class="tag">lat-min/lat-max</span><span class="tag">data-lat/data-lon</span>
-      <pre style="margin-top:12px"><code>&lt;world-map cols="300" lat-min="-56" lat-max="76"
-  land="solid outline" land-source="vector" borders
-  land-color="#12212e" land-stroke="#4fd1c5" land-stroke-width="0.55"
-  borders-color="#4fd1c5" borders-width="0.35" borders-opacity="0.22"
-  background="#070b11" ocean-color="#0d1622"&gt;
-  &lt;a class="lead" data-lat="38.72" data-lon="-9.14"&gt;&lt;i&gt;&lt;/i&gt;&lt;span&gt;Lisbon&lt;/span&gt;&lt;/a&gt;
-&lt;/world-map&gt;
+      <h3>The map is true right now, and it needs no data to be</h3>
+      <p>The sun's position is fifteen lines of astronomy from <code>Date.now()</code> — no API, no key, nothing
+      to go stale. Everything else is mappo: the night is a polygon plotted through
+      <code>projectNormalized()</code>, and the city markers are your own DOM, positioned by
+      <code>data-lat</code>/<code>data-lon</code>, told only whether the sun is up where they stand.</p>
+      <span class="tag">projectNormalized()</span><span class="tag">land-source="vector"</span><span class="tag">borders</span><span class="tag">ocean-color</span><span class="tag">data-lat/data-lon</span><span class="tag">cols="300"</span>
+      <pre style="margin-top:12px"><code>// where the sun is overhead, from the clock alone
+const { dec, lon } = subsolarPoint(new Date());
 
-/* the label language: a dot, a stalk, a tracked caption */
-.lead &gt; i    { width:5px; height:5px; border-radius:50%; background:#f97316;
-               box-shadow:0 0 0 4px rgb(249 115 22 / .18); }
-.lead &gt; span { transform: translate(-50%, calc(-100% - 15px));
-               font: 600 10px/1 ui-monospace; letter-spacing:.16em;
-               text-transform:uppercase; color:#dff5f0; }
-.lead &gt; span::after { content:""; position:absolute; left:50%; top:100%;
-               width:1px; height:11px; background:linear-gradient(#4fd1c5,transparent); }</code></pre>
+// the terminator is a latitude per longitude — on a FLAT map it is
+// single-valued, so it is just a path across the frame
+const y = (lon) => projectNormalized(terminatorLat(lon, dec, sunLon), lon, { latRange });
+
+// and each label only needs to know whether its own sky is dark
+label.classList.toggle("is-night", solarElevation(lat, lon, dec, sunLon) &lt; 0);</code></pre>
     </div>
   </div>
 
@@ -414,7 +434,131 @@ Full-screen versions: <a href="./orbit.html">orbit</a> · <a href="./land.html">
     if (!reduce) requestAnimationFrame(frame);
   })(performance.now());
 
-  // ── live playground ────────────────────────────────────────────────────
+// ── day / night ────────────────────────────────────────────────────────
+//
+// Where the sun stands, from the clock alone. Low-precision solar
+// coordinates (Astronomical Almanac, "Approximate Solar Coordinates") —
+// good to about a minute of arc, which is far finer than a 300-column map
+// can draw, and it needs no data, no network, and nothing that can go stale.
+const RAD = Math.PI / 180;
+
+function subsolarPoint(date) {
+  const n = date.getTime() / 86400000 + 2440587.5 - 2451545.0;   // days since J2000
+  const L = (280.460 + 0.9856474 * n) % 360;                     // mean longitude
+  const g = ((357.528 + 0.9856003 * n) % 360) * RAD;             // mean anomaly
+  const lambda = (L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * RAD;
+  const eps = (23.439 - 0.0000004 * n) * RAD;                    // obliquity
+  const dec = Math.asin(Math.sin(eps) * Math.sin(lambda)) / RAD; // declination
+  const ra = Math.atan2(Math.cos(eps) * Math.sin(lambda), Math.cos(lambda)) / RAD;
+  const gmst = (18.697374558 + 24.06570982441908 * n) % 24;      // sidereal time, hours
+  let lon = ra - gmst * 15;                                      // → subsolar longitude
+  lon = ((lon % 360) + 540) % 360 - 180;
+  return { dec, lon };
+}
+
+// Sun height above the horizon at a place, in degrees.
+const solarElevation = (lat, lon, dec, sunLon) =>
+  Math.asin(
+    Math.sin(lat * RAD) * Math.sin(dec * RAD) +
+    Math.cos(lat * RAD) * Math.cos(dec * RAD) * Math.cos((lon - sunLon) * RAD)
+  ) / RAD;
+
+// The latitude at which the sun sits exactly `h0` degrees high, for a given
+// longitude. Solving A·sin(lat) + B·cos(lat) = sin(h0) as R·sin(lat + phi):
+// on a FLAT map this is single-valued, which is why the terminator here is
+// an honest path and not the spherical-clipping problem in disguise.
+function terminatorLat(lon, dec, sunLon, h0) {
+  const A = Math.sin(dec * RAD);
+  const B = Math.cos(dec * RAD) * Math.cos((lon - sunLon) * RAD);
+  const R = Math.hypot(A, B);
+  if (R < 1e-9) return dec >= 0 ? -90 : 90;
+  const ratio = Math.sin(h0 * RAD) / R;
+  if (ratio >= 1) return dec >= 0 ? -90 : 90;      // sun never that high here
+  if (ratio <= -1) return dec >= 0 ? 90 : -90;     // sun never that low here
+  return (Math.asin(ratio) - Math.atan2(B, A)) / RAD;
+}
+
+const nightSvg = document.querySelector(".night");
+const flat = document.getElementById("flatshow");
+const VB = 1000;                                    // the overlay's viewBox
+const LAT_RANGE = [ -58, 76 ];                      // must match the element's attrs
+
+// The same normalized projection mappo exposes, so the shadow lands exactly
+// where the geography does.
+const nx = (lon) => ((lon + 180) / 360) * VB;
+const ny = (lat) => ((LAT_RANGE[1] - lat) / (LAT_RANGE[1] - LAT_RANGE[0])) * VB;
+
+// A filled band from the terminator at h0 to whichever pole is in darkness.
+function shadowPath(dec, sunLon, h0) {
+  const pts = [];
+  for (let lon = -180; lon <= 180; lon += 2) {
+    const lat = Math.max(-90, Math.min(90, terminatorLat(lon, dec, sunLon, h0)));
+    pts.push(`${nx(lon).toFixed(1)} ${ny(lat).toFixed(1)}`);
+  }
+  // Northern summer darkens the south, and the other way round.
+  const edge = dec >= 0 ? ny(LAT_RANGE[0]) : ny(LAT_RANGE[1]);
+  return `M${pts.join("L")}L${VB} ${edge.toFixed(1)}L0 ${edge.toFixed(1)}Z`;
+}
+
+// Six bands from the horizon down through astronomical twilight. Stacked
+// translucency reads as a gradient without an SVG filter, which this overlay
+// would stretch anisotropically thanks to preserveAspectRatio="none".
+const bandGroup = document.getElementById("shadow-bands");
+const bands = [ 0, -3, -6, -9, -12, -18 ].map((h) => {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  el.setAttribute("fill", "#02050b");
+  el.setAttribute("opacity", "0.19");
+  bandGroup.appendChild(el);
+  return { h, el };
+});
+
+const cities = [ ...flat.querySelectorAll(".lead") ];
+const fmt = new Map(cities.map((el) => [ el, new Intl.DateTimeFormat([], {
+  hour: "2-digit", minute: "2-digit", hour12: false, timeZone: el.dataset.tz
+}) ]));
+
+function paintNight() {
+  const now = new Date();
+  const { dec, lon: sunLon } = subsolarPoint(now);
+
+  // Dusk as a ramp, not three steps. Each band is the region where the sun is
+  // already below a slightly lower angle, stacked — so the shadow deepens the
+  // way twilight actually does instead of showing three hard edges.
+  for (const band of bands) {
+    band.el.setAttribute("d", shadowPath(dec, sunLon, band.h));
+  }
+
+  const sun = document.getElementById("sun");
+  sun.setAttribute("cx", nx(sunLon).toFixed(1));
+  sun.setAttribute("cy", ny(dec).toFixed(1));
+  // The glow is a DOM layer, not an SVG circle: this overlay is stretched by
+  // preserveAspectRatio="none", which would squash a gradient into a lozenge.
+  const glow = document.getElementById("sunglow-c");
+  glow.style.left = `${(nx(sunLon) / 10).toFixed(2)}%`;
+  glow.style.top = `${(ny(dec) / 10).toFixed(2)}%`;
+
+  let dark = 0;
+  for (const el of cities) {
+    const lat = +el.dataset.lat, lon = +el.dataset.lon;
+    const night = solarElevation(lat, lon, dec, sunLon) < 0;
+    el.classList.toggle("is-night", night);
+    if (night) dark++;
+    el.querySelector("em").textContent = fmt.get(el).format(now);
+  }
+
+  // Distinct ids: the orbit demo below already owns #clock, and its own
+  // interval was overwriting this caption every frame.
+  document.getElementById("sun-clock").textContent =
+    `${now.toISOString().slice(11, 16)} UTC · ${dark} of ${cities.length} cities in darkness`;
+  document.getElementById("sun-where").textContent =
+    `sun overhead at ${Math.abs(dec).toFixed(1)}°${dec >= 0 ? "N" : "S"} ` +
+    `${Math.abs(sunLon).toFixed(1)}°${sunLon >= 0 ? "E" : "W"} — recomputed every 30 s, from your clock`;
+}
+paintNight();
+setInterval(paintNight, 30000);
+
+// ── live playground ────────────────────────────────────────────────────
+
   const play = document.getElementById("play");
   const code = document.querySelector("#playCode code");
   const state = { land: "solid outline", landSource: "grid", mode: "flat", borders: "off" };
