@@ -42,7 +42,7 @@
 import { isLand } from "./mask.js";
 import { project, cellCenter, projectNormalized } from "./projection.js";
 import { normalizeRings, pointInRings } from "./highlight.js";
-import { buildLand, parseLandStyle } from "./land.js";
+import { buildLand, parseLandStyle, landRings, borderRings } from "./land.js";
 import { resolveCity } from "./cities.js";
 import { noise2 } from "./noise.js";
 import { GlobeRenderer } from "./globe.js";
@@ -84,6 +84,14 @@ export const DEFAULTS = {
   landColor: null,            // fill; defaults to dotColor
   landStroke: null,           // coastline; defaults to landColor, then dotColor
   landStrokeWidth: 1,
+  // Where the coastline comes from: "grid" (traced from the bitmask — blocky,
+  // follows cols, free) or "vector" (real Natural Earth outlines — smooth at
+  // any size, ~13 KB).
+  landSource: "grid",
+  borders: false,             // country borders (vector data; any land style)
+  bordersColor: null,         // defaults to the coastline colour
+  bordersWidth: 0.5,
+  bordersOpacity: 0.55,
   roll: 0,                    // globe LEAN, in the plane of the screen (deg)
   graticule: false,
   meridians: 12,              // evenly spaced longitudes
@@ -459,6 +467,24 @@ if (this._overlayLayer) {
   // animation all live elsewhere — so the markup string caches perfectly per
   // resolution. Both animation phases ship on every dot (~30 bytes each):
   // that's what makes animation a style-only knob.
+  // lat/lon rings → SVG path data in this map's units. The same equirectangular
+  // mapping the dot grid uses, so vector land lands exactly where grid land does.
+  #vectorPath(rings, grid) {
+    const [ latMin, latMax ] = grid.latRange;
+    const w = grid.cols * CELL, h = grid.rows * CELL;
+    const parts = [];
+    for (const ring of rings) {
+      let d = "";
+      for (let i = 0; i < ring.length; i++) {
+        const x = ((ring[i][1] + 180) / 360) * w;
+        const y = ((latMax - ring[i][0]) / (latMax - latMin)) * h;
+        d += `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+      }
+      parts.push(`${d}Z`);
+    }
+    return parts.join("");
+  }
+
   // Land as shape. `solid`, `outline` and `solid outline` are three renderings
   // of ONE geometry: the closed boundary contours from land.js. Because the
   // loops are closed and consistently wound, the same `d` both fills (holes
@@ -467,12 +493,16 @@ if (this._overlayLayer) {
   // sea. Tracing per-cell rectangles instead would stroke a wireframe.
   #landMarkup(grid, o) {
     const style = parseLandStyle(o.land);
-    const key = `land|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
+    const vector = landRings(o.landSource);
+    const key = `land|${o.landSource}|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
     let geom = this._dotsCache.get(key);
     if (!geom) {
       const { cells, loops } = buildLand(grid);
       geom = {
-        d: loops.map((loop) => `M${loop.map(([ x, y ]) => `${x * CELL} ${y * CELL}`).join("L")}Z`).join(""),
+        d: vector
+          ? this.#vectorPath(vector, grid)
+          : loops.map((loop) => `M${loop.map(([ x, y ]) => `${x * CELL} ${y * CELL}`).join("L")}Z`).join(""),
+        borders: o.borders ? this.#vectorPath(borderRings(), grid) : "",
         cells
       };
       this._dotsCache.set(key, geom);
@@ -487,8 +517,12 @@ if (this._overlayLayer) {
     // no colour resolver on this side.
     const css = `fill:${escapeAttr(fill)};stroke:${escapeAttr(stroke)};` +
       `stroke-width:${width * (CELL / 10)};stroke-linejoin:round;fill-rule:nonzero`;
+    const borders = geom.borders
+      ? `<path class="wm-borders" style="fill:none;stroke:${escapeAttr(o.bordersColor ?? stroke)};` +
+        `stroke-width:${(o.bordersWidth ?? 0.5) * (CELL / 10)};stroke-linejoin:round;opacity:${o.bordersOpacity ?? 0.55}" d="${geom.borders}"/>`
+      : "";
     return `<g class="wm-land"><path class="wm-land-path" style="${css}" d="${geom.d}"/>` +
-      `${this.#landHighlightMarkup(grid, o)}</g>`;
+      `${borders}${this.#landHighlightMarkup(grid, o)}</g>`;
   }
 
   // The highlight polygon in FLAT mode — the same ray-cast highlight.js already

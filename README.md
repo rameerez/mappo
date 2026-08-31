@@ -159,7 +159,34 @@ matter.
 
 All three accept `var(--x)`, like every other colour.
 
+### Two levels of detail: `land-source`
+
+```html
+<world-map land="outline"></world-map>                      <!-- grid (default) -->
+<world-map land="outline" land-source="vector"></world-map> <!-- real coastlines -->
+<world-map land="solid" land-source="vector" borders></world-map>
+```
+
+| Source | What it is | Cost |
+|---|---|---|
+| `grid` | contours traced from the packed bitmask — blocky by design, follows `cols` | free |
+| `vector` | real Natural Earth 110m coastlines, quantized to 1/32° — smooth at any size, independent of `cols` | ~13 KB |
+
+`borders` adds every national boundary (~25 KB, vector only — a 512×256 raster
+cannot express a border that follows a river), with `borders-color`,
+`borders-width` and `borders-opacity`. Both datasets are decoded lazily: a map
+that never asks for them pays the bytes, never the parse.
+
+On the globe, vector fills are clipped to the visible hemisphere by closing each
+ring **along the silhouette**. This matters more than it sounds: in an
+orthographic projection the far side folds onto the near side, so filling a whole
+ring paints a mirrored ghost — and simply dropping the back points leaves the
+ring open, which fills to a straight chord and bites a slice out of every
+continent touching the limb. Closing along the horizon is what the eye expects,
+because it is what the horizon is.
+
 ### One geometry, not three renderers
+
 
 `solid`, `outline` and `solid outline` are three renderings of a **single**
 geometry — the closed boundary contours traced once in `land.js` and exported as

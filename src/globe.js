@@ -20,7 +20,7 @@ import { normalizeRings, pointInRings } from "./highlight.js";
 import { noise2 } from "./noise.js";
 import { hoverShade, resolveColor, usesCssVars } from "./color.js";
 import { buildGraticule } from "./graticule.js";
-import { buildLand, parseLandStyle } from "./land.js";
+import { buildLand, parseLandStyle, landRings, borderRings } from "./land.js";
 import { cellCorner } from "./projection.js";
 
 // Unit-sphere position for a lat/lon. At rotation 0, lon 0 faces the
@@ -516,6 +516,82 @@ export class GlobeRenderer {
     };
   }
 
+  // Vector land on the sphere: real coastlines, clipped to the visible hemisphere.
+  //
+  // Stroking is easy — break the polyline whenever it turns away, exactly like
+  // the graticule. FILLING is the hard part, and the reason a naive version
+  // looks broken: in an orthographic projection the far side of the world folds
+  // onto the near side, so feeding a whole ring to fill() paints a mirrored
+  // ghost across the disc. Culling the back points instead leaves the ring open,
+  // and an open ring fills to a straight chord — slicing a bite out of every
+  // continent that touches the limb.
+  //
+  // The fix is to CLOSE each ring along the limb: walk the ring, keep the runs
+  // that face us, and join consecutive runs with an arc of the sphere's own
+  // silhouette. That is what the eye expects, because it is what the horizon
+  // actually is.
+  #drawVectorLand(T, style, rings, { fill, stroke, width, alphaScale = 1 }) {
+    const ctx = this.ctx;
+    const { cx, cy, R } = T;
+
+    for (const ring of rings) {
+      const pts = ring.map(([ lat, lon ]) => this.#project(lat, lon, T));
+
+      if (fill) {
+        // Consecutive visible runs, in ring order.
+        const runs = [];
+        let run = null;
+        for (const p of pts) {
+          if (p.front) { (run ??= []).push(p); }
+          else if (run) { runs.push(run); run = null; }
+        }
+        if (run) {
+          // The ring wrapped while visible — stitch the tail onto the head so
+          // the run is not split at an arbitrary array index.
+          if (runs.length && pts[0].front) runs[0] = run.concat(runs[0]);
+          else runs.push(run);
+        }
+        if (runs.length) {
+          ctx.beginPath();
+          runs.forEach((r, i) => {
+            if (i === 0) ctx.moveTo(r[0].sx, r[0].sy);
+            else {
+              // Bridge the gap along the silhouette rather than across it.
+              const prev = runs[i - 1][runs[i - 1].length - 1];
+              const a0 = Math.atan2(prev.sy - cy, prev.sx - cx);
+              const a1 = Math.atan2(r[0].sy - cy, r[0].sx - cx);
+              let delta = a1 - a0;
+              while (delta > Math.PI) delta -= 2 * Math.PI;
+              while (delta < -Math.PI) delta += 2 * Math.PI;
+              ctx.arc(cx, cy, R, a0, a0 + delta, delta < 0);
+            }
+            for (const p of r) ctx.lineTo(p.sx, p.sy);
+          });
+          ctx.closePath();
+          const depth = runs[0][0].z;
+          ctx.globalAlpha = (0.4 + 0.6 * depth) * alphaScale;
+          ctx.fillStyle = fill;
+          ctx.fill();
+        }
+      }
+
+      if (stroke) {
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = width;
+        ctx.lineJoin = "round";
+        let drawing = false;
+        for (const p of pts) {
+          if (!p.front) { if (drawing) { ctx.stroke(); drawing = false; } continue; }
+          if (!drawing) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); drawing = true; }
+          else ctx.lineTo(p.sx, p.sy);
+          ctx.globalAlpha = (0.3 + 0.7 * p.z) * alphaScale;
+        }
+        if (drawing) ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // Land as shape on the sphere — the same land.js geometry the flat map uses.
   //
   // The two halves are drawn differently ON PURPOSE, because a sphere is not a
@@ -533,6 +609,24 @@ export class GlobeRenderer {
   #drawLand(T, style) {
     const o = this.o;
     const ctx = this.ctx;
+    // Vector source: real outlines, no grid involved.
+    const vector = landRings(o.landSource);
+    if (vector) {
+      this.#drawVectorLand(T, style, vector, {
+        fill: style.fill ? this._c(o.landColor ?? o.dotColor) : null,
+        stroke: style.stroke ? this._c(o.landStroke ?? o.landColor ?? o.dotColor) : null,
+        width: o.landStrokeWidth ?? 1
+      });
+      if (o.borders) {
+        this.#drawVectorLand(T, { fill: false, stroke: true }, borderRings(), {
+          fill: null,
+          stroke: this._c(o.bordersColor ?? o.landStroke ?? o.dotColor),
+          width: o.bordersWidth ?? 0.5,
+          alphaScale: o.bordersOpacity ?? 0.55
+        });
+      }
+      return;
+    }
     const cols = o.cols ?? 170;
     const rows = Math.round((cols / 360) * (o.latRange[1] - o.latRange[0]));
     const grid = { cols, rows, latRange: o.latRange };

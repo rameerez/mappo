@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>mappo — Earth in orbit</title>
+<style>
+ :root{--bg:#05070d;--ink:#e8eef7;--muted:#8b98ad;--land:#6ea8ff;--coast:#bcd4ff;--grid:#1e2a3d}
+ *{box-sizing:border-box}
+ body{margin:0;background:radial-gradient(120% 90% at 70% 20%,#0b1220 0%,var(--bg) 60%);
+      color:var(--ink);font:14px/1.6 system-ui,sans-serif;min-height:100vh}
+ header{padding:26px 28px 6px}
+ h1{font-size:20px;margin:0 0 4px}
+ p.sub{margin:0;color:var(--muted);max-width:62ch}
+ a{color:var(--land)}
+ /* The orbital plane. The Earth translates along it; the sun sits at the focus. */
+ .system{position:relative;height:min(74vh,620px);margin:10px auto 0;max-width:1100px;overflow:hidden}
+ .sun{position:absolute;left:50%;top:50%;width:90px;height:90px;margin:-45px 0 0 -45px;border-radius:50%;
+      background:radial-gradient(circle at 50% 50%,#fff6d8 0%,#ffd166 38%,#ff9f1c 62%,rgba(255,140,0,0) 72%);
+      filter:blur(.4px);box-shadow:0 0 90px 30px rgba(255,175,60,.28)}
+ .orbit-path{position:absolute;left:50%;top:50%;width:820px;height:300px;margin:-150px 0 0 -410px;
+      border:1px dashed rgba(255,255,255,.10);border-radius:50%}
+ /* The carrier is translated along the orbit each frame; the globe inside is
+    NOT counter-rotated, so its axial tilt stays fixed in space — which is the
+    whole point of an axial tilt. */
+ .carrier{position:absolute;left:50%;top:50%;width:210px;height:210px;margin:-105px 0 0 -105px;will-change:transform}
+ world-map{display:block;width:100%}
+ .hud{position:absolute;left:0;bottom:0;padding:14px 18px;font:12px/1.5 ui-monospace,monospace;color:var(--muted)}
+ .hud b{color:var(--ink);font-weight:600}
+ nav{padding:0 28px 20px}
+ code{background:#111a2b;border:1px solid var(--grid);border-radius:5px;padding:1px 6px;font-size:12px}
+</style></head>
+<body>
+<header>
+  <h1>Earth in orbit</h1>
+  <p class="sub">One <code>&lt;world-map mode="globe"&gt;</code> spinning on a fixed 23.44° axis while its
+  container is translated around the sun. mappo draws the planet; six lines of CSS transform draw the year.
+  <a href="./index.html">← all demos</a></p>
+</header>
+
+<div class="system">
+  <div class="orbit-path"></div>
+  <div class="sun"></div>
+  <div class="carrier" id="carrier">
+    <world-map id="earth"
+      mode="globe"
+      cols="150"
+      land="solid outline"
+      land-source="vector"
+      land-color="var(--land)"
+      land-stroke="var(--coast)"
+      land-stroke-width="0.8"
+      background="#0d1b33"
+      graticule
+      meridians="24"
+      parallels="11"
+      graticule-color="var(--grid)"
+      equator-color="#6ea8ff"
+      equator-opacity="0.75"
+      graticule-opacity="0.5"
+      tilt="23.44"
+      roll="0"
+      rotate-speed="45"
+      globe-ring="true"></world-map>
+  </div>
+  <div class="hud">
+    <div>axial tilt <b>23.44°</b> — fixed in space, never counter-rotated</div>
+    <div>day <b>1 rotation / 8 s</b> · year <b>1 orbit / 96 s</b> → <b>12 days/year</b>, scaled for patience</div>
+    <div id="clock"></div>
+  </div>
+</div>
+
+<script type="module" src="../dist/mappo.js"></script>
+<script>
+  // The orbit: a plain ellipse, walked once per YEAR_MS. The Earth's own spin is
+  // mappo's rotate-speed, so the two rates are independent exactly as they are
+  // in the sky — and because the carrier only TRANSLATES, the axial tilt keeps
+  // pointing the same way all year. That is what gives a planet seasons.
+  const YEAR_MS = 96_000;
+  const A = 410, B = 150;          // orbit semi-axes, px
+  const carrier = document.getElementById("carrier");
+  const clock = document.getElementById("clock");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let t0 = null;
+
+  function frame(t) {
+    t0 ??= t;
+    const phase = ((t - t0) % YEAR_MS) / YEAR_MS;
+    const angle = phase * Math.PI * 2;
+    const x = Math.cos(angle) * A;
+    const y = Math.sin(angle) * B;
+    // Nearer the viewer at the bottom of the ellipse: scale a little, so the
+    // ellipse reads as a plane in perspective rather than a flat ring.
+    const depth = 0.86 + 0.14 * ((Math.sin(angle) + 1) / 2);
+    carrier.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) scale(${depth.toFixed(3)})`;
+    carrier.style.zIndex = y > 0 ? 3 : 1;      // pass in front of / behind the sun
+    clock.textContent = `orbit ${(phase * 100).toFixed(0)}% · day ${(phase * 365).toFixed(0)} of 365`;
+    if (!reduce) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>
+</body></html>

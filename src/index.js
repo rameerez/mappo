@@ -13,7 +13,8 @@ export { CITIES, resolveCity } from "./cities.js";
 export { isLand, MASK_W, MASK_H } from "./mask.js";
 export { project, cellCenter, cellCorner, projectNormalized } from "./projection.js";
 export { buildGraticule } from "./graticule.js";
-export { buildLand, parseLandStyle } from "./land.js";
+export { buildLand, parseLandStyle, landRings, borderRings } from "./land.js";
+export { landShapes, countryShapes } from "./shapes.js";
 export { noise2 } from "./noise.js";
 export { hoverShade, resolveColor, usesCssVars } from "./color.js";
 

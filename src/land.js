@@ -24,6 +24,7 @@
 
 import { isLand } from "./mask.js";
 import { cellCenter } from "./projection.js";
+import { landShapes, countryShapes } from "./shapes.js";
 
 const cache = new Map();
 
@@ -114,4 +115,24 @@ export function parseLandStyle(value) {
     fill: tokens.includes("solid") || tokens.includes("filled"),
     stroke: tokens.includes("outline") || tokens.includes("stroke")
   };
+}
+
+// Where land geometry comes from. Two levels of detail of the same world:
+//
+//   "grid"   — contours traced from the packed bitmask. Blocky by design,
+//              resolution-following (cols changes the coastline), ~0 extra
+//              bytes, and the only source the dot field can agree with.
+//   "vector" — the real Natural Earth coastline, quantized to 1/32°. Smooth
+//              at any size, independent of cols, ~13 KB.
+//
+// Both answer in rings of [lat, lon] for renderers that project (the globe);
+// the flat map converts grid contours in its own units. Country borders are
+// vector-only — a 512×256 raster cannot express a border that follows a
+// river.
+export function landRings(source) {
+  return source === "vector" ? landShapes() : null;
+}
+
+export function borderRings() {
+  return countryShapes();
 }
