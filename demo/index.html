@@ -7,14 +7,20 @@
        --land:#c9d3bd;--coast:#5f7a4a;--grid:#ddd8cd;--accent:#c2410c;--pill:#fff;--sea:#f4f6f2;--ocean:#dfe6da;
        /* the day/night stage, daylight palette: pale paper sea, warm land,
           dusk washed in indigo. mappo re-resolves these on the theme flip. */
-       --stage-bg:#f2f6fa;--stage-frame:#d3dfeb;--stage-sea:#d5e3f0;--stage-ocean:#c2d6e8;
-       --stage-land:#ffffff;--stage-coast:#4a6f92;--stage-night:#0d2a55;--stage-band:.19;
+       --stage-bg:#f2f6fa;--stage-frame:#d3dfeb;
+       /* the sunlit half */
+       --day-sea:#dbe9f6;--day-ocean:#c4daee;--day-land:#ffffff;--day-coast:#41698f;
+       /* and the half in shadow — a night map in its own right, not a film */
+       --nite-sea:#0c1c31;--nite-ocean:#122741;--nite-land:#1b3a5c;--nite-coast:#66d3cb;
+       --dusk-line:#ffb454;
        --stage-ink:#0f1f2e;--stage-cap:#54708a;--stage-day:#7e99b0;--stage-lit:#b45309;
        --stage-halo:rgb(180 83 9 / .16)}
  html[data-theme="dark"]{--bg:#0e1116;--card:#151a21;--ink:#e7ecf3;--muted:#93a0b4;--line:#242c37;
        --land:#2b3646;--coast:#7aa2f7;--grid:#232b36;--accent:#fb923c;--pill:#1d2229;--sea:#0f141b;--ocean:#1a2230;
-       --stage-bg:#070b11;--stage-frame:#14202c;--stage-sea:#081019;--stage-ocean:#0e1b2a;
-       --stage-land:#1d3346;--stage-coast:#5fe3d6;--stage-night:#02050b;--stage-band:.19;
+       --stage-bg:#070b11;--stage-frame:#14202c;
+       --day-sea:#16293f;--day-ocean:#1d3149;--day-land:#315272;--day-coast:#8ad8e8;
+       --nite-sea:#04080e;--nite-ocean:#091524;--nite-land:#0f2438;--nite-coast:#3fa79e;
+       --dusk-line:#ff9d2e;
        --stage-ink:#dff5f0;--stage-cap:#5d7183;--stage-day:#5f7f93;--stage-lit:#f97316;
        --stage-halo:rgb(249 115 22 / .18)}
  *{box-sizing:border-box}
@@ -76,17 +82,23 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
 
 /* ── day / night ────────────────────────────────────────────────────── */
 .night-wrap{position:relative}
-.night{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
-/* Fill and per-band opacity live in CSS so the dusk wash flips with the
-   palette — indigo over paper by day, near-black by night. */
-.shadow-band{fill:var(--stage-night);opacity:var(--stage-band)}
+/* The night map sits exactly on top of the day map and is clipped to the
+   terminator. Both are the same geography at the same cols and latRange, so
+   they register pixel for pixel; only the palette differs. */
+.night-layer{position:absolute;inset:0;z-index:2;pointer-events:none;
+  clip-path:url(#nightclip)}
+.clipdefs{position:absolute;width:0;height:0}
+/* A warm line along the horizon: sunrise and sunset are the one place on
+   Earth where the light is worth drawing. */
+.duskline{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;
+  filter:blur(3px)}
 /* The glow is a DOM layer, not an SVG circle: the overlay above is stretched
    by preserveAspectRatio="none", which would squash a gradient into a lozenge. */
 .sunglow{position:absolute;width:32%;aspect-ratio:1;transform:translate(-50%,-50%);
   border-radius:50%;pointer-events:none;z-index:1;
   background:radial-gradient(circle,rgba(255,233,168,.42) 0%,rgba(255,199,90,.14) 45%,transparent 70%)}
 /* Labels sit above the shadow, so a city in darkness is still readable. */
-.stage .lead{z-index:3}
+.stage .lead{z-index:4}
 .lead > span b{display:block;font-weight:600}
 .lead > span em{display:block;font-style:normal;font-weight:500;letter-spacing:.1em;
   color:var(--stage-day);margin-top:2px}
@@ -180,13 +192,18 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
   <div class="stage">
     <div class="stage-glow"></div>
     <div class="night-wrap">
+      <!-- Two maps, not one map under a film. The night side is its OWN map,
+           designed as a night map, clipped to the terminator — which keeps the
+           geography legible on both sides instead of smearing grey over half
+           the world. The clip path is in objectBoundingBox units, i.e. exactly
+           what projectNormalized() answers in. -->
       <world-map id="flatshow"
         cols="300"
         lat-min="-58" lat-max="76"
         land="solid outline" land-source="vector" borders
-        land-color="var(--stage-land)" land-stroke="var(--stage-coast)" land-stroke-width="0.55"
-        borders-color="var(--stage-coast)" borders-width="0.35" borders-opacity="0.28"
-        background="var(--stage-sea)" ocean-color="var(--stage-ocean)">
+        land-color="var(--day-land)" land-stroke="var(--day-coast)" land-stroke-width="0.55"
+        borders-color="var(--day-coast)" borders-width="0.35" borders-opacity="0.3"
+        background="var(--day-sea)" ocean-color="var(--day-ocean)">
         <a class="lead" data-lat="38.72"  data-lon="-9.14"  data-tz="Europe/Lisbon"    href="#t1"><i></i><span><b>Lisbon</b><em></em></span></a>
         <a class="lead" data-lat="35.68"  data-lon="139.69" data-tz="Asia/Tokyo"       href="#t2"><i></i><span><b>Tokyo</b><em></em></span></a>
         <a class="lead" data-lat="-23.55" data-lon="-46.63" data-tz="America/Sao_Paulo" href="#t3"><i></i><span><b>São Paulo</b><em></em></span></a>
@@ -199,11 +216,26 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
         <a class="lead" data-lat="25.29"  data-lon="51.53"  data-tz="Asia/Qatar"       href="#t10"><i></i><span><b>Doha</b><em></em></span></a>
         <a class="lead" data-lat="28.61"  data-lon="77.21"  data-tz="Asia/Kolkata"     href="#t11"><i></i><span><b>Delhi</b><em></em></span></a>
       </world-map>
-      <!-- The night, drawn over the map in normalized coordinates. -->
+
+      <div class="night-layer" aria-hidden="true">
+        <world-map
+          cols="300"
+          lat-min="-58" lat-max="76"
+          land="solid outline" land-source="vector" borders overlays="false"
+          land-color="var(--nite-land)" land-stroke="var(--nite-coast)" land-stroke-width="0.55"
+          borders-color="var(--nite-coast)" borders-width="0.35" borders-opacity="0.28"
+          background="var(--nite-sea)" ocean-color="var(--nite-ocean)"></world-map>
+      </div>
+
       <div class="sunglow" id="sunglow-c" aria-hidden="true"></div>
-      <svg class="night" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
-        <g id="shadow-bands"></g>
-        <circle id="sun" r="5" fill="#ffe9a8"/>
+      <svg class="clipdefs" aria-hidden="true">
+        <defs><clipPath id="nightclip" clipPathUnits="objectBoundingBox">
+          <path id="nightpath" d="M0 0"/>
+        </clipPath></defs>
+      </svg>
+      <svg class="duskline" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+        <path id="duskpath" fill="none" stroke="var(--dusk-line)" stroke-width="7" opacity=".55"/>
+        <circle id="sun" r="4" fill="#fff4d2"/>
       </svg>
     </div>
     <div class="stage-cap">
@@ -503,39 +535,39 @@ function terminatorLat(lon, dec, sunLon, h0) {
   return (Math.asin(ratio) - Math.atan2(B, A)) / RAD;
 }
 
-const nightSvg = document.querySelector(".night");
 const flat = document.getElementById("flatshow");
-const VB = 1000;                                    // the overlay's viewBox
+const VB = 1000;                                    // the dusk line's viewBox
 const LAT_RANGE = [ -58, 76 ];                      // must match the element's attrs
 
-// The same normalized projection mappo exposes, so the shadow lands exactly
-// where the geography does.
-const nx = (lon) => ((lon + 180) / 360) * VB;
-const ny = (lat) => ((LAT_RANGE[1] - lat) / (LAT_RANGE[1] - LAT_RANGE[0])) * VB;
+// projectNormalized, in the two units this card needs: 0…1 for the clip path
+// (objectBoundingBox) and 0…1000 for the dusk line's viewBox.
+const fx = (lon) => (lon + 180) / 360;
+const fy = (lat) => (LAT_RANGE[1] - lat) / (LAT_RANGE[1] - LAT_RANGE[0]);
+const nx = (lon) => fx(lon) * VB;
+const ny = (lat) => fy(lat) * VB;
 
-// A filled band from the terminator at h0 to whichever pole is in darkness.
-function shadowPath(dec, sunLon, h0) {
+// The terminator, sampled ONCE and then expressed twice: as a closed region
+// that clips the night map in, and as an open line for the dusk glow. Sampling
+// once is the point — two curves that could disagree would show as a seam
+// between the two maps.
+function terminatorPoints(dec, sunLon, h0 = 0) {
   const pts = [];
-  for (let lon = -180; lon <= 180; lon += 2) {
-    const lat = Math.max(-90, Math.min(90, terminatorLat(lon, dec, sunLon, h0)));
-    pts.push(`${nx(lon).toFixed(1)} ${ny(lat).toFixed(1)}`);
+  for (let lon = -180; lon <= 180; lon += 1.5) {
+    pts.push([ lon, Math.max(-90, Math.min(90, terminatorLat(lon, dec, sunLon, h0))) ]);
   }
-  // Northern summer darkens the south, and the other way round.
-  const edge = dec >= 0 ? ny(LAT_RANGE[0]) : ny(LAT_RANGE[1]);
-  return `M${pts.join("L")}L${VB} ${edge.toFixed(1)}L0 ${edge.toFixed(1)}Z`;
+  return pts;
 }
 
-// Six bands from the horizon down through astronomical twilight. Stacked
-// translucency reads as a gradient without an SVG filter, which this overlay
-// would stretch anisotropically thanks to preserveAspectRatio="none".
-const bandGroup = document.getElementById("shadow-bands");
-const bands = [ 0, -4, -9, -15 ].map((h) => {
-  const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  el.setAttribute("fill", "#02050b");
-  el.setAttribute("opacity", "0.19");
-  bandGroup.appendChild(el);
-  return { h, el };
-});
+// Closed toward whichever pole is in darkness — northern summer darkens the
+// south, and the other way round.
+function clipRegion(pts, dec) {
+  const edge = dec >= 0 ? fy(LAT_RANGE[0]) : fy(LAT_RANGE[1]);
+  const d = pts.map(([ lon, lat ]) => `${fx(lon).toFixed(4)} ${fy(lat).toFixed(4)}`).join("L");
+  return `M${d}L1 ${edge.toFixed(4)}L0 ${edge.toFixed(4)}Z`;
+}
+
+const duskLine = (pts) =>
+  "M" + pts.map(([ lon, lat ]) => `${nx(lon).toFixed(1)} ${ny(lat).toFixed(1)}`).join("L");
 
 const cities = [ ...flat.querySelectorAll(".lead") ];
 const fmt = new Map(cities.map((el) => [ el, new Intl.DateTimeFormat([], {
@@ -546,12 +578,9 @@ function paintNight() {
   const now = new Date();
   const { dec, lon: sunLon } = subsolarPoint(now);
 
-  // Dusk as a ramp, not three steps. Each band is the region where the sun is
-  // already below a slightly lower angle, stacked — so the shadow deepens the
-  // way twilight actually does instead of showing three hard edges.
-  for (const band of bands) {
-    band.el.setAttribute("d", shadowPath(dec, sunLon, band.h));
-  }
+  const edge = terminatorPoints(dec, sunLon, 0);
+  document.getElementById("nightpath").setAttribute("d", clipRegion(edge, dec));
+  document.getElementById("duskpath").setAttribute("d", duskLine(edge));
 
   const sun = document.getElementById("sun");
   sun.setAttribute("cx", nx(sunLon).toFixed(1));
