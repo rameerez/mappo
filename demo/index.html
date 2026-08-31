@@ -31,7 +31,34 @@
      overflow-x:auto;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
  .tag{display:inline-block;font:11px/1 ui-monospace,monospace;background:var(--bg);
       border:1px solid var(--line);border-radius:5px;padding:3px 6px;margin:0 4px 4px 0;color:var(--muted)}
- world-map{display:block;width:100%}
+world-map{display:block;width:100%}
+
+/* ── the flat showcase stage ────────────────────────────────────────── */
+.stage{position:relative;border-radius:18px;overflow:hidden;background:#070b11;
+       padding:26px 26px 0;border:1px solid #14202c;
+       box-shadow:0 24px 70px -30px rgb(0 0 0 / .8)}
+.stage-glow{position:absolute;inset:-30% -10% auto -10%;height:70%;pointer-events:none;
+       background:radial-gradient(60% 100% at 50% 0%,rgba(79,209,197,.16),transparent 70%)}
+.stage world-map{position:relative}
+.stage-cap{display:flex;flex-direction:column;gap:2px;padding:16px 2px 20px;
+       font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#5d7183}
+.stage-cap strong{color:#a9c6d4;font-weight:600;letter-spacing:.02em}
+
+/* Label language B: a dot, a hairline stalk, a tracked caption. Deliberately
+   nothing like the pills on the globe above — mappo positions your markup,
+   it does not dictate how it looks. */
+.lead{pointer-events:auto;text-decoration:none}
+.lead > i{position:absolute;left:0;top:0;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;
+       border-radius:50%;background:#f97316;box-shadow:0 0 0 4px rgb(249 115 22 / .18)}
+.lead > span{position:absolute;left:0;top:0;display:block;white-space:nowrap;
+       transform:translate(-50%,calc(-100% - 15px));
+       font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+       letter-spacing:.16em;text-transform:uppercase;color:#dff5f0;
+       text-shadow:0 1px 6px rgb(0 0 0 / .9)}
+.lead > span::after{content:"";position:absolute;left:50%;top:calc(100% + 3px);
+       width:1px;height:11px;background:linear-gradient(#4fd1c5,transparent)}
+.lead:hover > span{color:#fff}
+.lead:hover > i{box-shadow:0 0 0 6px rgb(249 115 22 / .26)}
  /* hero */
  .hero{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:26px;align-items:center;
        background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;margin-top:18px}
@@ -108,40 +135,54 @@
 </div>
 
   <!-- ───────────────────────── FLAT SHOWCASE ───────────────────────── -->
-  <h2>The flat map <span>— every feature at once, and exact in all of them</span></h2>
-  <div class="card">
-    <div class="art" style="padding:18px 18px 0">
-      <world-map id="flatshow"
-        cols="220"
-        lat-min="-58" lat-max="80"
-        land="solid outline" land-source="vector" borders
-        land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="0.7"
-        borders-color="var(--coast)" borders-width="0.4" borders-opacity="0.5"
-        background="var(--sea)" ocean-color="var(--ocean)"
-        cities="Tokyo, London, New York, Lagos, Sydney, Santiago, Mumbai, Cairo"
-        marker-shape="pin" marker-color="var(--accent)" marker-scale="2.2" marker-pulse="true">
-        <a class="pin" data-lat="38.72" data-lon="-9.14" href="#f-lis"><span>Lisbon</span></a>
-        <a class="pin" data-lat="-33.45" data-lon="-70.67" href="#f-scl"><span>Santiago</span></a>
-        <a class="pin" data-lat="1.35" data-lon="103.82" href="#f-sin"><span>Singapore</span></a>
-        <a class="pin" data-lat="64.13" data-lon="-21.9" href="#f-rvk"><span>Reykjavík</span></a>
-      </world-map>
+  <h2>The flat map <span>— SVG, and exact in every combination</span></h2>
+  <div class="stage">
+    <div class="stage-glow"></div>
+    <world-map id="flatshow"
+      cols="300"
+      lat-min="-56" lat-max="76"
+      land="solid outline" land-source="vector" borders
+      land-color="#12212e" land-stroke="#4fd1c5" land-stroke-width="0.55"
+      borders-color="#4fd1c5" borders-width="0.35" borders-opacity="0.22"
+      background="#070b11" ocean-color="#0d1622">
+      <a class="lead" data-lat="38.72"  data-lon="-9.14"   href="#s-lis"><i></i><span>Lisbon</span></a>
+      <a class="lead" data-lat="35.68"  data-lon="139.69"  href="#s-tyo"><i></i><span>Tokyo</span></a>
+      <a class="lead" data-lat="-23.55" data-lon="-46.63"  href="#s-sao"><i></i><span>São Paulo</span></a>
+      <a class="lead" data-lat="6.52"   data-lon="3.37"    href="#s-los"><i></i><span>Lagos</span></a>
+      <a class="lead" data-lat="40.71"  data-lon="-74.01"  href="#s-nyc"><i></i><span>New York</span></a>
+      <a class="lead" data-lat="-33.87" data-lon="151.21"  href="#s-syd"><i></i><span>Sydney</span></a>
+      <a class="lead" data-lat="55.75"  data-lon="37.62"   href="#s-mow"><i></i><span>Moscow</span></a>
+      <a class="lead" data-lat="19.08"  data-lon="72.88"   href="#s-bom"><i></i><span>Mumbai</span></a>
+    </world-map>
+    <div class="stage-cap">
+      <strong>300 columns · 119 coastline rings · 277 national borders · 8 anchored labels</strong>
+      <span>every one of them a real SVG node your stylesheet can reach</span>
     </div>
+  </div>
+  <div class="card" style="margin-top:16px">
     <div class="meta">
-      <h3>Real coastlines, national borders, a dotted sea, pulsing city pins, and your own labels</h3>
-      <p>One element. The flat renderer is SVG, so every one of those is a real node your stylesheet can
-      reach — vector-crisp at any zoom, and correct in every combination of options, which the globe cannot
-      yet claim for filled vector land.</p>
-      <span class="tag">land="solid outline"</span><span class="tag">land-source="vector"</span><span class="tag">borders</span><span class="tag">ocean-color</span><span class="tag">background</span><span class="tag">cities</span><span class="tag">marker-shape="pin"</span><span class="tag">marker-pulse</span><span class="tag">data-lat/data-lon</span><span class="tag">lat-min/lat-max</span>
-      <pre style="margin-top:12px"><code>&lt;world-map cols="220" lat-min="-58" lat-max="80"
+      <h3>One element, no canvas, no dependencies</h3>
+      <p>The flat renderer draws to SVG, so the coastline is vector-crisp at any zoom and in print, the
+      borders are a single path, and the sea is one pattern node rather than thousands of circles. Labels
+      here use a different language from the globe above — a hairline stalk and tracked caption instead of a
+      pill — to make the point that mappo positions your markup and never dictates how it looks.</p>
+      <span class="tag">land="solid outline"</span><span class="tag">land-source="vector"</span><span class="tag">borders</span><span class="tag">ocean-color</span><span class="tag">background</span><span class="tag">cols="300"</span><span class="tag">lat-min/lat-max</span><span class="tag">data-lat/data-lon</span>
+      <pre style="margin-top:12px"><code>&lt;world-map cols="300" lat-min="-56" lat-max="76"
   land="solid outline" land-source="vector" borders
-  land-color="#c9d3bd" land-stroke="#5f7a4a" land-stroke-width="0.7"
-  borders-color="#5f7a4a" borders-width="0.4" borders-opacity="0.5"
-  background="#f4f6f2" ocean-color="#dfe6da"
-  cities="Tokyo, London, New York, Lagos, Sydney, Santiago, Mumbai, Cairo"
-  marker-shape="pin" marker-color="#c2410c" marker-scale="2.2" marker-pulse="true"&gt;
-  &lt;a data-lat="38.72" data-lon="-9.14"&gt;&lt;span&gt;Lisbon&lt;/span&gt;&lt;/a&gt;
-  &lt;a data-lat="1.35"  data-lon="103.82"&gt;&lt;span&gt;Singapore&lt;/span&gt;&lt;/a&gt;
-&lt;/world-map&gt;</code></pre>
+  land-color="#12212e" land-stroke="#4fd1c5" land-stroke-width="0.55"
+  borders-color="#4fd1c5" borders-width="0.35" borders-opacity="0.22"
+  background="#070b11" ocean-color="#0d1622"&gt;
+  &lt;a class="lead" data-lat="38.72" data-lon="-9.14"&gt;&lt;i&gt;&lt;/i&gt;&lt;span&gt;Lisbon&lt;/span&gt;&lt;/a&gt;
+&lt;/world-map&gt;
+
+/* the label language: a dot, a stalk, a tracked caption */
+.lead &gt; i    { width:5px; height:5px; border-radius:50%; background:#f97316;
+               box-shadow:0 0 0 4px rgb(249 115 22 / .18); }
+.lead &gt; span { transform: translate(-50%, calc(-100% - 15px));
+               font: 600 10px/1 ui-monospace; letter-spacing:.16em;
+               text-transform:uppercase; color:#dff5f0; }
+.lead &gt; span::after { content:""; position:absolute; left:50%; top:100%;
+               width:1px; height:11px; background:linear-gradient(#4fd1c5,transparent); }</code></pre>
     </div>
   </div>
 
