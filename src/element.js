@@ -8,7 +8,7 @@
 // bubbling CustomEvents instead: worldmap:cityclick, :cityenter,
 // :dotclick, :dotenter. For full control, use the WorldMap class.
 
-import { WorldMap } from "./renderer.js";
+import { WorldMap, DEFAULTS } from "./renderer.js";
 
 const ATTR_MAP = {
   // attribute      → [option, parser]
@@ -113,7 +113,14 @@ class WorldMapElement extends HTMLElement {
     const options = {};
     for (const [attr, [key, parse]] of Object.entries(ATTR_MAP)) {
       const raw = this.getAttribute(attr);
+      // An ABSENT attribute must mean "the default", not "whatever it was set
+      // to last time". update() merges, so without this branch removing an
+      // attribute never un-sets its option — `graticule`, `borders`,
+      // `globe-ring` and every other boolean would latch on forever once
+      // switched on. (Found by clicking the demo page toggles, which is
+      // exactly the bug a unit test on a fresh instance cannot see.)
       if (raw !== null) options[key] = parse(raw);
+      else if (key in DEFAULTS) options[key] = DEFAULTS[key];
     }
     if (options.latMin !== undefined || options.latMax !== undefined) {
       options.latRange = [options.latMin ?? -58, options.latMax ?? 84];

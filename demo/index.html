@@ -4,20 +4,23 @@
 <title>mappo — demos</title>
 <style>
  :root{--bg:#fffbf5;--card:#fff;--ink:#16181d;--muted:#6b7280;--line:#e6e1d8;
-       --land:#c9d3bd;--coast:#5f7a4a;--grid:#ddd8cd;--accent:#c2410c}
+       --land:#c9d3bd;--coast:#5f7a4a;--grid:#ddd8cd;--accent:#c2410c;--pill:#fff}
  html[data-theme="dark"]{--bg:#0e1116;--card:#151a21;--ink:#e7ecf3;--muted:#93a0b4;--line:#242c37;
-       --land:#2b3646;--coast:#7aa2f7;--grid:#232b36;--accent:#fb923c}
+       --land:#2b3646;--coast:#7aa2f7;--grid:#232b36;--accent:#fb923c;--pill:#1d2229}
  *{box-sizing:border-box}
  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 ui-sans-serif,system-ui,sans-serif}
- .wrap{max-width:1180px;margin:0 auto;padding:32px 24px 80px}
- header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}
- h1{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
- .lede{color:var(--muted);max-width:64ch;margin:0}
+ .wrap{max-width:1200px;margin:0 auto;padding:28px 24px 90px}
+ header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;margin-bottom:8px}
+ h1{font-size:27px;margin:0 0 6px;letter-spacing:-.015em}
+ .lede{color:var(--muted);max-width:66ch;margin:0}
  button{font:inherit;padding:8px 14px;border-radius:9px;border:1px solid var(--line);
         background:var(--card);color:var(--ink);cursor:pointer}
+ button:hover{border-color:var(--accent)}
+ button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);font-weight:600}
  h2{font-size:13px;text-transform:uppercase;letter-spacing:.13em;color:var(--muted);
-    margin:44px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
- .grid{display:grid;gap:22px;grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
+    margin:46px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+ h2 span{text-transform:none;letter-spacing:0;font-size:13px;color:var(--muted);opacity:.8}
+ .grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;
        display:flex;flex-direction:column}
  .card .art{padding:14px 14px 0}
@@ -26,195 +29,285 @@
  .card p{margin:0 0 10px;color:var(--muted);font-size:13.5px}
  pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px 12px;
      overflow-x:auto;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
- code{font:inherit}
  .tag{display:inline-block;font:11px/1 ui-monospace,monospace;background:var(--bg);
       border:1px solid var(--line);border-radius:5px;padding:3px 6px;margin:0 4px 4px 0;color:var(--muted)}
- .feature{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;
-          background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
- @media(max-width:760px){.feature{grid-template-columns:1fr}}
- .full{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;
-       padding:18px;text-decoration:none;color:inherit}
- .full:hover{border-color:var(--accent)}
- .row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
- a{color:var(--accent)}
- .copy{font:11px/1 ui-monospace,monospace;border:1px solid var(--line);background:var(--bg);
-       border-radius:6px;padding:5px 8px;cursor:pointer;color:var(--muted)}
  world-map{display:block;width:100%}
+ /* hero */
+ .hero{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:26px;align-items:center;
+       background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;margin-top:18px}
+ @media(max-width:860px){.hero{grid-template-columns:1fr}}
+ .pin{pointer-events:auto;text-decoration:none}
+ .pin>span{display:flex;align-items:center;gap:6px;white-space:nowrap;transform:translate(-50%,-50%);
+   background:var(--pill);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:3px 10px;
+   font-size:11.5px;font-weight:600;box-shadow:0 2px 10px rgb(0 0 0/.16);
+   opacity:calc(.28 + .72*var(--mappo-depth,1))}
+ .pin>span::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--accent)}
+ .pin[data-mappo-behind]{visibility:hidden}
+ /* toggles */
+ .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+ .controls button{padding:6px 11px;font-size:13px;border-radius:8px}
+ /* orbit, inlined */
+ .system{position:relative;height:420px;border-radius:14px;overflow:hidden;
+   background:radial-gradient(120% 90% at 66% 26%,#0b1220 0%,#05070d 62%)}
+ .sun{position:absolute;left:50%;top:50%;width:76px;height:76px;margin:-38px 0 0 -38px;border-radius:50%;
+   background:radial-gradient(circle,#fff6d8 0%,#ffd166 38%,#ff9f1c 62%,rgba(255,140,0,0) 72%);
+   box-shadow:0 0 80px 26px rgba(255,175,60,.26)}
+ .orbit-path{position:absolute;left:50%;top:50%;width:660px;height:250px;margin:-125px 0 0 -330px;
+   border:1px dashed rgba(255,255,255,.10);border-radius:50%}
+ .carrier{position:absolute;left:50%;top:50%;width:170px;height:170px;margin:-85px 0 0 -85px;will-change:transform}
+ .hud{position:absolute;left:14px;bottom:12px;font:11.5px/1.5 ui-monospace,monospace;color:#8b98ad}
+ .hud b{color:#e8eef7;font-weight:600}
+ a{color:var(--accent)}
+ .foot{margin-top:40px;color:var(--muted);font-size:13.5px}
 </style></head>
 <body><div class="wrap">
 
 <header>
   <div>
     <h1>mappo demos</h1>
-    <p class="lede">Every example below is live — same build you would install. Each carries the exact
-    configuration that produces it, so you can copy one and get that picture.</p>
+    <p class="lede">Everything on one page, live — the same build you would install. Each example carries
+    the exact markup that produces it, so you can copy a card and get that picture.</p>
   </div>
   <button id="theme">Toggle dark</button>
 </header>
 
-<h2>Full-page demos</h2>
-<div class="grid">
-  <a class="full" href="./orbit.html">
-    <h3>🌍 Earth in orbit</h3>
-    <p>A globe spinning on a fixed 23.44° axis while its container is translated around a sun.
-    Vector coastlines, graticule, real axial tilt.</p>
-    <span class="tag">mode="globe"</span><span class="tag">land-source="vector"</span><span class="tag">tilt="23.44"</span>
-  </a>
-  <a class="full" href="./land.html">
-    <h3>🗺 Land styles</h3>
-    <p>dots · solid · outline · solid outline, on both renderers, from one traced geometry.</p>
-    <span class="tag">land="solid outline"</span><span class="tag">flat + globe</span>
-  </a>
-  <a class="full" href="./v05.html">
-    <h3>✨ Graticule, overlays, CSS variables</h3>
-    <p>Meridians and parallels, DOM labels positioned by the map, colours that follow your theme.</p>
-    <span class="tag">graticule</span><span class="tag">data-lat/data-lon</span><span class="tag">var(--x)</span>
-  </a>
-  <a class="full" href="./v05b.html">
-    <h3>🎚 Roll &amp; tilt</h3>
-    <p>The lean versus the axial tilt, and how they compose.</p>
-    <span class="tag">roll="-14.3"</span><span class="tag">tilt="25"</span>
-  </a>
-  <a class="full" href="../index.html">
-    <h3>🏠 Landing page</h3>
-    <p>The project home, with the interactive playground.</p>
-    <span class="tag">playground</span>
-  </a>
-  <a class="full" href="./perf.html">
-    <h3>⏱ Performance harness</h3>
-    <p>Render budgets across resolutions and update tiers.</p>
-    <span class="tag">benchmarks</span>
-  </a>
+<!-- ───────────────────────── HERO ───────────────────────── -->
+<div class="hero">
+  <div>
+    <world-map id="hero" mode="globe" cols="160" rotate-speed="6"
+      tilt="18" roll="-14.3"
+      land="solid outline" land-source="vector"
+      land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="0.9"
+      graticule meridians="24" parallels="11"
+      graticule-color="var(--grid)" equator-color="var(--coast)"
+      graticule-opacity="0.45" equator-opacity="0.8" globe-ring="true">
+      <a class="pin" data-lat="38.7"  data-lon="-9.1"   href="#"><span>Lisbon</span></a>
+      <a class="pin" data-lat="35.7"  data-lon="139.7"  href="#"><span>Tokyo</span></a>
+      <a class="pin" data-lat="-23.5" data-lon="-46.6"  href="#"><span>São Paulo</span></a>
+      <a class="pin" data-lat="-1.29" data-lon="36.82"  href="#"><span>Nairobi</span></a>
+      <a class="pin" data-lat="40.7"  data-lon="-74.0"  href="#"><span>New York</span></a>
+      <a class="pin" data-lat="55.75" data-lon="37.62"  href="#"><span>Moscow</span></a>
+    </world-map>
+  </div>
+  <div>
+    <h3 style="margin:0 0 6px;font-size:17px">Real coastlines, leaning, with your own labels</h3>
+    <p style="color:var(--muted);margin:0 0 12px">Drag it. The labels are ordinary anchors in your markup —
+    mappo positions them every frame and publishes how far each has turned away, so they fade and hide
+    at the horizon with plain CSS.</p>
+    <pre><code>&lt;world-map mode="globe" rotate-speed="6"
+  tilt="18" roll="-14.3"
+  land="solid outline" land-source="vector"
+  graticule meridians="24" parallels="11"&gt;
+  &lt;a data-lat="38.7" data-lon="-9.1"&gt;&lt;span&gt;Lisbon&lt;/span&gt;&lt;/a&gt;
+  &lt;a data-lat="35.7" data-lon="139.7"&gt;&lt;span&gt;Tokyo&lt;/span&gt;&lt;/a&gt;
+&lt;/world-map&gt;
+
+.pin &gt; span { opacity: calc(.28 + .72*var(--mappo-depth,1)) }
+.pin[data-mappo-behind] { visibility: hidden }</code></pre>
+  </div>
 </div>
 
-<h2>Land: grid vs vector</h2>
+<!-- ───────────────────────── ORBIT ───────────────────────── -->
+<h2>Earth in orbit <span>— a fixed 23.44° axis, carried around a sun</span></h2>
+<div class="card">
+  <div class="art" style="padding:14px">
+    <div class="system">
+      <div class="orbit-path"></div>
+      <div class="sun"></div>
+      <div class="carrier" id="carrier">
+        <world-map mode="globe" cols="140" rotate-speed="45" tilt="23.44"
+          land="solid outline" land-source="vector"
+          land-color="#6ea8ff" land-stroke="#bcd4ff" land-stroke-width="0.8"
+          background="#0d1b33" graticule meridians="24" parallels="11"
+          graticule-color="#1e2a3d" equator-color="#6ea8ff" equator-opacity="0.75"
+          globe-ring="true"></world-map>
+      </div>
+      <div class="hud">
+        <div>axial tilt <b>23.44°</b> — fixed in space, never counter-rotated</div>
+        <div id="clock"></div>
+      </div>
+    </div>
+  </div>
+  <div class="meta">
+    <h3>The carrier only translates</h3>
+    <p>That is the whole trick: mappo spins the planet on its own axis, and the container walks an ellipse.
+    Because the container never counter-rotates, the tilt keeps pointing the same way all year — which is
+    what gives a planet seasons.</p>
+    <pre><code>&lt;div class="carrier"&gt;
+  &lt;world-map mode="globe" tilt="23.44" rotate-speed="45"
+    land="solid outline" land-source="vector"&gt;&lt;/world-map&gt;
+&lt;/div&gt;
+
+const phase = (t % YEAR_MS) / YEAR_MS, a = phase * Math.PI * 2;
+carrier.style.transform =
+  `translate3d(${Math.cos(a)*330}px, ${Math.sin(a)*125}px, 0)`;</code></pre>
+  </div>
+</div>
+
+<!-- ───────────────────────── LIVE PLAYGROUND ───────────────────────── -->
+<h2>Land styles <span>— one map, every option, updated live</span></h2>
+<div class="hero" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
+  <div>
+    <div class="controls" data-group="land">
+      <button data-opt="land" data-val="dots" aria-pressed="false">dots</button>
+      <button data-opt="land" data-val="solid" aria-pressed="false">solid</button>
+      <button data-opt="land" data-val="outline" aria-pressed="false">outline</button>
+      <button data-opt="land" data-val="solid outline" aria-pressed="true">solid outline</button>
+    </div>
+    <div class="controls" data-group="landSource">
+      <button data-opt="landSource" data-val="grid" aria-pressed="true">grid</button>
+      <button data-opt="landSource" data-val="vector" aria-pressed="false">vector</button>
+    </div>
+    <div class="controls" data-group="mode">
+      <button data-opt="mode" data-val="flat" aria-pressed="true">flat</button>
+      <button data-opt="mode" data-val="globe" aria-pressed="false">globe</button>
+    </div>
+    <div class="controls" data-group="borders">
+      <button data-opt="borders" data-val="off" aria-pressed="true">no borders</button>
+      <button data-opt="borders" data-val="on" aria-pressed="false">borders</button>
+    </div>
+    <world-map id="play" cols="140" land="solid outline"
+      land-color="var(--land)" land-stroke="var(--coast)" rotate-speed="5" roll="-12"></world-map>
+  </div>
+  <div>
+    <h3 style="margin:0 0 6px;font-size:17px">Every combination is one attribute</h3>
+    <p style="color:var(--muted);margin:0 0 12px"><code>land</code> is a space-separated token list, so
+    combinations read the way you say them. The same names mean the same thing on the flat map and the globe.</p>
+    <pre id="playCode"><code></code></pre>
+    <p style="color:var(--muted);margin:10px 0 0;font-size:13px">Attributes are live — the buttons above just
+    set them, and the map re-renders.</p>
+  </div>
+</div>
+
+<!-- ───────────────────────── GLOBE GALLERY ───────────────────────── -->
+<h2>Globe <span>— roll, tilt, and how they compose</span></h2>
 <div class="grid">
   <div class="card"><div class="art">
+    <world-map mode="globe" cols="140" rotate-speed="0" roll="0" tilt="0"
+      land="solid outline" land-source="vector" land-color="var(--land)" land-stroke="var(--coast)"></world-map>
+  </div><div class="meta"><h3>Upright</h3>
+    <p>No lean, no tilt — the reference frame.</p>
+    <pre><code>roll="0" tilt="0"</code></pre></div></div>
+
+  <div class="card"><div class="art">
+    <world-map mode="globe" cols="140" rotate-speed="0" roll="-14.3" tilt="0"
+      land="solid outline" land-source="vector" land-color="var(--land)" land-stroke="var(--coast)"></world-map>
+  </div><div class="meta"><h3>Roll — the lean</h3>
+    <p>Turns the finished disc in the plane of the screen. Watch the equator.</p>
+    <pre><code>roll="-14.3"</code></pre></div></div>
+
+  <div class="card"><div class="art">
+    <world-map mode="globe" cols="140" rotate-speed="0" roll="0" tilt="30"
+      land="solid outline" land-source="vector" land-color="var(--land)" land-stroke="var(--coast)"
+      graticule meridians="24" parallels="11" graticule-color="var(--grid)"
+      equator-color="var(--coast)" equator-opacity="0.85"></world-map>
+  </div><div class="meta"><h3>Tilt — the axis</h3>
+    <p>Leans the axis away from you. A foreshortening, not a rotation.</p>
+    <pre><code>tilt="30" graticule</code></pre></div></div>
+
+  <div class="card"><div class="art">
+    <world-map mode="globe" cols="140" rotate-speed="0" roll="-14.3" tilt="25"
+      land="solid outline" land-source="vector" land-color="var(--land)" land-stroke="var(--coast)"
+      graticule meridians="24" parallels="11" graticule-color="var(--grid)"
+      equator-color="var(--coast)" equator-opacity="0.85"></world-map>
+  </div><div class="meta"><h3>Both, composed</h3>
+    <p>Different gestures; they stack.</p>
+    <pre><code>roll="-14.3" tilt="25"</code></pre></div></div>
+
+  <div class="card"><div class="art">
+    <world-map mode="globe" cols="150" rotate-speed="0" roll="-10"
+      land="solid" land-source="vector" borders land-color="var(--land)"
+      borders-color="var(--coast)" borders-opacity="0.8"></world-map>
+  </div><div class="meta"><h3>Country borders</h3>
+    <p>Every national boundary, on the sphere.</p>
+    <pre><code>land="solid" land-source="vector" borders</code></pre></div></div>
+
+  <div class="card"><div class="art">
+    <world-map mode="globe" cols="150" rotate-speed="0" roll="-10" dot-color="var(--coast)"
+      graticule meridians="24" parallels="23"
+      graticule-color="var(--grid)" equator-color="var(--accent)" equator-opacity="0.9"></world-map>
+  </div><div class="meta"><h3>Dots + dense graticule</h3>
+    <p>24 meridians, 23 parallels — one lands on 0° and is dropped, so the equator is never double-drawn.</p>
+    <pre><code>graticule meridians="24" parallels="23"</code></pre></div></div>
+</div>
+
+<!-- ───────────────────────── FLAT GALLERY ───────────────────────── -->
+<h2>Flat <span>— grid detail versus real geography</span></h2>
+<div class="grid">
+  <div class="card"><div class="art">
+    <world-map cols="120" dot-color="var(--coast)"></world-map>
+  </div><div class="meta"><h3>The dot field</h3>
+    <p>What mappo is named for. Resolution is a runtime parameter.</p>
+    <pre><code>&lt;world-map cols="120"&gt;&lt;/world-map&gt;</code></pre></div></div>
+
+  <div class="card"><div class="art">
     <world-map cols="120" land="outline" land-stroke="var(--coast)"></world-map>
-  </div><div class="meta">
-    <h3>Grid contours</h3>
-    <p>Traced from the packed bitmask. Blocky by design, follows <code>cols</code>, costs no extra bytes.</p>
-    <pre><code>&lt;world-map cols="120"
-  land="outline"
-  land-stroke="#5f7a4a"&gt;&lt;/world-map&gt;</code></pre>
-  </div></div>
+  </div><div class="meta"><h3>Grid contours</h3>
+    <p>Traced from the bitmask. Blocky by design, follows <code>cols</code>, free.</p>
+    <pre><code>land="outline"</code></pre></div></div>
 
   <div class="card"><div class="art">
     <world-map cols="120" land="outline" land-source="vector" land-stroke="var(--coast)"></world-map>
-  </div><div class="meta">
-    <h3>Vector coastlines</h3>
-    <p>Real Natural Earth outlines at 1/32°. Smooth at any size, independent of <code>cols</code>. ~13 KB.</p>
-    <pre><code>&lt;world-map cols="120"
-  land="outline"
-  land-source="vector"
-  land-stroke="#5f7a4a"&gt;&lt;/world-map&gt;</code></pre>
-  </div></div>
+  </div><div class="meta"><h3>Vector coastlines</h3>
+    <p>Natural Earth at 1/32°. Smooth at any size, independent of <code>cols</code>. ~13 KB.</p>
+    <pre><code>land="outline" land-source="vector"</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <world-map cols="120" land="solid outline" land-source="vector"
-      land-color="var(--land)" land-stroke="var(--coast)"></world-map>
-  </div><div class="meta">
-    <h3>Filled + coast</h3>
-    <p>One geometry, filled and stroked. Inland seas stay empty — the rings are wound for it.</p>
-    <pre><code>&lt;world-map land="solid outline"
-  land-source="vector"
-  land-color="#c9d3bd"
-  land-stroke="#5f7a4a"&gt;&lt;/world-map&gt;</code></pre>
-  </div></div>
+    <world-map cols="120" land="solid outline" land-source="vector" borders
+      land-color="var(--land)" land-stroke="var(--coast)" borders-opacity="0.6"></world-map>
+  </div><div class="meta"><h3>Everything</h3>
+    <p>Filled, coasted, bordered.</p>
+    <pre><code>land="solid outline" land-source="vector" borders</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <world-map cols="120" land="solid" land-source="vector" borders
-      land-color="var(--land)" borders-color="var(--coast)" borders-opacity="0.75"></world-map>
-  </div><div class="meta">
-    <h3>Country borders</h3>
-    <p>Every national boundary, vector only — a raster cannot express a border that follows a river.</p>
-    <pre><code>&lt;world-map land="solid"
-  land-source="vector"
-  borders
-  borders-color="#5f7a4a"
-  borders-opacity="0.75"&gt;&lt;/world-map&gt;</code></pre>
-  </div></div>
-</div>
-
-<h2>Globe</h2>
-<div class="grid">
-  <div class="card"><div class="art">
-    <world-map mode="globe" cols="150" rotate-speed="0" roll="-14.3"
-      land="solid outline" land-source="vector"
-      land-color="var(--land)" land-stroke="var(--coast)"></world-map>
-  </div><div class="meta">
-    <h3>Vector globe, leaning</h3>
-    <p>Coastlines clipped to the visible hemisphere — fills close along the horizon, not across it.</p>
-    <pre><code>&lt;world-map mode="globe"
-  land="solid outline"
-  land-source="vector"
-  roll="-14.3"&gt;&lt;/world-map&gt;</code></pre>
-  </div></div>
+    <world-map cols="120" land="solid" land-source="vector" land-color="var(--land)"
+      highlight-color="var(--accent)"
+      highlight-polygon='[[[42.1,-8.2],[41.9,-6.2],[39.7,-7.0],[38.0,-7.0],[37.0,-7.4],[37.0,-8.9],[38.7,-9.5],[41.0,-8.9],[42.1,-8.2]]]'></world-map>
+  </div><div class="meta"><h3>Highlight a region</h3>
+    <p>You supply the rings; mappo ships no boundary dataset for this on purpose.</p>
+    <pre><code>highlight-polygon='[[[42.1,-8.2],…]]'
+highlight-color="#c2410c"</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <world-map mode="globe" cols="150" rotate-speed="6" tilt="23.44"
-      land="solid outline" land-source="vector" borders
-      land-color="var(--land)" land-stroke="var(--coast)"
-      graticule meridians="24" parallels="11"
-      graticule-color="var(--grid)" equator-color="var(--coast)" equator-opacity="0.8"></world-map>
-  </div><div class="meta">
-    <h3>Everything at once</h3>
-    <p>Vector land, borders, graticule, a real axial tilt, spinning.</p>
-    <pre><code>&lt;world-map mode="globe" rotate-speed="6"
-  tilt="23.44" land="solid outline"
-  land-source="vector" borders
-  graticule meridians="24" parallels="11"&gt;
-&lt;/world-map&gt;</code></pre>
-  </div></div>
-
-  <div class="card"><div class="art">
-    <world-map mode="globe" cols="150" rotate-speed="5" roll="-10"
-      land="solid" land-source="vector" land-color="var(--land)">
-      <a data-lat="38.7" data-lon="-9.1" style="pointer-events:auto;text-decoration:none"><span
-        style="display:block;transform:translate(-50%,-50%);background:var(--card);border:1px solid var(--line);
-               border-radius:999px;padding:3px 9px;font-size:11px;font-weight:600;color:var(--ink);
-               white-space:nowrap;opacity:calc(.3 + .7*var(--mappo-depth,1))">Lisbon</span></a>
-      <a data-lat="35.7" data-lon="139.7" style="pointer-events:auto;text-decoration:none"><span
-        style="display:block;transform:translate(-50%,-50%);background:var(--card);border:1px solid var(--line);
-               border-radius:999px;padding:3px 9px;font-size:11px;font-weight:600;color:var(--ink);
-               white-space:nowrap;opacity:calc(.3 + .7*var(--mappo-depth,1))">Tokyo</span></a>
+    <world-map cols="120" land="solid" land-source="vector" land-color="var(--land)">
+      <a class="pin" data-lat="38.7" data-lon="-9.1" href="#"><span>Lisbon</span></a>
+      <a class="pin" data-lat="-23.5" data-lon="-46.6" href="#"><span>São Paulo</span></a>
+      <a class="pin" data-lat="35.7" data-lon="139.7" href="#"><span>Tokyo</span></a>
     </world-map>
-  </div><div class="meta">
-    <h3>Your DOM, positioned</h3>
-    <p>Children with <code>data-lat</code>/<code>data-lon</code> are placed every frame. Real links, real text.</p>
-    <pre><code>&lt;world-map mode="globe" land="solid" land-source="vector"&gt;
-  &lt;a data-lat="38.7" data-lon="-9.1"&gt;&lt;span&gt;Lisbon&lt;/span&gt;&lt;/a&gt;
-&lt;/world-map&gt;
-
-/* --mappo-depth: 1 facing you → 0 at the limb */
-span { opacity: calc(.3 + .7*var(--mappo-depth,1)) }</code></pre>
-  </div></div>
+  </div><div class="meta"><h3>Overlays, flat</h3>
+    <p>Identical attributes and CSS hooks as the globe — written once per build instead of per frame.</p>
+    <pre><code>&lt;a data-lat="38.7" data-lon="-9.1"&gt;&lt;span&gt;Lisbon&lt;/span&gt;&lt;/a&gt;</code></pre></div></div>
 </div>
 
-<h2>Option reference</h2>
-<div class="feature">
-  <div>
-    <pre><code>land            "dots" | "solid" | "outline" | "solid outline"
+<!-- ───────────────────────── REFERENCE ───────────────────────── -->
+<h2>Every option</h2>
+<div class="hero" style="grid-template-columns:1fr 1fr">
+  <pre><code>land            "dots" | "solid" | "outline" | "solid outline"
 land-source     "grid" (bitmask) | "vector" (Natural Earth)
 land-color      fill        → falls back to dot-color
 land-stroke     coastline   → falls back to land-color
 land-stroke-width
 borders         country borders (vector)
-borders-color / borders-width / borders-opacity</code></pre>
-  </div>
-  <div>
-    <pre><code>mode            "flat" | "globe"
+borders-color / borders-width / borders-opacity
+highlight-polygon / highlight-color</code></pre>
+  <pre><code>mode            "flat" | "globe"
 tilt            axial tilt, degrees (23.44 = Earth)
 roll            lean in the screen plane, degrees
-rotate-speed    deg/sec (globe)
+rotate-speed    deg/sec · drag to spin, flick for momentum
 graticule       meridians / parallels
                 graticule-color / equator-color
                 graticule-opacity / equator-opacity
-cols            grid resolution
-lat-min/lat-max framing
-overlays        position data-lat/data-lon children</code></pre>
-  </div>
+cols            grid resolution · lat-min / lat-max framing
+overlays        position data-lat/data-lon children
+animation       wave | noise | ripple | sweep | sparkle
+max-dpr         cap the globe backing store (default 2)</code></pre>
 </div>
+
+<p class="foot">Colours accept <code>var(--x)</code> and re-resolve when your theme changes — the toggle at the
+top of this page repaints every map above without a line of JavaScript.
+Full-screen versions: <a href="./orbit.html">orbit</a> · <a href="./land.html">land styles</a> ·
+<a href="./v05.html">graticule &amp; overlays</a> · <a href="./v05b.html">roll &amp; tilt</a> ·
+<a href="./perf.html">performance</a> · <a href="../index.html">landing page</a>.</p>
 
 </div>
 <script type="module" src="../dist/mappo.js"></script>
@@ -223,5 +316,61 @@ overlays        position data-lat/data-lon children</code></pre>
     const e = document.documentElement;
     e.dataset.theme = e.dataset.theme === "dark" ? "light" : "dark";
   };
+
+  // ── orbit ──────────────────────────────────────────────────────────────
+  const YEAR_MS = 96000, A = 330, B = 125;
+  const carrier = document.getElementById("carrier"), clock = document.getElementById("clock");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let t0 = null;
+  (function frame(t) {
+    t0 ??= t;
+    const phase = ((t - t0) % YEAR_MS) / YEAR_MS, a = phase * Math.PI * 2;
+    const y = Math.sin(a) * B;
+    carrier.style.transform =
+      `translate3d(${(Math.cos(a) * A).toFixed(1)}px, ${y.toFixed(1)}px, 0) scale(${(0.86 + 0.14 * ((Math.sin(a) + 1) / 2)).toFixed(3)})`;
+    carrier.style.zIndex = y > 0 ? 3 : 1;
+    clock.textContent = `orbit ${(phase * 100).toFixed(0)}% · day ${(phase * 365).toFixed(0)} of 365`;
+    if (!reduce) requestAnimationFrame(frame);
+  })(performance.now());
+
+  // ── live playground ────────────────────────────────────────────────────
+  const play = document.getElementById("play");
+  const code = document.querySelector("#playCode code");
+  const state = { land: "solid outline", landSource: "grid", mode: "flat", borders: "off" };
+
+  function render() {
+    play.setAttribute("land", state.land);
+    play.setAttribute("land-source", state.landSource);
+    play.setAttribute("mode", state.mode);
+    if (state.borders === "on") play.setAttribute("borders", "");
+    else play.removeAttribute("borders");
+    // borders and vector coastlines are the same dataset — asking for borders
+    // without vector land would draw one at a detail the other cannot match.
+    const needsVector = state.borders === "on";
+    if (needsVector && state.landSource !== "vector") {
+      state.landSource = "vector";
+      play.setAttribute("land-source", "vector");
+      document.querySelectorAll('[data-opt="landSource"]').forEach((b) =>
+        b.setAttribute("aria-pressed", String(b.dataset.val === "vector")));
+    }
+    const attrs = [
+      state.mode === "globe" ? 'mode="globe" rotate-speed="5" roll="-12"' : null,
+      `land="${state.land}"`,
+      state.landSource === "vector" ? 'land-source="vector"' : null,
+      state.borders === "on" ? "borders" : null
+    ].filter(Boolean).join("\n  ");
+    code.textContent = `<world-map cols="140"\n  ${attrs}\n  land-color="#c9d3bd"\n  land-stroke="#5f7a4a">\n</world-map>`;
+  }
+
+  document.querySelectorAll(".controls button").forEach((btn) => {
+    btn.onclick = () => {
+      const { opt, val } = btn.dataset;
+      state[opt] = val;
+      document.querySelectorAll(`[data-opt="${opt}"]`).forEach((b) =>
+        b.setAttribute("aria-pressed", String(b === btn)));
+      render();
+    };
+  });
+  render();
 </script>
 </body></html>

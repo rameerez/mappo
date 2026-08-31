@@ -494,7 +494,11 @@ if (this._overlayLayer) {
   #landMarkup(grid, o) {
     const style = parseLandStyle(o.land);
     const vector = landRings(o.landSource);
-    const key = `land|${o.landSource}|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
+    // `borders` belongs in the key: the cached markup CONTAINS the borders
+    // path, so leaving it out means turning borders off replays a cached scene
+    // that still has them. (Caught by the demo toggles, not by a unit test —
+    // cache keys only lie when you change the thing they forgot.)
+    const key = `land|${o.landSource}|${o.borders ? "b" : ""}|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
     let geom = this._dotsCache.get(key);
     if (!geom) {
       const { cells, loops } = buildLand(grid);

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildLand, parseLandStyle, cellCorner, cellCenter, isLand } from "../dist/mappo.js";
+import { buildLand, parseLandStyle, cellCorner, cellCenter, isLand,
+         DEFAULTS, landShapes, countryShapes } from "../dist/mappo.js";
 
 const GRID = { cols: 120, rows: 47, latRange: [ -58, 84 ] };
 
@@ -102,4 +103,28 @@ test("cellCorner: the grid's corners are the frame's corners", () => {
   assert.equal(tl.lat, GRID.latRange[1]);
   assert.equal(br.lon, 180);
   assert.equal(br.lat, GRID.latRange[0]);
+});
+
+test("DEFAULTS carry every land option an attribute can set", () => {
+  // element.js resets an option to DEFAULTS[key] when its attribute is removed.
+  // That only works if the key EXISTS in DEFAULTS — a missing one silently
+  // latches the option on forever, which is the bug this guards.
+  for (const key of [ "land", "landSource", "landColor", "landStroke", "landStrokeWidth",
+                      "borders", "bordersColor", "bordersWidth", "bordersOpacity",
+                      "graticule", "meridians", "parallels", "graticuleColor",
+                      "equatorColor", "graticuleOpacity", "equatorOpacity",
+                      "roll", "overlays", "maxDpr" ]) {
+    assert.ok(key in DEFAULTS, `DEFAULTS is missing "${key}" — removing its attribute would not reset it`);
+  }
+});
+
+test("vector shapes decode to plausible geography", () => {
+  const land = landShapes();
+  assert.ok(land.length > 50, "a world has many coastline rings");
+  assert.ok(land.every((r) => r.length > 2));
+  const pts = land.flat();
+  assert.ok(pts.every(([ lat, lon ]) => lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180),
+    "every vertex is a real coordinate");
+  assert.equal(landShapes(), land, "memoized — decoded once");
+  assert.ok(countryShapes().length > 100, "and the borders came along");
 });
