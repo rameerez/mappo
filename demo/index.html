@@ -4,9 +4,19 @@
 <title>mappo — demos</title>
 <style>
  :root{--bg:#fffbf5;--card:#fff;--ink:#16181d;--muted:#6b7280;--line:#e6e1d8;
-       --land:#c9d3bd;--coast:#5f7a4a;--grid:#ddd8cd;--accent:#c2410c;--pill:#fff;--sea:#f4f6f2;--ocean:#dfe6da}
+       --land:#c9d3bd;--coast:#5f7a4a;--grid:#ddd8cd;--accent:#c2410c;--pill:#fff;--sea:#f4f6f2;--ocean:#dfe6da;
+       /* the day/night stage, daylight palette: pale paper sea, warm land,
+          dusk washed in indigo. mappo re-resolves these on the theme flip. */
+       --stage-bg:#f2f6fa;--stage-frame:#d3dfeb;--stage-sea:#d5e3f0;--stage-ocean:#c2d6e8;
+       --stage-land:#ffffff;--stage-coast:#4a6f92;--stage-night:#0d2a55;--stage-band:.19;
+       --stage-ink:#0f1f2e;--stage-cap:#54708a;--stage-day:#7e99b0;--stage-lit:#b45309;
+       --stage-halo:rgb(180 83 9 / .16)}
  html[data-theme="dark"]{--bg:#0e1116;--card:#151a21;--ink:#e7ecf3;--muted:#93a0b4;--line:#242c37;
-       --land:#2b3646;--coast:#7aa2f7;--grid:#232b36;--accent:#fb923c;--pill:#1d2229;--sea:#0f141b;--ocean:#1a2230}
+       --land:#2b3646;--coast:#7aa2f7;--grid:#232b36;--accent:#fb923c;--pill:#1d2229;--sea:#0f141b;--ocean:#1a2230;
+       --stage-bg:#070b11;--stage-frame:#14202c;--stage-sea:#081019;--stage-ocean:#0e1b2a;
+       --stage-land:#1d3346;--stage-coast:#5fe3d6;--stage-night:#02050b;--stage-band:.19;
+       --stage-ink:#dff5f0;--stage-cap:#5d7183;--stage-day:#5f7f93;--stage-lit:#f97316;
+       --stage-halo:rgb(249 115 22 / .18)}
  *{box-sizing:border-box}
  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 ui-sans-serif,system-ui,sans-serif}
  .wrap{max-width:1200px;margin:0 auto;padding:28px 24px 90px}
@@ -34,35 +44,42 @@
 world-map{display:block;width:100%}
 
 /* ── the flat showcase stage ────────────────────────────────────────── */
-.stage{position:relative;border-radius:18px;overflow:hidden;background:#070b11;
-       padding:26px 26px 0;border:1px solid #14202c;
-       box-shadow:0 24px 70px -30px rgb(0 0 0 / .8)}
+.stage{position:relative;border-radius:18px;overflow:hidden;background:var(--stage-bg);
+       padding:26px 26px 0;border:1px solid var(--stage-frame);
+       box-shadow:0 24px 70px -34px rgb(15 30 45 / .45)}
+html[data-theme="dark"] .stage{box-shadow:0 24px 70px -30px rgb(0 0 0 / .8)}
 .stage-glow{position:absolute;inset:-30% -10% auto -10%;height:70%;pointer-events:none;
+       background:radial-gradient(60% 100% at 50% 0%,rgb(109 138 166 / .12),transparent 70%)}
+html[data-theme="dark"] .stage-glow{
        background:radial-gradient(60% 100% at 50% 0%,rgba(79,209,197,.16),transparent 70%)}
 .stage world-map{position:relative}
 .stage-cap{display:flex;flex-direction:column;gap:2px;padding:16px 2px 20px;
-       font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#5d7183}
-.stage-cap strong{color:#a9c6d4;font-weight:600;letter-spacing:.02em}
+       font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--stage-cap)}
+.stage-cap strong{color:var(--stage-ink);font-weight:600;letter-spacing:.02em}
 
 /* Label language B: a dot, a hairline stalk, a tracked caption. Deliberately
    nothing like the pills on the globe above — mappo positions your markup,
    it does not dictate how it looks. */
 .lead{pointer-events:auto;text-decoration:none}
 .lead > i{position:absolute;left:0;top:0;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;
-       border-radius:50%;background:#f97316;box-shadow:0 0 0 4px rgb(249 115 22 / .18)}
+       border-radius:50%;background:var(--stage-lit);box-shadow:0 0 0 4px var(--stage-halo)}
 .lead > span{position:absolute;left:0;top:0;display:block;white-space:nowrap;
        transform:translate(-50%,calc(-100% - 15px));
        font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
-       letter-spacing:.16em;text-transform:uppercase;color:#dff5f0;
-       text-shadow:0 1px 6px rgb(0 0 0 / .9)}
+       letter-spacing:.16em;text-transform:uppercase;color:var(--stage-ink);
+       text-shadow:0 1px 6px rgb(255 255 255 / .75)}
+html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
 .lead > span::after{content:"";position:absolute;left:50%;top:calc(100% + 3px);
-       width:1px;height:11px;background:linear-gradient(#4fd1c5,transparent)}
+       width:1px;height:11px;background:linear-gradient(var(--stage-coast),transparent)}
 .lead:hover > span{color:#fff}
 .lead:hover > i{box-shadow:0 0 0 6px rgb(249 115 22 / .26)}
 
 /* ── day / night ────────────────────────────────────────────────────── */
 .night-wrap{position:relative}
 .night{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+/* Fill and per-band opacity live in CSS so the dusk wash flips with the
+   palette — indigo over paper by day, near-black by night. */
+.shadow-band{fill:var(--stage-night);opacity:var(--stage-band)}
 /* The glow is a DOM layer, not an SVG circle: the overlay above is stretched
    by preserveAspectRatio="none", which would squash a gradient into a lozenge. */
 .sunglow{position:absolute;width:32%;aspect-ratio:1;transform:translate(-50%,-50%);
@@ -72,11 +89,16 @@ world-map{display:block;width:100%}
 .stage .lead{z-index:3}
 .lead > span b{display:block;font-weight:600}
 .lead > span em{display:block;font-style:normal;font-weight:500;letter-spacing:.1em;
-  color:#5f7f93;margin-top:2px}
+  color:var(--stage-day);margin-top:2px}
 /* A city whose sun is down: the dot lights up and its clock warms. */
+/* Night falls on the map, not on the page: whatever the palette, a city in
+   darkness sits on a dark wash, so its label is always light-on-dark. Letting
+   it inherit the theme ink made every night label vanish in daylight mode. */
 .lead.is-night > i{background:#ffc75a;
-  box-shadow:0 0 0 4px rgb(255 199 90 / .18), 0 0 12px 2px rgb(255 199 90 / .5)}
+  box-shadow:0 0 0 4px rgb(255 199 90 / .22), 0 0 12px 2px rgb(255 199 90 / .5)}
+.lead.is-night > span b{color:#fff6e5}
 .lead.is-night > span em{color:#ffc75a}
+.lead.is-night > span{text-shadow:0 1px 7px rgb(0 0 0 / .9)}
 .lead.is-night > span::after{background:linear-gradient(#ffc75a,transparent)}
  /* hero */
  .hero{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:26px;align-items:center;
@@ -162,9 +184,9 @@ world-map{display:block;width:100%}
         cols="300"
         lat-min="-58" lat-max="76"
         land="solid outline" land-source="vector" borders
-        land-color="#1d3346" land-stroke="#5fe3d6" land-stroke-width="0.55"
-        borders-color="#4fd1c5" borders-width="0.35" borders-opacity="0.2"
-        background="#081019" ocean-color="#0e1b2a">
+        land-color="var(--stage-land)" land-stroke="var(--stage-coast)" land-stroke-width="0.55"
+        borders-color="var(--stage-coast)" borders-width="0.35" borders-opacity="0.28"
+        background="var(--stage-sea)" ocean-color="var(--stage-ocean)">
         <a class="lead" data-lat="38.72"  data-lon="-9.14"  data-tz="Europe/Lisbon"    href="#t1"><i></i><span><b>Lisbon</b><em></em></span></a>
         <a class="lead" data-lat="35.68"  data-lon="139.69" data-tz="Asia/Tokyo"       href="#t2"><i></i><span><b>Tokyo</b><em></em></span></a>
         <a class="lead" data-lat="-23.55" data-lon="-46.63" data-tz="America/Sao_Paulo" href="#t3"><i></i><span><b>São Paulo</b><em></em></span></a>
@@ -173,6 +195,9 @@ world-map{display:block;width:100%}
         <a class="lead" data-lat="-33.87" data-lon="151.21" data-tz="Australia/Sydney" href="#t6"><i></i><span><b>Sydney</b><em></em></span></a>
         <a class="lead" data-lat="55.75"  data-lon="37.62"  data-tz="Europe/Moscow"    href="#t7"><i></i><span><b>Moscow</b><em></em></span></a>
         <a class="lead" data-lat="37.77"  data-lon="-122.42" data-tz="America/Los_Angeles" href="#t8"><i></i><span><b>San Francisco</b><em></em></span></a>
+        <a class="lead" data-lat="1.35"   data-lon="103.82" data-tz="Asia/Singapore"   href="#t9"><i></i><span><b>Singapore</b><em></em></span></a>
+        <a class="lead" data-lat="25.29"  data-lon="51.53"  data-tz="Asia/Qatar"       href="#t10"><i></i><span><b>Doha</b><em></em></span></a>
+        <a class="lead" data-lat="28.61"  data-lon="77.21"  data-tz="Asia/Kolkata"     href="#t11"><i></i><span><b>Delhi</b><em></em></span></a>
       </world-map>
       <!-- The night, drawn over the map in normalized coordinates. -->
       <div class="sunglow" id="sunglow-c" aria-hidden="true"></div>
@@ -504,7 +529,7 @@ function shadowPath(dec, sunLon, h0) {
 // translucency reads as a gradient without an SVG filter, which this overlay
 // would stretch anisotropically thanks to preserveAspectRatio="none".
 const bandGroup = document.getElementById("shadow-bands");
-const bands = [ 0, -3, -6, -9, -12, -18 ].map((h) => {
+const bands = [ 0, -4, -9, -15 ].map((h) => {
   const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
   el.setAttribute("fill", "#02050b");
   el.setAttribute("opacity", "0.19");
