@@ -8,19 +8,17 @@
        /* the day/night stage, daylight palette: pale paper sea, warm land,
           dusk washed in indigo. mappo re-resolves these on the theme flip. */
        --stage-bg:#f2f6fa;--stage-frame:#d3dfeb;
-       /* the sunlit half */
        --day-sea:#dbe9f6;--day-ocean:#c4daee;--day-land:#ffffff;--day-coast:#41698f;
-       /* and the half in shadow — a night map in its own right, not a film */
-       --nite-sea:#0c1c31;--nite-ocean:#122741;--nite-land:#1b3a5c;--nite-coast:#66d3cb;
-       --dusk-line:#ffb454;
+       /* one shadow, saturated: a single translucent layer keeps its colour,
+          where four stacked ones grey each other out */
+       --stage-night:#0a2149;--stage-band:.58;
        --stage-ink:#0f1f2e;--stage-cap:#54708a;--stage-day:#7e99b0;--stage-lit:#b45309;
        --stage-halo:rgb(180 83 9 / .16)}
  html[data-theme="dark"]{--bg:#0e1116;--card:#151a21;--ink:#e7ecf3;--muted:#93a0b4;--line:#242c37;
        --land:#2b3646;--coast:#7aa2f7;--grid:#232b36;--accent:#fb923c;--pill:#1d2229;--sea:#0f141b;--ocean:#1a2230;
        --stage-bg:#070b11;--stage-frame:#14202c;
-       --day-sea:#16293f;--day-ocean:#1d3149;--day-land:#315272;--day-coast:#8ad8e8;
-       --nite-sea:#04080e;--nite-ocean:#091524;--nite-land:#0f2438;--nite-coast:#3fa79e;
-       --dusk-line:#ff9d2e;
+       --day-sea:#0e1c2c;--day-ocean:#152740;--day-land:#26445f;--day-coast:#6fc9d8;
+       --stage-night:#01050c;--stage-band:.62;
        --stage-ink:#dff5f0;--stage-cap:#5d7183;--stage-day:#5f7f93;--stage-lit:#f97316;
        --stage-halo:rgb(249 115 22 / .18)}
  *{box-sizing:border-box}
@@ -82,21 +80,26 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
 
 /* ── day / night ────────────────────────────────────────────────────── */
 .night-wrap{position:relative}
-/* The night map sits exactly on top of the day map and is clipped to the
-   terminator. Both are the same geography at the same cols and latRange, so
-   they register pixel for pixel; only the palette differs. */
-.night-layer{position:absolute;inset:0;z-index:2;pointer-events:none;
-  clip-path:url(#nightclip)}
-.clipdefs{position:absolute;width:0;height:0}
-/* A warm line along the horizon: sunrise and sunset are the one place on
-   Earth where the light is worth drawing. */
-.duskline{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;
-  filter:blur(3px)}
+/* The shadow is blurred in SCREEN space. The overlay is stretched by
+   preserveAspectRatio="none", so a CSS filter (applied after layout) stays
+   round where an SVG feGaussianBlur inside the stretched viewBox would smear.
+
+   Two boxes, because an <svg> clips at its own viewport: blurring a shape the
+   viewport already cut would feather the CUT — a soft grey fringe along the
+   bottom of the map where the shadow simply runs off the world. So the svg is
+   15% bigger than the map on every side (its viewBox is offset to match, which
+   keeps nx/ny landing exactly on the geography), and .night — the map's own
+   size — clips what the blur spills. The only soft edge left is the one we
+   want: the terminator. */
+.night{position:absolute;inset:0;pointer-events:none;z-index:2;overflow:hidden}
+.nightsvg{position:absolute;inset:-15%;width:130%;height:130%;filter:blur(9px)}
+.shadow{fill:var(--stage-night);opacity:var(--stage-band)}
 /* The glow is a DOM layer, not an SVG circle: the overlay above is stretched
    by preserveAspectRatio="none", which would squash a gradient into a lozenge. */
-.sunglow{position:absolute;width:32%;aspect-ratio:1;transform:translate(-50%,-50%);
+/* The sun is a hint of warmth where it stands, not a flare over the map. */
+.sunglow{position:absolute;width:15%;aspect-ratio:1;transform:translate(-50%,-50%);
   border-radius:50%;pointer-events:none;z-index:1;
-  background:radial-gradient(circle,rgba(255,233,168,.42) 0%,rgba(255,199,90,.14) 45%,transparent 70%)}
+  background:radial-gradient(circle,rgba(255,214,130,.20) 0%,rgba(255,199,90,.07) 50%,transparent 72%)}
 /* Labels sit above the shadow, so a city in darkness is still readable. */
 .stage .lead{z-index:4}
 .lead > span b{display:block;font-weight:600}
@@ -192,11 +195,9 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
   <div class="stage">
     <div class="stage-glow"></div>
     <div class="night-wrap">
-      <!-- Two maps, not one map under a film. The night side is its OWN map,
-           designed as a night map, clipped to the terminator — which keeps the
-           geography legible on both sides instead of smearing grey over half
-           the world. The clip path is in objectBoundingBox units, i.e. exactly
-           what projectNormalized() answers in. -->
+      <!-- One map, under a shadow that is plotted, not painted: the terminator
+           comes out of projectNormalized() at the same latRange the element is
+           drawn at, so the edge of night lands on the geography exactly. -->
       <world-map id="flatshow"
         cols="300"
         lat-min="-58" lat-max="76"
@@ -217,26 +218,20 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
         <a class="lead" data-lat="28.61"  data-lon="77.21"  data-tz="Asia/Kolkata"     href="#t11"><i></i><span><b>Delhi</b><em></em></span></a>
       </world-map>
 
-      <div class="night-layer" aria-hidden="true">
-        <world-map
-          cols="300"
-          lat-min="-58" lat-max="76"
-          land="solid outline" land-source="vector" borders overlays="false"
-          land-color="var(--nite-land)" land-stroke="var(--nite-coast)" land-stroke-width="0.55"
-          borders-color="var(--nite-coast)" borders-width="0.35" borders-opacity="0.28"
-          background="var(--nite-sea)" ocean-color="var(--nite-ocean)"></world-map>
+      <!-- ONE shadow, softened by a real blur.
+           The vertical strips in the earlier version were not one boundary but
+           four: each translucent band planted its own hard edge where the
+           terminator runs north-south near the poles, and they nested. A single
+           band has a single edge, and blurring it means even that edge — the
+           vertical stretch included — reads as dusk rather than as a wall.
+           The path deliberately overshoots the frame on all sides so the blur
+           only ever softens the terminator, never the edges of the map. -->
+      <div class="night" aria-hidden="true">
+        <svg class="nightsvg" viewBox="-150 -150 1300 1300" preserveAspectRatio="none">
+          <path id="nightpath" class="shadow"/>
+        </svg>
       </div>
-
       <div class="sunglow" id="sunglow-c" aria-hidden="true"></div>
-      <svg class="clipdefs" aria-hidden="true">
-        <defs><clipPath id="nightclip" clipPathUnits="objectBoundingBox">
-          <path id="nightpath" d="M0 0"/>
-        </clipPath></defs>
-      </svg>
-      <svg class="duskline" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
-        <path id="duskpath" fill="none" stroke="var(--dusk-line)" stroke-width="7" opacity=".55"/>
-        <circle id="sun" r="4" fill="#fff4d2"/>
-      </svg>
     </div>
     <div class="stage-cap">
       <strong id="sun-clock">—</strong>
@@ -559,15 +554,15 @@ function terminatorPoints(dec, sunLon, h0 = 0) {
 }
 
 // Closed toward whichever pole is in darkness — northern summer darkens the
-// south, and the other way round.
-function clipRegion(pts, dec) {
-  const edge = dec >= 0 ? fy(LAT_RANGE[0]) : fy(LAT_RANGE[1]);
-  const d = pts.map(([ lon, lat ]) => `${fx(lon).toFixed(4)} ${fy(lat).toFixed(4)}`).join("L");
-  return `M${d}L1 ${edge.toFixed(4)}L0 ${edge.toFixed(4)}Z`;
+// south, and the other way round — and overshooting the frame by a wide
+// margin on every side, so the blur softens the terminator and nothing else.
+function shadowPath(pts, dec) {
+  const OVER = VB * 0.4;
+  const edge = dec >= 0 ? ny(LAT_RANGE[0]) + OVER : ny(LAT_RANGE[1]) - OVER;
+  const d = pts.map(([ lon, lat ]) => `${nx(lon).toFixed(1)} ${ny(lat).toFixed(1)}`).join("L");
+  return `M${-OVER} ${ny(pts[0][1]).toFixed(1)}L${d}L${VB + OVER} ${ny(pts[pts.length - 1][1]).toFixed(1)}` +
+         `L${VB + OVER} ${edge.toFixed(1)}L${-OVER} ${edge.toFixed(1)}Z`;
 }
-
-const duskLine = (pts) =>
-  "M" + pts.map(([ lon, lat ]) => `${nx(lon).toFixed(1)} ${ny(lat).toFixed(1)}`).join("L");
 
 const cities = [ ...flat.querySelectorAll(".lead") ];
 const fmt = new Map(cities.map((el) => [ el, new Intl.DateTimeFormat([], {
@@ -578,13 +573,10 @@ function paintNight() {
   const now = new Date();
   const { dec, lon: sunLon } = subsolarPoint(now);
 
-  const edge = terminatorPoints(dec, sunLon, 0);
-  document.getElementById("nightpath").setAttribute("d", clipRegion(edge, dec));
-  document.getElementById("duskpath").setAttribute("d", duskLine(edge));
+  document.getElementById("nightpath")
+    .setAttribute("d", shadowPath(terminatorPoints(dec, sunLon, 0), dec));
 
-  const sun = document.getElementById("sun");
-  sun.setAttribute("cx", nx(sunLon).toFixed(1));
-  sun.setAttribute("cy", ny(dec).toFixed(1));
+
   // The glow is a DOM layer, not an SVG circle: this overlay is stretched by
   // preserveAspectRatio="none", which would squash a gradient into a lozenge.
   const glow = document.getElementById("sunglow-c");
