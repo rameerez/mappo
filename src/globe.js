@@ -398,6 +398,12 @@ export class GlobeRenderer {
       }
     }
 
+    // Past the markers, everything below is about the DOT FIELD, and a land
+    // style without dots has none. Hit-testing it anyway made an outline
+    // globe paint a hover blob where no dot was drawn, change the cursor for
+    // it, and fire dotenter/dotclick for a thing that is not on the screen.
+    if (!parseLandStyle(this.o.land).dots) return null;
+
     const X = (ux - cx) / R;
     const Y = -(uy - cy) / R;
     const rr = X * X + Y * Y;

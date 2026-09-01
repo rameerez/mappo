@@ -4,7 +4,7 @@ import {
   isLand, MASK_W, MASK_H,
   project, cellCenter,
   CITIES, resolveCity,
-  snapToLand, DEFAULTS, Mappo
+  snapToLand, DEFAULTS, Mappo, parseLandStyle
 } from "../dist/mappo.js";
 
 // The dist bundle is what ships — test THAT, not src/, so a build bug can
@@ -114,4 +114,18 @@ test("locate: the flat map answers in CSS pixels from its own corner", () => {
   assert.deepEqual(map.locate(90, -180), { x: 0, y: 0, depth: 1, front: true });
   assert.deepEqual(map.locate(-90, 180), { x: 360, y: 180, depth: 1, front: true });
   assert.deepEqual(map.locate(0, 0), { x: 180, y: 90, depth: 1, front: true });
+});
+
+test("hover: a land style without dots has no dots to hover", () => {
+  // The globe used to hit-test the dot grid whatever the land style was, so an
+  // outline map painted a hover blob, moved the cursor and fired dotenter for
+  // a dot that was never drawn. The flat map's hover rule had the same lie in
+  // its stylesheet. Both now key off the parsed style.
+  assert.equal(parseLandStyle("dots").dots, true);
+  for (const v of [ "outline", "solid", "solid outline", "stroke", "filled" ]) {
+    assert.equal(parseLandStyle(v).dots, false, v);
+  }
+  // Absent or empty still means the dot field mappo is named for.
+  assert.equal(parseLandStyle(undefined).dots, true);
+  assert.equal(parseLandStyle("").dots, true);
 });

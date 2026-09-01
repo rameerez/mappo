@@ -711,6 +711,8 @@ if (this._overlayLayer) {
 }
 
   #css(o) {
+    // The hover rules below are only true while there is something to hover.
+    const style = parseLandStyle(o.land);
     return `
       .mappo-bg { fill: ${o.background === "none" ? "none" : o.background}; pointer-events: none; }
       .mappo-ocean { display: ${o.oceanColor === "none" ? "none" : "inline"}; pointer-events: none; }
@@ -728,7 +730,7 @@ if (this._overlayLayer) {
            trail of settling dots. */
         transition: transform .3s ease .2s, fill .3s ease .2s;
       }
-      ${o.interactive ? `
+      ${o.interactive && style.dots ? `
       .mappo-pos:hover > .mappo-dot {
         fill: ${o.dotHoverColor ?? hoverShade(o.dotColor)};
         transform: scale(${o.dotHoverScale});
