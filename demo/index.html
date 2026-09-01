@@ -11,14 +11,14 @@
        --day-sea:#dbe9f6;--day-ocean:#c4daee;--day-land:#ffffff;--day-coast:#41698f;
        /* one shadow, saturated: a single translucent layer keeps its colour,
           where four stacked ones grey each other out */
-       --stage-night:#0a2149;--stage-band:.58;
+       --stage-night:#0a2149;--stage-band:.07;
        --stage-ink:#0f1f2e;--stage-cap:#54708a;--stage-day:#7e99b0;--stage-lit:#b45309;
        --stage-halo:rgb(180 83 9 / .16)}
  html[data-theme="dark"]{--bg:#0e1116;--card:#151a21;--ink:#e7ecf3;--muted:#93a0b4;--line:#242c37;
        --land:#2b3646;--coast:#7aa2f7;--grid:#232b36;--accent:#fb923c;--pill:#1d2229;--sea:#0f141b;--ocean:#1a2230;
        --stage-bg:#070b11;--stage-frame:#14202c;
        --day-sea:#0e1c2c;--day-ocean:#152740;--day-land:#26445f;--day-coast:#6fc9d8;
-       --stage-night:#01050c;--stage-band:.62;
+       --stage-night:#01050c;--stage-band:.0775;
        --stage-ink:#dff5f0;--stage-cap:#5d7183;--stage-day:#5f7f93;--stage-lit:#f97316;
        --stage-halo:rgb(249 115 22 / .18)}
  *{box-sizing:border-box}
@@ -93,6 +93,10 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
    want: the terminator. */
 .night{position:absolute;inset:0;pointer-events:none;z-index:2;overflow:hidden}
 .nightsvg{position:absolute;inset:-15%;width:130%;height:130%;filter:blur(9px)}
+/* Every band is the same wash at the same low opacity; the ramp comes from
+   how many of them a place is under. --stage-band is therefore the opacity of
+   ONE band: twelve of them at .07 stack to .58, which is where the single
+   band used to sit. */
 .shadow{fill:var(--stage-night);opacity:var(--stage-band)}
 /* The glow is a DOM layer, not an SVG circle: the overlay above is stretched
    by preserveAspectRatio="none", which would squash a gradient into a lozenge. */
@@ -218,17 +222,15 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
         <a class="lead" data-lat="28.61"  data-lon="77.21"  data-tz="Asia/Kolkata"     href="#t11"><i></i><span><b>Delhi</b><em></em></span></a>
       </world-map>
 
-      <!-- ONE shadow, softened by a real blur.
-           The vertical strips in the earlier version were not one boundary but
-           four: each translucent band planted its own hard edge where the
-           terminator runs north-south near the poles, and they nested. A single
-           band has a single edge, and blurring it means even that edge — the
-           vertical stretch included — reads as dusk rather than as a wall.
-           The path deliberately overshoots the frame on all sides so the blur
-           only ever softens the terminator, never the edges of the map. -->
+      <!-- Twilight as a ramp: twelve nested bands from the horizon down through
+           astronomical twilight, each the region where the sun is already below a
+           slightly lower angle. Stacking is what makes the gradient — and the
+           whole stack is blurred together, which is what makes it blend. Four
+           bands showed as strips because each planted a visible step; twelve at a
+           third of the opacity, feathered, read as dusk. -->
       <div class="night" aria-hidden="true">
         <svg class="nightsvg" viewBox="-150 -150 1300 1300" preserveAspectRatio="none">
-          <path id="nightpath" class="shadow"/>
+          <g id="nightbands"></g>
         </svg>
       </div>
       <div class="sunglow" id="sunglow-c" aria-hidden="true"></div>
@@ -541,10 +543,18 @@ const fy = (lat) => (LAT_RANGE[1] - lat) / (LAT_RANGE[1] - LAT_RANGE[0]);
 const nx = (lon) => fx(lon) * VB;
 const ny = (lat) => fy(lat) * VB;
 
-// The terminator, sampled ONCE and then expressed twice: as a closed region
-// that clips the night map in, and as an open line for the dusk glow. Sampling
-// once is the point — two curves that could disagree would show as a seam
-// between the two maps.
+// The horizon down through the end of astronomical twilight, in twelve steps.
+// Each entry is a solar elevation; the band drawn for it covers everywhere the
+// sun has already sunk below that angle, so the bands nest and a place gets as
+// many washes as the sun is degrees down. That is the gradient — and because
+// they are washes of ONE colour rather than four opaque films, they deepen
+// instead of greying each other out.
+const BAND_ELEV = Array.from({ length: 12 }, (_, i) => -1.5 * i);
+
+// A band's boundary is the curve where the sun sits at h0 — the terminator,
+// for h0 = 0, and a parallel-ish curve slightly further into the dark for the
+// rest. Sampled at 1.5° of longitude, which is finer than a blurred edge can
+// show.
 function terminatorPoints(dec, sunLon, h0 = 0) {
   const pts = [];
   for (let lon = -180; lon <= 180; lon += 1.5) {
@@ -564,6 +574,14 @@ function shadowPath(pts, dec) {
          `L${VB + OVER} ${edge.toFixed(1)}L${-OVER} ${edge.toFixed(1)}Z`;
 }
 
+// Built once; only the `d` changes as the Earth turns.
+const bands = BAND_ELEV.map((h) => {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  el.setAttribute("class", "shadow");
+  document.getElementById("nightbands").appendChild(el);
+  return { h, el };
+});
+
 const cities = [ ...flat.querySelectorAll(".lead") ];
 const fmt = new Map(cities.map((el) => [ el, new Intl.DateTimeFormat([], {
   hour: "2-digit", minute: "2-digit", hour12: false, timeZone: el.dataset.tz
@@ -573,8 +591,9 @@ function paintNight() {
   const now = new Date();
   const { dec, lon: sunLon } = subsolarPoint(now);
 
-  document.getElementById("nightpath")
-    .setAttribute("d", shadowPath(terminatorPoints(dec, sunLon, 0), dec));
+  for (const band of bands) {
+    band.el.setAttribute("d", shadowPath(terminatorPoints(dec, sunLon, band.h), dec));
+  }
 
 
   // The glow is a DOM layer, not an SVG circle: this overlay is stretched by
