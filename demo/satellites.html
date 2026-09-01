@@ -20,9 +20,9 @@
  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 
  /* The stage is square and centred; everything else floats over it. */
- #stage{position:fixed;inset:0;display:grid;place-items:center}
+ #stage{position:fixed;inset:0;display:grid;place-items:center;padding-bottom:76px}
  #sky{position:fixed;inset:0;width:100%;height:100%;pointer-events:none}
- #globe{position:relative;width:min(94vh,94vw);height:min(94vh,94vw)}
+ #globe{position:relative;width:min(86vh,88vw);height:min(86vh,88vw)}
  /* Flat is a different shape entirely: let the map set the height and the
     canvas follow it, so the overlay covers the map and not a square of sky. */
  #globe.flat{width:min(96vw,1700px);height:auto}
@@ -51,7 +51,32 @@
  #count small{display:block;font:500 11px/1.6 ui-sans-serif,system-ui,sans-serif;
    letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-top:6px}
  #clock{margin-top:14px;font:12px/1.6 ui-monospace,monospace;color:var(--dim)}
- #bl{bottom:26px;left:28px}
+#bl{bottom:26px;left:28px}
+ /* ── the clock you can drag ───────────────────────────────────────────── */
+ #tc{bottom:22px;left:50%;transform:translateX(-50%);width:min(660px,58vw)}
+ .timebar{display:flex;align-items:center;gap:11px;
+  background:rgb(10 16 26 / .72);border:1px solid var(--line);border-radius:13px;
+  padding:9px 13px;backdrop-filter:blur(7px)}
+ .timebar button{background:none;border:1px solid transparent;color:var(--dim);
+  border-radius:7px;padding:4px 9px;font:12px/1.3 ui-monospace,monospace;cursor:pointer;
+  flex:none;min-width:38px}
+ .timebar button:hover{color:var(--ink);border-color:var(--line)}
+ .timebar button[aria-pressed="true"]{color:var(--s53)}
+ /* A hairline at the middle of the track: without it the slider has no zero,
+    and "back to now" becomes a place you can only reach with the button. */
+ #scrub{flex:1;min-width:0;height:4px;-webkit-appearance:none;appearance:none;
+   background:
+     linear-gradient(90deg,transparent calc(50% - .5px),rgb(220 233 247 / .45) calc(50% - .5px),
+       rgb(220 233 247 / .45) calc(50% + .5px),transparent calc(50% + .5px)),
+     linear-gradient(90deg,#20303f,#3a5670,#20303f);
+   border-radius:3px;cursor:ew-resize}
+ #scrub::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;
+  background:var(--s53);border:2px solid #0b1119;box-shadow:0 0 9px rgb(255 180 84 / .55);cursor:grab}
+ #scrub::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:var(--s53);
+  border:2px solid #0b1119;cursor:grab}
+ #offset{margin-top:8px;text-align:center;font:11px/1.5 ui-monospace,monospace;color:var(--faint)}
+ #offset b{color:var(--dim);font-weight:600}
+ @media(max-width:820px){ #tc{width:calc(100vw - 56px)} }
  #br{bottom:26px;right:28px;text-align:right}
 
  .legend{display:flex;flex-direction:column;gap:5px}
@@ -118,6 +143,17 @@
   <div id="clock">—</div>
 </div>
 
+<div class="panel" id="tc">
+  <div class="timebar">
+    <button id="play" type="button" aria-pressed="true" title="play or pause">pause</button>
+    <input id="scrub" type="range" min="-2880" max="2880" step="1" value="0"
+      aria-label="time offset from now, in minutes">
+    <button id="warp" type="button" title="playback speed">1×</button>
+    <button id="nowbtn" type="button" title="back to real time at 1x speed">reset</button>
+  </div>
+  <div id="offset">real time · drag to move up to two days either way</div>
+</div>
+
 <div class="panel" id="bl">
   <div class="legend" id="legend"></div>
 </div>
@@ -128,7 +164,6 @@
     <button id="spin" type="button" aria-pressed="true">spin</button>
     <button id="track" type="button" aria-pressed="true">ISS track</button>
     <button id="cities" type="button" aria-pressed="true">cities</button>
-    <button id="warp" type="button">1×</button>
   </div>
   <div id="iss-read">—</div>
   <div id="status">loading orbital elements…</div>
@@ -185,7 +220,7 @@ const SHELLS = [
   { key: "oth", label: "other", color: "#64748b", lo: -1, hi: 40 }
 ];
 // ── somewhere to stand ──────────────────────────────────────────────────────
-// A constellation with no ground under it is just confetti. Nine cities, far
+// A constellation with no ground under it is just confetti. Eleven cities, far
 // enough apart to read at globe scale, each carrying its own local time — so
 // the sweep of the terminator and the hour on the clock agree, and time warp
 // shows the world turning under the orbits rather than the orbits drifting.
@@ -194,6 +229,8 @@ const CITIES = [
   { name: "New York",    lat: 40.71,  lon: -74.01,  tz: "America/New_York" },
   { name: "São Paulo",   lat: -23.55, lon: -46.63,  tz: "America/Sao_Paulo" },
   { name: "London",      lat: 51.51,  lon: -0.13,   tz: "Europe/London" },
+  { name: "Lisbon",      lat: 38.72,  lon: -9.14,   tz: "Europe/Lisbon" },
+  { name: "Rome",        lat: 41.90,  lon: 12.50,   tz: "Europe/Rome" },
   { name: "Lagos",       lat: 6.52,   lon: 3.37,    tz: "Africa/Lagos" },
   { name: "Moscow",      lat: 55.75,  lon: 37.62,   tz: "Europe/Moscow" },
   { name: "Delhi",       lat: 28.61,  lon: 77.21,   tz: "Asia/Kolkata" },
@@ -217,8 +254,31 @@ let iss = null;
 let places = [];           // { lat, lon, radius, shell } — refreshed on a timer
 let issAt = null, issTrack = [];
 let warp = 1, spinning = true, showTrack = true, showCities = true;
-let simEpoch = Date.now(), realEpoch = Date.now();
-const now = () => new Date(simEpoch + (Date.now() - realEpoch) * warp);
+
+// One clock for the whole page, and the slider is a view of it rather than a
+// separate control — so scrubbing, playing and the speed buttons can never
+// disagree about what time it is. The window is +/- two days because that is
+// roughly how far an element set stays honest; past that SGP4 is extrapolating
+// through manoeuvres it was never told about.
+const WINDOW = 2880 * 60000;              // minutes -> ms, each way
+let simTime = Date.now();
+let lastReal = Date.now();
+let playing = true, scrubbing = false;
+const now = () => new Date(simTime);
+
+function step() {
+  const t = Date.now();
+  if (playing) simTime += (t - lastReal) * warp;
+  lastReal = t;
+  // Running to the end of the window stops rather than silently pinning: at
+  // 600x you get there in eight minutes, and a clock that stops telling the
+  // truth while the button still says "playing" is worse than one that stops.
+  const off = simTime - Date.now();
+  if (Math.abs(off) > WINDOW) {
+    simTime = Date.now() + Math.sign(off) * WINDOW;
+    setPlaying(false);
+  }
+}
 
 const EARTH_R = 6371;      // km, for turning altitude into globe radii
 
@@ -371,57 +431,99 @@ function draw() {
 }
 
 // Last, so a label is never buried under the constellation it is orienting.
+//
+// A pill rather than loose text: over ten thousand dots, type needs its own
+// ground to stand on. Name, then the time large, then the date under it —
+// stacked, because a date sitting beside a clock reads as one long number.
+const PILL = { padX: 9, padY: 7, name: 11, time: 17, date: 13, radius: 7 };
+
+function pillBox(c, when) {
+  const lines = [
+    { text: c.name.toUpperCase(), font: "600 9.5px " + MONO, fill: "#c3d6ea", h: PILL.name },
+    { text: c.clock.format(when), font: "700 14px " + MONO,  fill: "#ffd79a", h: PILL.time },
+    { text: c.date.format(when),  font: "10px " + MONO,      fill: "#8ea3ba", h: PILL.date }
+  ];
+  let w = 0;
+  for (const l of lines) { sctx.font = l.font; w = Math.max(w, sctx.measureText(l.text).width); }
+  return { lines, w: w + PILL.padX * 2, h: PILL.name + PILL.time + PILL.date + PILL.padY * 2 };
+}
+
+const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
+
+function roundRect(x, y, w, h, r) {
+  sctx.beginPath();
+  if (sctx.roundRect) { sctx.roundRect(x, y, w, h, r); return; }
+  sctx.moveTo(x + r, y);
+  sctx.arcTo(x + w, y, x + w, y + h, r); sctx.arcTo(x + w, y + h, x, y + h, r);
+  sctx.arcTo(x, y + h, x, y, r);         sctx.arcTo(x, y, x + w, y, r);
+  sctx.closePath();
+}
+
 function drawCities(map) {
   const when = now();
   const mid = sats.clientWidth / 2;
-  sctx.textBaseline = "middle";
-  sctx.shadowColor = "rgba(0,0,0,.95)";
+  const placed = [];
+  const clear = (r) => !placed.some((o) =>
+    r.x < o.x + o.w && o.x < r.x + r.w && r.y < o.y + o.h && o.y < r.y + r.h);
+
   for (const c of CITIES) {
     const q = map.locate(c.lat, c.lon);
     if (!q || !q.front) continue;
-    // Fade with the limb like everything else, but never all the way out:
-    // a city you cannot read is worse than one you have to lean into.
+    // Fade with the limb like everything else, but never all the way out: a
+    // city you cannot read is worse than one you have to lean into.
     const a = 0.45 + 0.55 * q.depth;
-    // Flip the label to the inside of the disc near the edge, or it walks
-    // off the frame just as the city rotates into view.
-    const left = q.x > mid;
-    const dx = left ? -12 : 12;
-    sctx.textAlign = left ? "right" : "left";
+    const box = pillBox(c, when);
 
-    sctx.shadowBlur = 0;
+    // Lisbon, London and Rome are a thumb's width apart at this scale, so
+    // one fixed offset would stack them on top of each other. Try the far
+    // side of the dot, then above, then below; give up rather than overlap.
+    const gap = 13;
+    let spot = null;
+    const sides = q.x > mid ? [ -1, 1 ] : [ 1, -1 ];
+    outer:
+    for (const dy of [ -box.h / 2, -box.h - 12, 12 ]) {
+      for (const side of sides) {
+        const cand = {
+          x: side > 0 ? q.x + gap : q.x - gap - box.w,
+          y: q.y + dy, w: box.w, h: box.h, side
+        };
+        if (clear(cand)) { spot = cand; break outer; }
+      }
+    }
+
     sctx.globalAlpha = a;
     sctx.fillStyle = "#dce9f7";
-    sctx.beginPath(); sctx.arc(q.x, q.y, 2.4, 0, Math.PI * 2); sctx.fill();
-    sctx.globalAlpha = a * 0.45;
-    sctx.strokeStyle = "#dce9f7"; sctx.lineWidth = 1;
-    sctx.beginPath(); sctx.moveTo(q.x, q.y); sctx.lineTo(q.x + dx * 0.75, q.y); sctx.stroke();
+    sctx.beginPath(); sctx.arc(q.x, q.y, 2.6, 0, Math.PI * 2); sctx.fill();
+    if (!spot) { sctx.globalAlpha = 1; continue; }
+    placed.push(spot);
 
-    sctx.shadowBlur = 6;
+    // The leader: from the dot to the near edge of the pill, at the height
+    // the pill actually sits at, so it reads as a tether and not a stray line.
+    const edgeX = spot.side > 0 ? spot.x : spot.x + spot.w;
+    const edgeY = Math.min(Math.max(q.y, spot.y + 8), spot.y + spot.h - 8);
+    sctx.globalAlpha = a * 0.5;
+    sctx.strokeStyle = "#9fb6cc"; sctx.lineWidth = 1;
+    sctx.beginPath(); sctx.moveTo(q.x, q.y); sctx.lineTo(edgeX, edgeY); sctx.stroke();
+
     sctx.globalAlpha = a;
-    sctx.fillStyle = "#ffffff";
-    sctx.font = "600 11px ui-monospace, SFMono-Regular, Menlo, monospace";
-    sctx.fillText(c.name.toUpperCase(), q.x + dx, q.y - 7);
+    roundRect(spot.x, spot.y, spot.w, spot.h, PILL.radius);
+    sctx.fillStyle = "rgba(7,12,20,.88)";
+    sctx.fill();
+    sctx.strokeStyle = "rgba(150,180,210,.26)"; sctx.lineWidth = 1;
+    sctx.stroke();
 
-    const time = c.clock.format(when);
-    const date = c.date.format(when);
-    sctx.font = "600 12px ui-monospace, SFMono-Regular, Menlo, monospace";
-    const tw = sctx.measureText(time).width;
-    sctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
-    const dw = sctx.measureText("  " + date).width;
-    // Two weights on one line, so the pair has to be laid out by hand.
-    const x0 = left ? q.x + dx - tw - dw : q.x + dx;
     sctx.textAlign = "left";
-    sctx.font = "600 12px ui-monospace, SFMono-Regular, Menlo, monospace";
-    sctx.fillStyle = "#ffd79a";
-    sctx.fillText(time, x0, q.y + 7);
-    sctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
-    sctx.globalAlpha = a * 0.7;
-    sctx.fillStyle = "#9fb0c4";
-    sctx.fillText("  " + date, x0 + tw, q.y + 7);
+    sctx.textBaseline = "alphabetic";
+    let y = spot.y + PILL.padY;
+    for (const l of box.lines) {
+      sctx.font = l.font;
+      sctx.fillStyle = l.fill;
+      sctx.fillText(l.text, spot.x + PILL.padX, y + l.h - 3.5);
+      y += l.h;
+    }
   }
-  sctx.shadowBlur = 0;
   sctx.globalAlpha = 1;
-  sctx.textAlign = "left";
+  sctx.textBaseline = "alphabetic";
 }
 
 // ── the loop ────────────────────────────────────────────────────────────────
@@ -431,15 +533,32 @@ function drawCities(map) {
 // because that is what changes when the globe turns.
 let lastProp = 0;
 function frame(ts) {
-  const cadence = warp > 1 ? 0 : 500;
+  step();
+  const cadence = warp > 1 || scrubbing ? 0 : 500;
   if (ts - lastProp >= cadence) { lastProp = ts; propagateAll(now()); readouts(); }
   draw();
   requestAnimationFrame(frame);
 }
 
+// How far from real time, in words rather than in minutes.
+function saySpan(ms) {
+  const m = Math.round(Math.abs(ms) / 60000);
+  if (m < 1) return null;
+  const h = Math.floor(m / 60), d = Math.floor(h / 24);
+  const parts = d ? [ `${d} d`, `${h % 24} h` ] : h ? [ `${h} h`, `${m % 60} min` ] : [ `${m} min` ];
+  return parts.filter((x) => !/^0 /.test(x)).join(" ");
+}
+
 function readouts() {
   const t = now();
   $("clock").textContent = t.toISOString().slice(0, 19).replace("T", "  ") + " UTC";
+  const off = simTime - Date.now();
+  if (!scrubbing) $("scrub").value = String(Math.round(off / 60000));
+  const span = saySpan(off);
+  $("offset").innerHTML = span
+    ? `<b>${span} ${off > 0 ? "ahead of" : "behind"}</b> real time` +
+      (playing ? "" : " · paused")
+    : (playing ? "real time" : "real time · paused");
   if (issAt) {
     $("iss-read").innerHTML =
       `<b>ISS</b>  ${issAt.lat >= 0 ? "N" : "S"}${Math.abs(issAt.lat).toFixed(2).padStart(5, "0")}` +
@@ -490,12 +609,45 @@ $("cities").onclick = () => {
   $("cities").setAttribute("aria-pressed", String(showCities));
 };
 const WARPS = [ 1, 60, 600 ];
+function setPlaying(on) {
+  playing = on;
+  $("play").textContent = on ? "pause" : "play";
+  $("play").setAttribute("aria-pressed", String(on));
+}
+$("play").onclick = () => setPlaying(!playing);
 $("warp").onclick = () => {
-  simEpoch = +now(); realEpoch = Date.now();
   warp = WARPS[(WARPS.indexOf(warp) + 1) % WARPS.length];
   $("warp").textContent = `${warp}×`;
   $("warp").setAttribute("aria-pressed", String(warp !== 1));
+  if (!playing) setPlaying(true);
 };
+// One button back to solid ground: the real clock, real speed, running.
+$("nowbtn").onclick = () => {
+  simTime = Date.now(); lastReal = Date.now();
+  scrub.value = "0";
+  warp = 1; $("warp").textContent = "1×"; $("warp").setAttribute("aria-pressed", "false");
+  setPlaying(true);
+  // Repaint now rather than on the next frame: a control that answers a
+  // beat late reads as a control that did not work.
+  propagateAll(now());
+  readouts();
+};
+// While the pointer is down the slider is the authority; the rest of the time
+// it follows the clock. Without that the frame loop fights the drag.
+const scrub = $("scrub");
+const grab = () => { scrubbing = true; };
+const drop = () => { scrubbing = false; lastReal = Date.now(); };
+scrub.addEventListener("pointerdown", grab);
+scrub.addEventListener("pointerup", drop);
+scrub.addEventListener("pointercancel", drop);
+scrub.addEventListener("input", () => {
+  simTime = Date.now() + Number(scrub.value) * 60000;
+  lastReal = Date.now();
+  propagateAll(now());
+  readouts();
+});
+// A keyboard user never fires pointerup, so commit on change too.
+scrub.addEventListener("change", drop);
 
 // The stage is sized in viewport units, which are not resolved when this
 // module first runs, so a one-shot measurement catches the canvas at its
