@@ -46,6 +46,23 @@
  #tl h1{margin:0 0 6px;font-size:19px;font-weight:600;letter-spacing:-.01em}
  #tl p{margin:0;color:var(--dim);font-size:13px}
  #tl .by{margin-top:10px;font-size:12px;color:var(--faint)}
+ /* ── the satellite you clicked ────────────────────────────────────────── */
+ #sel{top:172px;left:28px;width:270px}
+ .selcard{position:relative;background:rgb(10 16 26 / .84);border:1px solid var(--line);
+  border-radius:12px;padding:13px 15px 12px;backdrop-filter:blur(7px)}
+ .selcard h2{margin:0 16px 9px 0;font:600 13px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.04em;color:var(--ink);word-break:break-word}
+ .selcard .swatch{display:inline-block;width:8px;height:8px;border-radius:50%;
+  margin-right:7px;vertical-align:baseline;box-shadow:0 0 8px currentColor}
+ .selcard dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0;
+  font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+ .selcard dt{color:var(--faint)}
+ .selcard dd{margin:0;color:var(--dim);text-align:right;font-variant-numeric:tabular-nums}
+ .selcard dd b{color:var(--ink);font-weight:600}
+ #selclose{position:absolute;top:7px;right:8px;background:none;border:0;cursor:pointer;
+  color:var(--faint);font:16px/1 ui-monospace,monospace;padding:3px 5px}
+ #selclose:hover{color:var(--ink)}
+ .selcard .hint{margin:9px 0 0;font:10.5px/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--faint)}
  #tr{top:26px;right:28px;text-align:right}
  #count{font:600 34px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.02em}
  #count small{display:block;font:500 11px/1.6 ui-sans-serif,system-ui,sans-serif;
@@ -134,8 +151,18 @@
   <h1>Starlink, right now</h1>
   <p>Every satellite in the constellation, where it actually is this second —
   and the ISS with it.</p>
+  <p class="by">Click any satellite to draw its orbit.</p>
   <p class="by">Drawn on <a href="../index.html">mappo</a> ·
   <a href="./index.html">more demos</a></p>
+</div>
+
+<div class="panel" id="sel" hidden>
+  <div class="selcard">
+    <button id="selclose" type="button" aria-label="clear selection">×</button>
+    <h2 id="selname">—</h2>
+    <dl id="selrows"></dl>
+    <p class="hint">One full revolution, centred on the time shown.</p>
+  </div>
 </div>
 
 <div class="panel" id="tr">
@@ -253,6 +280,15 @@ let fleet = [];            // { sat, shell }
 let iss = null;
 let places = [];           // { lat, lon, radius, shell } — refreshed on a timer
 let issAt = null, issTrack = [];
+
+// What you clicked, and the revolution it is riding. `selected` is either the
+// string "iss" or an index into `fleet`; anything else in here is derived.
+let selected = null, selTrack = [], selAt = null, selInfo = null;
+
+// Screen positions of everything drawn this frame, kept in flat typed arrays
+// rather than objects: this is rebuilt sixty times a second and ten thousand
+// fresh objects a frame is a garbage collector you can see.
+let hitX = new Float32Array(0), hitY = new Float32Array(0), hitI = new Int32Array(0), hitN = 0;
 let warp = 1, spinning = true, showTrack = true, showCities = true;
 
 // One clock for the whole page, and the slider is a view of it rather than a
@@ -282,41 +318,81 @@ function step() {
 
 const EARTH_R = 6371;      // km, for turning altitude into globe radii
 
+// One full revolution, centred on `when`. The period comes from the satellite's
+// own mean motion, so a 95-minute Starlink and a 93-minute ISS each get exactly
+// one lap rather than a fixed slice of somebody else's orbit.
+function orbitTrack(sat, when) {
+  const period = 2 * Math.PI / sat.no;            // minutes
+  const step = period / 180;
+  const pts = [];
+  for (let m = -period / 2; m <= period / 2; m += step) {
+    const t = new Date(+when + m * 60000);
+    const r = propagate(sat, (t - sat.epoch) / 60000);
+    if (r) pts.push(geodetic(r, gmst(t)));
+  }
+  return pts;
+}
+
+// Speed from a one-second finite difference: cheaper than carrying the velocity
+// vector through, and accurate to the digit we print.
+function speedOf(sat, when, p) {
+  const q = propagate(sat, (when - sat.epoch) / 60000 + 1 / 60);
+  return q ? Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z) * 3600 : 0;
+}
+
+function refreshSelection(when, theta) {
+  const sat = selected === "iss" ? iss : fleet[selected]?.sat;
+  if (!sat) { selected = null; return; }
+  const p = propagate(sat, (when - sat.epoch) / 60000);
+  if (!p) { clearSelection(); return; }
+  const g = geodetic(p, theta);
+  selAt = { ...g, radius: 1 + g.alt / EARTH_R };
+  selTrack = orbitTrack(sat, when);
+  selInfo = {
+    name: sat.name,
+    satnum: sat.satnum,
+    shell: selected === "iss" ? null : fleet[selected].shell,
+    inc: sat.inclo * 180 / Math.PI,
+    alt: g.alt,
+    speed: speedOf(sat, when, p),
+    period: 2 * Math.PI / sat.no,
+    epochAgeH: (when - sat.epoch) / 3600000,
+    lat: g.lat, lon: g.lon
+  };
+  renderSelection();
+}
+
 function propagateAll(when) {
   const theta = gmst(when);
   const out = [];
-  for (const f of fleet) {
+  for (let i = 0; i < fleet.length; i++) {
+    const f = fleet[i];
     const p = propagate(f.sat, (when - f.sat.epoch) / 60000);
     if (!p) continue;
     const g = geodetic(p, theta);
-    out.push({ lat: g.lat, lon: g.lon, radius: 1 + g.alt / EARTH_R, shell: f.shell });
+    out.push({ i, lat: g.lat, lon: g.lon, radius: 1 + g.alt / EARTH_R, shell: f.shell });
   }
   places = out;
 
+  if (selected) refreshSelection(when, theta);
+
   if (iss) {
     const p = propagate(iss, (when - iss.epoch) / 60000);
-    issAt = p && { ...geodetic(p, theta), speed: 0 };
-    if (issAt) {
-      // Speed from a one-second finite difference: cheaper than carrying the
-      // velocity vector through, and accurate to the digit we print.
-      const q = propagate(iss, (when - iss.epoch) / 60000 + 1 / 60);
-      if (q) issAt.speed = Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z) * 3600;
+    if (p) {
+      issAt = { ...geodetic(p, theta), speed: speedOf(iss, when, p) };
       issAt.radius = 1 + issAt.alt / EARTH_R;
-      // Where it has been and where it is going: ±45 minutes of ground track,
-      // which is most of one revolution.
-      issTrack = [];
-      for (let m = -45; m <= 45; m += 1.5) {
-        const t = new Date(+when + m * 60000);
-        const r = propagate(iss, (t - iss.epoch) / 60000);
-        if (r) issTrack.push(geodetic(r, gmst(t)));
-      }
-    }
+      issTrack = orbitTrack(iss, when);
+    } else issAt = null;
   }
 }
 
 // ── drawing ─────────────────────────────────────────────────────────────────
 let dpr = 1;
 function size() {
+  // The recorded hit positions describe the stage that just changed shape.
+  // They are one frame from being rebuilt, but a click landing inside that
+  // frame would be answered from the old geometry.
+  hitN = 0;
   dpr = Math.min(2, devicePixelRatio || 1);
   for (const c of [ sats, $("sky") ]) {
     const r = c.getBoundingClientRect();
@@ -364,12 +440,22 @@ function draw() {
   const paths = new Map();
   for (const s of SHELLS) paths.set(s.key, Array.from({ length: DEPTHS }, () => new Path2D()));
 
+  if (hitX.length < places.length) {
+    hitX = new Float32Array(places.length);
+    hitY = new Float32Array(places.length);
+    hitI = new Int32Array(places.length);
+  }
+  hitN = 0;
+
   let visible = 0;
   for (const p of places) {
     if (!on.has(p.shell.key)) continue;
     const q = map.locate(p.lat, p.lon, p.radius);
     if (!q || !q.front) continue;
     visible++;
+    // Free hit-testing: the projection is already done, so remembering it
+    // costs three array writes and saves a second pass on every click.
+    hitX[hitN] = q.x; hitY[hitN] = q.y; hitI[hitN] = p.i; hitN++;
     const band = Math.min(DEPTHS - 1, Math.floor(q.depth * DEPTHS));
     const r = 1.0 + 0.9 * q.depth;
     const path = paths.get(p.shell.key)[band];
@@ -388,29 +474,16 @@ function draw() {
   }
   sctx.globalAlpha = 1;
 
+  // The orbit you asked for, under everything else that is drawn on top.
+  if (selected !== null && selTrack.length) {
+    strokeTrack(map, selTrack, selInfo?.shell?.color ?? "#ffffff", 0.85, 1.3);
+  }
+
   // The ISS, and the arc it is riding.
   const tag = $("iss-tag");
   if (issAt) {
-    if (showTrack && issTrack.length) {
-      sctx.strokeStyle = "#ffffff";
-      sctx.lineWidth = 1;
-      sctx.globalAlpha = 0.45;
-      sctx.beginPath();
-      // Lift the pen at the horizon on a globe, and at the antimeridian on a
-      // flat map: a track that crosses from +180 to -180 is one step east,
-      // and joining those two points draws a line straight back across the
-      // world. The test is the same either way — a jump no real arc makes.
-      const wrap = sats.clientWidth / 2;
-      let pen = null;
-      for (const g of issTrack) {
-        const q = map.locate(g.lat, g.lon, 1 + g.alt / EARTH_R);
-        if (!q || !q.front) { pen = null; continue; }
-        if (pen && Math.abs(q.x - pen.x) < wrap) sctx.lineTo(q.x, q.y);
-        else sctx.moveTo(q.x, q.y);
-        pen = q;
-      }
-      sctx.stroke();
-      sctx.globalAlpha = 1;
+    if (showTrack && issTrack.length && selected !== "iss") {
+      strokeTrack(map, issTrack, "#ffffff", 0.4, 1);
     }
     const q = map.locate(issAt.lat, issAt.lon, issAt.radius);
     if (q && q.front) {
@@ -424,10 +497,46 @@ function draw() {
     } else tag.style.opacity = "0";
   }
 
+  // The selected satellite, ringed so it stands out of ten thousand siblings.
+  if (selected !== null && selAt) {
+    const q = map.locate(selAt.lat, selAt.lon, selAt.radius);
+    if (q && q.front) {
+      const c = selInfo?.shell?.color ?? "#ffffff";
+      sctx.fillStyle = c;
+      sctx.beginPath(); sctx.arc(q.x, q.y, 3.2, 0, Math.PI * 2); sctx.fill();
+      sctx.strokeStyle = c; sctx.lineWidth = 1.2; sctx.globalAlpha = 0.75;
+      sctx.beginPath(); sctx.arc(q.x, q.y, 8, 0, Math.PI * 2); sctx.stroke();
+      sctx.globalAlpha = 0.35;
+      sctx.beginPath(); sctx.arc(q.x, q.y, 13, 0, Math.PI * 2); sctx.stroke();
+      sctx.globalAlpha = 1;
+    }
+  }
+
   if (showCities) drawCities(map);
 
   $("count").firstChild.nodeValue = places.length.toLocaleString();
   return visible;
+}
+
+// Lift the pen at the horizon on a globe, and at the antimeridian on a flat
+// map: a track crossing from +180 to -180 is one step east, and joining those
+// two points draws a line straight back across the world. The test is the
+// same either way — a jump no real arc makes.
+function strokeTrack(map, pts, color, alpha, width) {
+  if (!pts.length) return;
+  const wrap = sats.clientWidth / 2;
+  sctx.strokeStyle = color; sctx.lineWidth = width; sctx.globalAlpha = alpha;
+  sctx.beginPath();
+  let pen = null;
+  for (const g of pts) {
+    const q = map.locate(g.lat, g.lon, 1 + g.alt / EARTH_R);
+    if (!q || !q.front) { pen = null; continue; }
+    if (pen && Math.abs(q.x - pen.x) < wrap) sctx.lineTo(q.x, q.y);
+    else sctx.moveTo(q.x, q.y);
+    pen = q;
+  }
+  sctx.stroke();
+  sctx.globalAlpha = 1;
 }
 
 // Last, so a label is never buried under the constellation it is orienting.
@@ -567,6 +676,73 @@ function readouts() {
   }
 }
 
+// ── clicking one out of ten thousand ────────────────────────────────────────
+function clearSelection() {
+  selected = null; selTrack = []; selAt = null; selInfo = null;
+  $("sel").hidden = true;
+}
+
+const fmtSpan = (h) => h < 48 ? `${h.toFixed(1)} h` : `${(h / 24).toFixed(1)} d`;
+
+function renderSelection() {
+  const s = selInfo;
+  if (!s) return;
+  const color = s.shell?.color ?? "#ffffff";
+  $("selname").innerHTML =
+    `<span class="swatch" style="background:${color};color:${color}"></span>${s.name}`;
+  const rows = [
+    [ "norad", s.satnum ],
+    [ "shell", s.shell ? `${s.shell.label} · ${s.inc.toFixed(1)}°` : `${s.inc.toFixed(1)}°` ],
+    [ "altitude", `<b>${s.alt.toFixed(0)}</b> km` ],
+    [ "speed", `<b>${s.speed.toFixed(0)}</b> km/h` ],
+    [ "period", `${s.period.toFixed(1)} min` ],
+    [ "over", `${s.lat >= 0 ? "N" : "S"}${Math.abs(s.lat).toFixed(1)} ` +
+              `${s.lon >= 0 ? "E" : "W"}${Math.abs(s.lon).toFixed(1)}` ],
+    [ "elements", `${fmtSpan(s.epochAgeH)} old` ]
+  ];
+  $("selrows").innerHTML = rows.map(([ k, v ]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  $("sel").hidden = false;
+}
+
+function select(what) {
+  selected = what;
+  propagateAll(now());      // recompute, which also builds the track
+  readouts();
+}
+
+// Nearest drawn satellite within a finger's width. The ISS gets a wider
+// catch because it is the one object here anybody comes looking for.
+function pick(px, py) {
+  const map = earth.map;
+  if (map && issAt) {
+    const q = map.locate(issAt.lat, issAt.lon, issAt.radius);
+    if (q && q.front && Math.hypot(q.x - px, q.y - py) <= 14) return "iss";
+  }
+  let best = null, bestD = 13 * 13;
+  for (let k = 0; k < hitN; k++) {
+    const dx = hitX[k] - px, dy = hitY[k] - py;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) { bestD = d; best = hitI[k]; }
+  }
+  return best;
+}
+
+// A drag on the globe ends in a click event too, so a click is only a click
+// when the pointer barely moved and did not linger.
+let down = null;
+$("globe").addEventListener("pointerdown", (e) => {
+  down = { x: e.clientX, y: e.clientY, t: Date.now() };
+});
+$("globe").addEventListener("pointerup", (e) => {
+  const d = down; down = null;
+  if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5 || Date.now() - d.t > 500) return;
+  const box = sats.getBoundingClientRect();
+  const hit = pick(e.clientX - box.left, e.clientY - box.top);
+  if (hit === null) clearSelection(); else select(hit);
+});
+$("selclose").onclick = clearSelection;
+addEventListener("keydown", (e) => { if (e.key === "Escape") clearSelection(); });
+
 // ── controls ────────────────────────────────────────────────────────────────
 function buildLegend(counts) {
   $("legend").innerHTML = SHELLS.filter((s) => counts[s.key]).map((s) =>
@@ -577,6 +753,8 @@ function buildLegend(counts) {
     const b = e.target.closest("button"); if (!b) return;
     const k = b.dataset.k;
     on.has(k) ? on.delete(k) : on.add(k);
+    if (selected !== null && selected !== "iss" &&
+        !on.has(fleet[selected]?.shell.key)) clearSelection();
     b.setAttribute("aria-pressed", String(on.has(k)));
   };
 }
