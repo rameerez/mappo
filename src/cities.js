@@ -87,9 +87,16 @@ export const CITIES = {
 // case-insensitive) or a { name, lat, lon, … } object. Returns a normalized
 // object or null for unknown names (the renderer warns, never throws — a
 // typo'd city must not take down a hero section).
+// "São Paulo" and "Sao Paulo" are the same place, and a person typing the
+// first should not be told their city does not exist. The table stays keyed
+// in plain ASCII and the LOOKUP folds instead: NFD splits a letter from its
+// combining marks, and the marks go. The name you passed is what gets
+// labelled — folding is how we find the city, not how we spell it back.
+const fold = (name) => name.trim().normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
 export function resolveCity(entry) {
   if (typeof entry === "string") {
-    const coords = CITIES[entry.trim().toLowerCase()];
+    const coords = CITIES[fold(entry)];
     return coords ? { name: entry.trim(), lat: coords[0], lon: coords[1] } : null;
   }
   if (entry && typeof entry.lat === "number" && typeof entry.lon === "number") {

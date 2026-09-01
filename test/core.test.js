@@ -48,6 +48,17 @@ test("cities: registry lookups are case-insensitive and trimmed", () => {
   assert.equal(resolveCity("SINGAPORE").lon, 103.8);
 });
 
+test("cities: accents are folded on the way in, kept on the way out", () => {
+  // The table is keyed in ASCII; a person typing the city's own spelling
+  // should still find it, and should get their spelling back on the label.
+  assert.deepEqual(resolveCity("São Paulo"), { name: "São Paulo", lat: -23.6, lon: -46.6 });
+  assert.equal(resolveCity("Zürich").lat, CITIES["zurich"][0]);
+  assert.equal(resolveCity("BOGOTÁ").lon, CITIES["bogota"][1]);
+  // Precomposed (a-with-tilde) and decomposed (a + combining tilde) look
+  // identical on screen and are different bytes; both have to find it.
+  assert.equal(resolveCity("São Paulo").lat, resolveCity("São Paulo").lat);
+});
+
 test("cities: unknown names resolve to null, never throw", () => {
   assert.equal(resolveCity("Atlantis"), null);
   assert.equal(resolveCity(""), null);

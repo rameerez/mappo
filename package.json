@@ -1,7 +1,7 @@
 {
   "name": "mappo",
-  "version": "0.5.0",
-  "description": "A dotted world map as a zero-dependency web component: flat SVG map or rotating canvas globe. Land dots at any resolution, a built-in city registry (just type \"London\"), six animations, drag-to-spin with momentum, hover/click events. One ESM file, no build step.",
+  "version": "0.6.0",
+  "description": "A world map as a zero-dependency web component: a dot field or real Natural Earth coastlines, flat SVG or a rotating canvas globe. Country borders, a graticule, a built-in city registry (just type \"London\"), six animations, drag-to-spin with momentum, and your own DOM positioned on the sphere. One ESM file, no build step.",
   "type": "module",
   "main": "dist/mappo.js",
   "exports": {
@@ -22,6 +22,10 @@
     "world-map",
     "dotted-map",
     "dot-map",
+    "coastline",
+    "natural-earth",
+    "country-borders",
+    "graticule",
     "svg",
     "web-component",
     "custom-element",
