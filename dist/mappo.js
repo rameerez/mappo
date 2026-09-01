@@ -708,18 +708,7 @@ export class GlobeRenderer {
     }
     this.ctx = this.canvas.getContext("2d");
 
-    // Colours given as CSS variables follow the host's theme. Watch the
-    // document element for the class/style flips theme switches are made
-    // of, drop the memo, repaint. Costs nothing when every colour is a
-    // literal — the observer is only installed if a var is in play.
-    if (usesCssVars(this.o.dotColor, this.o.graticuleColor, this.o.equatorColor,
-                    this.o.markerColor, this.o.oceanColor, this.o.background) &&
-        typeof MutationObserver === "function") {
-      this._themeObserver = new MutationObserver(() => { this._cvCache = null; this._draw(); });
-      this._themeObserver.observe(document.documentElement, {
-        attributes: true, attributeFilter: [ "class", "style", "data-theme" ]
-      });
-    }
+    this._watchTheme();
 
     this._rebuildData();
 
@@ -759,8 +748,32 @@ export class GlobeRenderer {
   update() {
     this._cvCache = null;
     this._land = null;
+    // Re-checked on every update, not only at build: a colour can BECOME a
+    // var() long after construction — a themed attribute set from JS, a knob,
+    // a framework binding — and a globe that installed no observer because it
+    // started out with literals would then sit at whatever the palette was
+    // when it was built, and never follow the theme again.
+    this._watchTheme();
     this._rebuildData();
     this._draw();
+  }
+
+  // Colours given as CSS variables follow the host's theme. Watch the document
+  // element for the class/style flips theme switches are made of, drop the
+  // memo, repaint. Costs nothing when every colour is a literal — no observer
+  // is installed unless a var is in play, and it is disconnected again if the
+  // last one goes away.
+  _watchTheme() {
+    const wanted = typeof MutationObserver === "function" && usesCssVars(
+      this.o.dotColor, this.o.graticuleColor, this.o.equatorColor, this.o.markerColor,
+      this.o.oceanColor, this.o.background, this.o.landColor, this.o.landStroke,
+      this.o.bordersColor, this.o.highlightColor);
+    if (wanted === !!this._themeObserver) return;
+    if (!wanted) { this._themeObserver.disconnect(); this._themeObserver = null; return; }
+    this._themeObserver = new MutationObserver(() => { this._cvCache = null; this._draw(); });
+    this._themeObserver.observe(document.documentElement, {
+      attributes: true, attributeFilter: [ "class", "style", "data-theme" ]
+    });
   }
 
   // Resolve a colour option, memoized. `var(--x)` costs one

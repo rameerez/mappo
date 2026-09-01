@@ -2,9 +2,11 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>mappo — demos</title>
+<link rel="stylesheet" href="../assets/site.css">
 <style>
- :root{--bg:#fffbf5;--card:#fff;--ink:#16181d;--muted:#6b7280;--line:#e6e1d8;
-       --land:#c9d3bd;--coast:#5f7a4a;--grid:#ddd8cd;--accent:#c2410c;--pill:#fff;--sea:#f4f6f2;--ocean:#dfe6da;
+ /* Everything shared with the landing page lives in ../assets/site.css;
+    what is left here is what only the demos have. */
+ :root{
        /* the day/night stage, daylight palette: pale paper sea, warm land,
           dusk washed in indigo. mappo re-resolves these on the theme flip. */
        --stage-bg:#f2f6fa;--stage-frame:#d3dfeb;
@@ -14,38 +16,12 @@
        --stage-night:#0a2149;--stage-band:.07;
        --stage-ink:#0f1f2e;--stage-cap:#54708a;--stage-day:#7e99b0;--stage-lit:#b45309;
        --stage-halo:rgb(180 83 9 / .16)}
- html[data-theme="dark"]{--bg:#0e1116;--card:#151a21;--ink:#e7ecf3;--muted:#93a0b4;--line:#242c37;
-       --land:#2b3646;--coast:#7aa2f7;--grid:#232b36;--accent:#fb923c;--pill:#1d2229;--sea:#0f141b;--ocean:#1a2230;
-       --stage-bg:#070b11;--stage-frame:#14202c;
+ html[data-theme="dark"]{--stage-bg:#070b11;--stage-frame:#14202c;
        --day-sea:#0e1c2c;--day-ocean:#152740;--day-land:#26445f;--day-coast:#6fc9d8;
        --stage-night:#01050c;--stage-band:.0775;
        --stage-ink:#dff5f0;--stage-cap:#5d7183;--stage-day:#5f7f93;--stage-lit:#f97316;
        --stage-halo:rgb(249 115 22 / .18)}
- *{box-sizing:border-box}
- body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 ui-sans-serif,system-ui,sans-serif}
- .wrap{max-width:1200px;margin:0 auto;padding:28px 24px 90px}
  header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;margin-bottom:8px}
- h1{font-size:27px;margin:0 0 6px;letter-spacing:-.015em}
- .lede{color:var(--muted);max-width:66ch;margin:0}
- button{font:inherit;padding:8px 14px;border-radius:9px;border:1px solid var(--line);
-        background:var(--card);color:var(--ink);cursor:pointer}
- button:hover{border-color:var(--accent)}
- button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);font-weight:600}
- h2{font-size:13px;text-transform:uppercase;letter-spacing:.13em;color:var(--muted);
-    margin:46px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
- h2 span{text-transform:none;letter-spacing:0;font-size:13px;color:var(--muted);opacity:.8}
- .grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
- .card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;
-       display:flex;flex-direction:column}
- .card .art{padding:14px 14px 0}
- .card .meta{padding:12px 16px 16px}
- .card h3{margin:0 0 4px;font-size:15px}
- .card p{margin:0 0 10px;color:var(--muted);font-size:13.5px}
- pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px 12px;
-     overflow-x:auto;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
- .tag{display:inline-block;font:11px/1 ui-monospace,monospace;background:var(--bg);
-      border:1px solid var(--line);border-radius:5px;padding:3px 6px;margin:0 4px 4px 0;color:var(--muted)}
-world-map{display:block;width:100%}
 
 /* ── the flat showcase stage ────────────────────────────────────────── */
 .stage{position:relative;border-radius:18px;overflow:hidden;background:var(--stage-bg);
@@ -144,8 +120,6 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
  .carrier{position:absolute;left:50%;top:50%;width:170px;height:170px;margin:-85px 0 0 -85px;will-change:transform}
  .hud{position:absolute;left:14px;bottom:12px;font:11.5px/1.5 ui-monospace,monospace;color:#8b98ad}
  .hud b{color:#e8eef7;font-weight:600}
- a{color:var(--accent)}
- .foot{margin-top:40px;color:var(--muted);font-size:13.5px}
 </style></head>
 <body><div class="wrap">
 
@@ -466,12 +440,11 @@ Full-screen versions: <a href="./orbit.html">orbit</a> · <a href="./land.html">
 
 </div>
 <script type="module" src="../dist/mappo.js"></script>
+<script type="module">
+  import { bindThemeToggle } from "../assets/theme.js";
+  bindThemeToggle(document.getElementById("theme"));
+</script>
 <script>
-  document.getElementById("theme").onclick = () => {
-    const e = document.documentElement;
-    e.dataset.theme = e.dataset.theme === "dark" ? "light" : "dark";
-  };
-
   // ── orbit ──────────────────────────────────────────────────────────────
   const YEAR_MS = 96000, A = 330, B = 125;
   const carrier = document.getElementById("carrier"), clock = document.getElementById("clock");
