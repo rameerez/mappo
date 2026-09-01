@@ -39,7 +39,7 @@
 // - The tilt lives on a WRAPPER div around the svg — the svg itself stays
 //   untransformed so consumer getBoundingClientRect math keeps working.
 
-import { isLand } from "./mask.js";
+import { resolveBody, EARTH, trackMap, untrackMap } from "./body.js";
 import { project, cellCenter, projectNormalized } from "./projection.js";
 import { normalizeRings, pointInRings } from "./highlight.js";
 import { buildLand, parseLandStyle, landRings, borderRings } from "./land.js";
@@ -53,6 +53,9 @@ export const DEFAULTS = {
   // sphere — tilt becomes the axial tilt; hover/click and animation are
   // flat-only for now).
   mode: "flat",
+  // Which sphere. Earth unless a body pack has been registered and named;
+  // see src/body.js. Takes a name or a body object.
+  body: null,
   rotateSpeed: 4,             // globe spin, degrees per second (0 = still)
   globeRing: false,           // opt-in hairline halo around the globe
   // Backdrop (both modes)
@@ -193,7 +196,14 @@ export class Mappo {
   constructor(container, options = {}) {
     this.container = container;
     this.options = { ...DEFAULTS, ...options };
+    // Which sphere. Resolved once here and once per update, never per cell.
+    this._body = resolveBody(this.options.body);
+    // A body knows the band worth drawing — the Moon wants its poles, Earth
+    // does not want its ice. Only when the caller has not said otherwise.
+    if (!("latRange" in options) && !("latMin" in options) && !("latMax" in options) &&
+        this._body.latRange) this.options.latRange = this._body.latRange;
     this._dotsCache = new Map(); // "cols|latMin|latMax" → dots markup string
+    trackMap(this);
     this.render();
   }
 
@@ -232,6 +242,7 @@ export class Mappo {
   update(options = {}) {
     const changed = Object.keys(options).filter((k) => !sameOption(options[k], this.options[k]));
     Object.assign(this.options, options);
+    if (changed.includes("body")) this._body = resolveBody(this.options.body);
     if (changed.length === 0) return;
 
     if (changed.every((k) => CALLBACK_KEYS.has(k))) {
@@ -276,6 +287,7 @@ export class Mappo {
   }
 
   destroy() {
+    untrackMap(this);
     clearTimeout(this._rebuildTimer);
     this._globe?.destroy();
     this._globe = null;
@@ -538,7 +550,7 @@ if (this._overlayLayer) {
   // sea. Tracing per-cell rectangles instead would stroke a wireframe.
   #landMarkup(grid, o) {
     const style = parseLandStyle(o.land);
-    const vector = landRings(o.landSource);
+    const vector = landRings(o.landSource, this._body);
     // `borders` belongs in the key: the cached markup CONTAINS the borders
     // path, so leaving it out means turning borders off replays a cached scene
     // that still has them. (Caught by the demo toggles, not by a unit test —
@@ -546,12 +558,12 @@ if (this._overlayLayer) {
     const key = `land|${o.landSource}|${o.borders ? "b" : ""}|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
     let geom = this._dotsCache.get(key);
     if (!geom) {
-      const { cells, loops } = buildLand(grid);
+      const { cells, loops } = buildLand(grid, { body: this._body });
       geom = {
         d: vector
           ? this.#vectorPath(vector, grid)
           : loops.map((loop) => `M${loop.map(([ x, y ]) => `${x * CELL} ${y * CELL}`).join("L")}Z`).join(""),
-        borders: o.borders ? this.#vectorPath(borderRings(), grid) : "",
+        borders: o.borders ? this.#vectorPath(borderRings(this._body), grid) : "",
         cells
       };
       this._dotsCache.set(key, geom);
@@ -581,7 +593,7 @@ if (this._overlayLayer) {
   #landHighlightMarkup(grid, o) {
     if (!o.highlightPolygon?.length) return "";
     const normalized = normalizeRings(o.highlightPolygon);
-    const { cells } = buildLand(grid);
+    const { cells } = buildLand(grid, { body: this._body });
     const parts = [];
     for (const [ col, row ] of cells) {
       const c = cellCenter(col, row, grid);
@@ -603,7 +615,7 @@ if (this._overlayLayer) {
     for (let row = 0; row < grid.rows; row++) {
       for (let col = 0; col < grid.cols; col++) {
         const c = cellCenter(col, row, grid);
-        if (!isLand(c.lat, c.lon)) continue;
+        if (!this._body.isLand(c.lat, c.lon)) continue;
         dots++;
 
         // Every animation mode is a PHASE FIELD baked per dot; the stylesheet
@@ -922,7 +934,7 @@ if (this._overlayLayer) {
 // few rings — coastal cities often sit in a sea cell at coarse resolutions
 // (harbors do that), and a marker floating just off the coast looks broken.
 // Pure function (exported for tests and consumers doing their own math).
-export function snapToLand(lat, lon, grid) {
+export function snapToLand(lat, lon, grid, body = EARTH) {
   const { x, y } = project(lat, lon, grid);
   const col0 = Math.min(grid.cols - 1, Math.max(0, Math.floor(x)));
   const row0 = Math.min(grid.rows - 1, Math.max(0, Math.floor(y)));
@@ -935,7 +947,7 @@ export function snapToLand(lat, lon, grid) {
         const col = col0 + dc, row = row0 + dr;
         if (col < 0 || col >= grid.cols || row < 0 || row >= grid.rows) continue;
         const c = cellCenter(col, row, grid);
-        if (!isLand(c.lat, c.lon)) continue;
+        if (!body.isLand(c.lat, c.lon)) continue;
         const d = (col - x) ** 2 + (row - y) ** 2;
         if (!best || d < best.d) best = { col, row, d };
       }

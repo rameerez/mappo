@@ -11,6 +11,7 @@ export { Mappo, DEFAULTS, snapToLand } from "./renderer.js";
 export { MappoElement, register } from "./element.js";
 export { CITIES, resolveCity } from "./cities.js";
 export { isLand, MASK_W, MASK_H } from "./mask.js";
+export { EARTH, registerBody, resolveBody, knownBodies } from "./body.js";
 export { project, cellCenter, cellCorner, projectNormalized } from "./projection.js";
 export { buildGraticule } from "./graticule.js";
 export { buildLand, parseLandStyle, landRings, borderRings } from "./land.js";

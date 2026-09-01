@@ -22,16 +22,15 @@
 // counter-clockwise, which is what `fill-rule: nonzero` wants — inland seas
 // stay empty without anyone declaring them.
 
-import { isLand } from "./mask.js";
 import { cellCenter } from "./projection.js";
-import { landShapes, countryShapes } from "./shapes.js";
+import { EARTH } from "./body.js";
 
 const cache = new Map();
 
 // wrapX: treat column -1 and column `cols` as the far side of the map. The
 // globe wants this (there is no edge at the antimeridian, only more world);
 // the flat map does not (its frame really does end at ±180).
-function landAt(col, row, grid, wrapX) {
+function landAt(col, row, grid, wrapX, body) {
   if (row < 0 || row >= grid.rows) return false;
   let c = col;
   if (c < 0 || c >= grid.cols) {
@@ -39,7 +38,7 @@ function landAt(col, row, grid, wrapX) {
     c = ((c % grid.cols) + grid.cols) % grid.cols;
   }
   const p = cellCenter(c, row, grid);
-  return isLand(p.lat, p.lon);
+  return body.isLand(p.lat, p.lon);
 }
 
 // Chain directed boundary edges into closed rings. Each edge is stored under
@@ -77,8 +76,9 @@ function chain(edges) {
 // grid: { cols, rows, latRange }. Returns { cells, loops } in GRID units —
 // cells as [col, row], loop vertices as grid corners [col, row]. Renderers
 // scale (flat: × CELL) or project (globe: corner → lat/lon → sphere).
-export function buildLand(grid, { wrapX = false } = {}) {
-  const key = `${grid.cols}|${grid.rows}|${grid.latRange[0]}|${grid.latRange[1]}|${wrapX}`;
+export function buildLand(grid, { wrapX = false, body = EARTH } = {}) {
+  // The body is in the cache key: two spheres are not the same geometry.
+  const key = `${body.id}|${grid.cols}|${grid.rows}|${grid.latRange[0]}|${grid.latRange[1]}|${wrapX}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
@@ -86,13 +86,13 @@ export function buildLand(grid, { wrapX = false } = {}) {
   const edges = [];
   for (let row = 0; row < grid.rows; row++) {
     for (let col = 0; col < grid.cols; col++) {
-      if (!landAt(col, row, grid, wrapX)) continue;
+      if (!landAt(col, row, grid, wrapX, body)) continue;
       cells.push([ col, row ]);
       // Clockwise with y pointing down.
-      if (!landAt(col, row - 1, grid, wrapX)) edges.push([ col, row, col + 1, row ]);
-      if (!landAt(col + 1, row, grid, wrapX)) edges.push([ col + 1, row, col + 1, row + 1 ]);
-      if (!landAt(col, row + 1, grid, wrapX)) edges.push([ col + 1, row + 1, col, row + 1 ]);
-      if (!landAt(col - 1, row, grid, wrapX)) edges.push([ col, row + 1, col, row ]);
+      if (!landAt(col, row - 1, grid, wrapX, body)) edges.push([ col, row, col + 1, row ]);
+      if (!landAt(col + 1, row, grid, wrapX, body)) edges.push([ col + 1, row, col + 1, row + 1 ]);
+      if (!landAt(col, row + 1, grid, wrapX, body)) edges.push([ col + 1, row + 1, col, row + 1 ]);
+      if (!landAt(col - 1, row, grid, wrapX, body)) edges.push([ col, row + 1, col, row ]);
     }
   }
 
@@ -129,10 +129,11 @@ export function parseLandStyle(value) {
 // the flat map converts grid contours in its own units. Country borders are
 // vector-only — a 512×256 raster cannot express a border that follows a
 // river.
-export function landRings(source) {
-  return source === "vector" ? landShapes() : null;
+// Both of these now ask the BODY. The Moon answers null to each: a mare has
+// no coastline to trace and the Moon has no countries.
+export function landRings(source, body = EARTH) {
+  return body.rings?.(source) ?? null;
 }
-
-export function borderRings() {
-  return countryShapes();
+export function borderRings(body = EARTH) {
+  return body.borders?.() ?? null;
 }

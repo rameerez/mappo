@@ -13,7 +13,7 @@
 // Node-safe: the point-buffer builders are pure and testable; GlobeRenderer
 // touches the DOM only in its constructor, which only runs in a browser.
 
-import { isLand } from "./mask.js";
+import { resolveBody, EARTH } from "./body.js";
 import { cellCenter } from "./projection.js";
 import { resolveCity } from "./cities.js";
 import { normalizeRings, pointInRings } from "./highlight.js";
@@ -43,28 +43,28 @@ export function latLonToXYZ(lat, lon) {
 // buildGlobePoints (same loop, same skip rule) — the phase-array
 // discipline, reused: geometry arrays never reorder, parallel arrays
 // annotate.
-export function buildGlobeFlags(cols, latRange, test, water = false) {
+export function buildGlobeFlags(cols, latRange, test, water = false, body = EARTH) {
   const rows = Math.round((cols / 360) * (latRange[1] - latRange[0]));
   const grid = { cols, rows, latRange };
   const out = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const c = cellCenter(col, row, grid);
-      if (isLand(c.lat, c.lon) === water) continue;
+      if (body.isLand(c.lat, c.lon) === water) continue;
       out.push(test(c.lat, c.lon) ? 1 : 0);
     }
   }
   return new Uint8Array(out);
 }
 
-export function buildGlobePoints(cols, latRange, water = false) {
+export function buildGlobePoints(cols, latRange, water = false, body = EARTH) {
   const rows = Math.round((cols / 360) * (latRange[1] - latRange[0]));
   const grid = { cols, rows, latRange };
   const out = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const c = cellCenter(col, row, grid);
-      if (isLand(c.lat, c.lon) === water) continue;
+      if (body.isLand(c.lat, c.lon) === water) continue;
       const p = latLonToXYZ(c.lat, c.lon);
       out.push(p.x, p.y, p.z);
     }
@@ -76,14 +76,14 @@ export function buildGlobePoints(cols, latRange, water = false) {
 // buildGlobePoints (same loop, same skip rule). Phase picks WHEN a dot
 // moves in the cycle, amp how far — the exact fields the flat renderer
 // bakes into its dot markup, so the six modes read the same on a sphere.
-export function buildGlobePhases(cols, latRange, mode, water = false) {
+export function buildGlobePhases(cols, latRange, mode, water = false, body = EARTH) {
   const rows = Math.round((cols / 360) * (latRange[1] - latRange[0]));
   const grid = { cols, rows, latRange };
   const out = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const c = cellCenter(col, row, grid);
-      if (isLand(c.lat, c.lon) === water) continue;
+      if (body.isLand(c.lat, c.lon) === water) continue;
       let p;
       switch (mode) {
         case "noise":   p = (noise2(col * 0.22, row * 0.22) + 1) / 2; break;
@@ -104,6 +104,7 @@ export class GlobeRenderer {
   constructor(container, options) {
     this.container = container;
     this.o = options;
+    this._body = resolveBody(options.body);
     // focus: start the spin facing a point — the rotation that brings
     // the focus longitude to the front (z-max at rot = -λ, since
     // latLonToXYZ puts λ=0 facing the viewer at angle 0).
@@ -202,6 +203,7 @@ export class GlobeRenderer {
   //   everything is rebuilt, which is what any caller that does not know gets.
   update(changed = null) {
     this._cvCache = null;
+    if (!changed || changed.includes("body")) this._body = resolveBody(this.o.body);
     // Re-checked on every update, not only at build: a colour can BECOME a
     // var() long after construction — a themed attribute set from JS, a knob,
     // a framework binding — and a globe that installed no observer because it
@@ -455,7 +457,7 @@ export class GlobeRenderer {
     const col = Math.min(cols - 1, Math.max(0, Math.floor(((lon + 180) / 360) * cols)));
     const row = Math.min(rows - 1, Math.max(0, Math.floor(((latMax - lat) / (latMax - latMin)) * rows)));
     const c = cellCenter(col, row, { cols, rows, latRange: this.o.latRange });
-    if (!isLand(c.lat, c.lon)) return null;
+    if (!this._body.isLand(c.lat, c.lon)) return null;
     return { kind: "dot", detail: { lat: c.lat, lon: c.lon, col, row, element: this.canvas } };
   }
 
@@ -471,7 +473,7 @@ export class GlobeRenderer {
 
   _rebuildData() {
     const cols = this.o.cols ?? 170; // auto: globes want density — foreshortening thins the limb
-    this.points = buildGlobePoints(cols, this.o.latRange);
+    this.points = buildGlobePoints(cols, this.o.latRange, false, this._body);
     // The graticule is pure lat/lon geometry — built once per option change,
     // projected per frame. Cheap enough to rebuild unconditionally.
     this._graticule = this.o.graticule
@@ -481,15 +483,15 @@ export class GlobeRenderer {
     // geometry — annotate it).
     if (this.o.highlightPolygon?.length) {
       const normalized = normalizeRings(this.o.highlightPolygon);
-      this.highlightFlags = buildGlobeFlags(cols, this.o.latRange, (lat, lon) => pointInRings(lat, lon, normalized));
+      this.highlightFlags = buildGlobeFlags(cols, this.o.latRange, (lat, lon) => pointInRings(lat, lon, normalized), false, this._body);
     } else {
       this.highlightFlags = null;
     }
     this.waterPoints = this.o.oceanColor && this.o.oceanColor !== "none"
-      ? buildGlobePoints(cols, this.o.latRange, true)
+      ? buildGlobePoints(cols, this.o.latRange, true, this._body)
       : null;
     this.phases = this.o.animation && this.o.animation !== "none"
-      ? buildGlobePhases(cols, this.o.latRange, this.o.animation)
+      ? buildGlobePhases(cols, this.o.latRange, this.o.animation, false, this._body)
       : null;
     const resolved = [ ...(this.o.cities || []), ...(this.o.markers || []) ]
       .map((c) => (typeof c === "string" ? resolveCity(c) : resolveCity(c)))
@@ -746,7 +748,7 @@ export class GlobeRenderer {
     const o = this.o;
     const ctx = this.ctx;
     // Vector source: real outlines, no grid involved.
-    const vector = landRings(o.landSource);
+    const vector = landRings(o.landSource, this._body);
     // A FILLED globe stays on the grid, even when vector data is asked for.
     //
     // Not a preference — a consistency requirement. The vector coastline is
@@ -764,7 +766,7 @@ export class GlobeRenderer {
         width: o.landStrokeWidth ?? 1
       });
       if (o.borders) {
-        this.#drawVectorLand(T, { fill: false, stroke: true }, borderRings(), {
+        this.#drawVectorLand(T, { fill: false, stroke: true }, borderRings(this._body), {
           fill: null,
           stroke: this._c(o.bordersColor ?? o.landStroke ?? o.dotColor),
           width: o.bordersWidth ?? 0.5,
@@ -775,7 +777,7 @@ export class GlobeRenderer {
     }
     // Borders are lines, so they clip cleanly and can ride any fill.
     if (o.borders && vector) {
-      this.#drawVectorLand(T, { fill: false, stroke: true }, borderRings(), {
+      this.#drawVectorLand(T, { fill: false, stroke: true }, borderRings(this._body), {
         fill: null,
         stroke: this._c(o.bordersColor ?? o.landStroke ?? o.dotColor),
         width: o.bordersWidth ?? 0.5,
@@ -791,7 +793,7 @@ export class GlobeRenderer {
     const rows = Math.round((cols / 360) * (o.latRange[1] - o.latRange[0]));
     const grid = { cols, rows, latRange: o.latRange };
     // wrapX: on a globe there is no edge at the antimeridian, only more world.
-    this._land ??= buildLand(grid, { wrapX: true });
+    this._land ??= buildLand(grid, { wrapX: true, body: this._body });
 
     if (style.fill) {
       // Batched by depth band, NOT one fill() per cell.

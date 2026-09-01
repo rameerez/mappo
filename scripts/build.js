@@ -15,7 +15,21 @@ const src = (f) => readFileSync(join(here, "..", "src", f), "utf8");
 
 // Dependency order, leaves first. index.js is not concatenated — its only
 // job (re-exports + auto-register) is reproduced in the footer.
-const MODULES = ["mask.js", "projection.js", "graticule.js", "shapes.js", "land.js", "noise.js", "color.js", "cities.js", "highlight.js", "globe.js", "renderer.js", "element.js"];
+const MODULES = ["mask.js", "projection.js", "graticule.js", "shapes.js", "body.js", "land.js", "noise.js", "color.js", "cities.js", "highlight.js", "globe.js", "renderer.js", "element.js"];
+
+// Body packs ship SEPARATELY. Earth is in the bundle because a world map is
+// what people came for; the Moon is 4.5 KB gzipped that nobody should pay for
+// unless they asked. Each pack is standalone — it imports nothing from the
+// engine, it is handed to registerBody() by the consumer.
+const BODIES = ["moon.js"];
+
+// The concatenation removes import lines, which means an aliased import has
+// nothing left to bind its new name to and fails at runtime as an undefined
+// reference. Cheaper to refuse it here than to find it in the browser.
+for (const file of [ ...MODULES, ...BODIES.map((f) => `bodies/${f}`) ]) {
+  const alias = src(file).match(/^import\s*\{[^}]*\bas\b[^}]*\}/m);
+  if (alias) throw new Error(`src/${file}: aliased import does not survive bundling — ${alias[0].replace(/\s+/g, " ")}`);
+}
 
 const body = MODULES.map((file) => {
   const code = src(file)
@@ -39,3 +53,11 @@ if (typeof customElements !== "undefined") register();
 mkdirSync(join(here, "..", "dist"), { recursive: true });
 writeFileSync(join(here, "..", "dist", "mappo.js"), banner + "\n" + body + footer);
 console.log("wrote dist/mappo.js");
+
+mkdirSync(join(here, "..", "dist", "bodies"), { recursive: true });
+for (const file of BODIES) {
+  const code = readFileSync(join(here, "..", "src", "bodies", file), "utf8")
+    .replace(/^import\s[^;]+;\n/gm, "");
+  writeFileSync(join(here, "..", "dist", "bodies", file), code);
+  console.log(`wrote dist/bodies/${file}`);
+}

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Moon — mappo</title>
+<meta name="description" content="mappo drawing a body that is not the Earth. The Moon ships as a separate 4.5 KB pack you opt into; the engine never learns what a mare is.">
+<link rel="shortcut icon" href="../favicon/favicon.ico" type="image/x-icon">
+<style>
+ :root{ --ink:#e8eef7; --dim:#8b98ad; --faint:#4a5668; --line:#1b2634;
+        --regolith:#8e9aa8; --mare:#39424f; --sea:#090d14; --accent:#ffb454; }
+ *{box-sizing:border-box}
+ body{margin:0;background:#04060a;color:var(--ink);
+   font:14px/1.6 ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+ .wrap{max-width:1180px;margin:0 auto;padding:34px 26px 80px}
+ h1{font-size:24px;margin:0 0 8px;letter-spacing:-.015em}
+ .lede{color:var(--dim);max-width:70ch;margin:0 0 6px}
+ .by{color:var(--faint);font-size:12.5px;margin:10px 0 0}
+ a{color:var(--accent)}
+ h2{font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:var(--dim);
+   margin:38px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+ .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:22px}
+ .card{background:rgb(9 14 22 / .8);border:1px solid var(--line);border-radius:16px;padding:16px}
+ .card h3{margin:0 0 3px;font:600 13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+   letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+ .card p{margin:0 0 12px;color:var(--faint);font-size:12.5px}
+ mappo-world{display:block;width:100%}
+ .sites .pin{pointer-events:auto;text-decoration:none}
+ .sites .pin > i{position:absolute;left:0;top:0;width:6px;height:6px;margin:-3px 0 0 -3px;
+   border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgb(255 180 84 / .18)}
+ .sites .pin[data-kind="artemis"] > i{background:#6fd3c5;box-shadow:0 0 0 3px rgb(111 211 197 / .2)}
+ .sites .pin > span{position:absolute;left:0;top:0;white-space:nowrap;
+   transform:translate(9px,-50%);font:600 9.5px/1 ui-monospace,monospace;letter-spacing:.1em;
+   text-transform:uppercase;color:#dfe8f2;text-shadow:0 1px 5px rgb(0 0 0 / .95);
+   opacity:calc(.15 + .85*var(--mappo-depth,1))}
+ .sites .pin[data-mappo-behind]{visibility:hidden}
+ pre{margin:14px 0 0;background:#070b11;border:1px solid var(--line);border-radius:9px;
+   padding:11px 13px;overflow-x:auto;font:11.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;
+   color:#9fb2c6}
+ .scale{display:flex;align-items:flex-end;gap:26px;justify-content:center;padding:8px 0 4px}
+ .scale figure{margin:0;text-align:center}
+ .scale figcaption{margin-top:8px;font:11px/1.5 ui-monospace,monospace;color:var(--faint)}
+ .num{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>The Moon</h1>
+<p class="lede">mappo drawing something that is not the Earth. The engine has no idea:
+it asks a <em>body</em> whether a given latitude and longitude is inside or outside,
+and on the Moon that question means maria against highlands rather than land against sea.</p>
+<p class="by">A prototype · <a href="../index.html">mappo</a> ·
+<a href="./index.html">more demos</a></p>
+
+<h2>Opting in</h2>
+<div class="card">
+  <p>Earth ships in the bundle because a world map is what people came for. Every other
+  body is a separate file you ask for by name — the Moon is 4.5&nbsp;KB gzipped, and
+  nobody putting a world map in a hero section should download it.</p>
+  <pre><code>import { registerBody } from "mappo";
+import { MOON } from "mappo/bodies/moon";
+
+registerBody(MOON);
+
+&lt;mappo-world body="moon"&gt;&lt;/mappo-world&gt;</code></pre>
+</div>
+
+<h2>Near side · far side</h2>
+<div class="row">
+  <div class="card">
+    <h3>The side we see</h3>
+    <p>Tidally locked, so this face has looked at us for four billion years. The dark
+    plains are basalt that flooded the big impact basins.</p>
+    <mappo-world class="near" body="moon" mode="globe" cols="200" rotate-speed="0"
+      focus="0,0" tilt="0" lat-min="-90" lat-max="90"
+      land="solid outline" land-source="grid"
+      land-color="var(--mare)" land-stroke="#5d6a7a" land-stroke-width="0.6"
+      background="var(--regolith)" globe-ring="true"
+      graticule meridians="12" parallels="7"
+      graticule-color="#6d7a89" graticule-opacity="0.35" equator-opacity="0.3"></mappo-world>
+  </div>
+  <div class="card">
+    <h3>The side we don't</h3>
+    <p>Almost no maria at all — the crust is thicker here, and the lava never got out.
+    Nobody saw this until Luna&nbsp;3 in 1959.</p>
+    <mappo-world class="far" body="moon" mode="globe" cols="200" rotate-speed="0"
+      focus="0,180" tilt="0" lat-min="-90" lat-max="90"
+      land="solid outline" land-source="grid"
+      land-color="var(--mare)" land-stroke="#5d6a7a" land-stroke-width="0.6"
+      background="var(--regolith)" globe-ring="true"
+      graticule meridians="12" parallels="7"
+      graticule-color="#6d7a89" graticule-opacity="0.35" equator-opacity="0.3"></mappo-world>
+  </div>
+</div>
+
+<h2>Where we have been, and where we are going</h2>
+<div class="card sites">
+  <p>Six Apollo landings, all of them on the near side and near the equator, because that
+  is where the fuel budget reached. The teal marks are candidate regions for
+  Artemis&nbsp;III — all of them at the south pole, chosen for standing sunlight beside
+  craters whose floors have not seen the Sun in two billion years.</p>
+  <div id="sitehost"></div>
+</div>
+
+<h2>Same code, different sphere</h2>
+<div class="card">
+  <p>Both drawn by the same renderer at the same moment, at their true relative size —
+  the Moon is a quarter of the Earth across, which is a bigger fraction than any other
+  moon in the solar system manages against its planet.</p>
+  <div class="scale">
+    <figure>
+      <mappo-world style="width:340px" mode="globe" cols="180" rotate-speed="3" tilt="16" roll="-10"
+        land="solid outline" land-source="vector"
+        land-color="#c8d8e6" land-stroke="#ffffff" land-stroke-width="0.5"
+        background="#08182a" globe-ring="true"></mappo-world>
+      <figcaption>Earth · <span class="num">12,742 km</span></figcaption>
+    </figure>
+    <figure>
+      <mappo-world style="width:92.7px" body="moon" mode="globe" cols="150" rotate-speed="3"
+        tilt="6" lat-min="-90" lat-max="90"
+        land="solid" land-source="grid" land-color="var(--mare)"
+        background="var(--regolith)" globe-ring="true"></mappo-world>
+      <figcaption>Moon · <span class="num">3,475 km</span></figcaption>
+    </figure>
+  </div>
+</div>
+
+<p class="by" style="margin-top:34px">Maria from the Clementine 750&nbsp;nm albedo mosaic
+(public domain, NASA/USGS), thresholded so they cover 16% of the sphere — the published
+figure. The near side then lands at 30% against a published ~31%, which nothing was tuned
+for. Mare boundaries are gradational, so this edge is a brightness level and not a shore.</p>
+
+</div>
+
+<script type="module" src="../dist/mappo.js"></script>
+<script type="module">
+  import { registerBody } from "../dist/mappo.js";
+  import { MOON, MOON_SITES } from "../dist/bodies/moon.js";
+
+  // The element has already upgraded by now — mappo defines it as it loads —
+  // so registering redraws the maps that asked for a body they could not get.
+  registerBody(MOON);
+
+// Overlay children have to be in place BEFORE the element upgrades: mappo
+// harvests them once and then owns the container, so anything written in
+// afterwards lands on the canvas it built — or wipes it, which is what the
+// first cut of this page did. Building the element here, after the body is
+// registered, sidesteps the ordering entirely.
+const map = document.createElement("mappo-world");
+for (const [ k, v ] of Object.entries({
+  body: "moon", mode: "globe", cols: "220", "rotate-speed": "4",
+  tilt: "12", roll: "-8", "lat-min": "-90", "lat-max": "90",
+  land: "solid outline", "land-source": "grid",
+  "land-color": "var(--mare)", "land-stroke": "#5d6a7a", "land-stroke-width": "0.6",
+  background: "var(--regolith)", "globe-ring": "true",
+  graticule: "", meridians: "12", parallels: "7",
+  "graticule-color": "#6d7a89", "graticule-opacity": "0.3", "equator-opacity": "0.25"
+})) map.setAttribute(k, v);
+map.innerHTML = MOON_SITES.map((s) =>
+  `<a class="pin" data-kind="${s.kind}" data-lat="${s.lat}" data-lon="${s.lon}" href="#"><i></i><span>${s.name}</span></a>`
+).join("");
+document.getElementById("sitehost").append(map);
+</script>
+</body>
+</html>

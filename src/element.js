@@ -13,6 +13,7 @@ import { Mappo, DEFAULTS } from "./renderer.js";
 const ATTR_MAP = {
   // attribute      → [option, parser]
   "mode":             ["mode", String],
+  "body":             ["body", String],
   "globe-ring":       ["globeRing", (v) => v !== "false"],
   "land":             ["land", String],
   "land-color":       ["landColor", String],

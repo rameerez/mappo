@@ -203,6 +203,93 @@ export function countryShapes() {
   return (_countries ??= decodeRings(RAW_COUNTRIES));
 }
 
+// ══════════ src/body.js ══════════
+// A body is a data pack. The engine draws lat/lon and knows nothing about
+// which sphere it is on — so Earth is not special, it is only the one that
+// ships in the box.
+//
+// Everything a body has to answer:
+//
+//   isLand(lat, lon)   the binary the whole grid derives from. On Earth that
+//                      is land against sea; on the Moon it is maria against
+//                      highlands. Same question, different sphere.
+//   rings(source)      vector outlines for land-source="vector", or null when
+//                      the body has no crisp boundary to trace.
+//   borders()          political borders, or null. Only Earth has politics.
+//   latRange           the band worth drawing, used when the caller has not
+//                      asked for one.
+//   terms              what the two classes are called, for people rather
+//                      than for code.
+//
+// Other bodies are opt-in on purpose. Earth's mask and coastlines are 28 KB
+// gzipped of the 73 KB bundle, and a library that made you download the Moon
+// to put a world map in a hero section would have lost the plot. So they load
+// separately and register themselves:
+//
+//   import { registerBody } from "mappo";
+//   import { MOON } from "mappo/bodies/moon";
+//   registerBody(MOON);
+//   <mappo-world body="moon">
+
+// Not aliased: the bundle is a concatenation with the import lines removed,
+// so `as` renames do not survive it. scripts/build.js refuses them outright.
+
+export const EARTH = {
+  id: "earth",
+  name: "Earth",
+  radiusKm: 6371,
+  latRange: [ -58, 84 ],          // Antarctica and the arctic emptiness cut
+  terms: { inside: "land", outside: "ocean" },
+  isLand,
+  rings: (source) => (source === "vector" ? landShapes() : null),
+  borders: () => countryShapes(),
+  maskSize: [ MASK_W, MASK_H ]
+};
+
+const REGISTRY = new Map([ [ EARTH.id, EARTH ] ]);
+
+// Live maps, so a pack that arrives late can still take effect. It always
+// arrives late: mappo defines the custom element as it loads, which upgrades
+// every <mappo-world body="moon"> on the page before the consumer has had a
+// line of their own run. Making the order not matter is better than
+// documenting an order nobody can enforce.
+const LIVE = new Set();
+export const trackMap = (m) => LIVE.add(m);
+export const untrackMap = (m) => LIVE.delete(m);
+
+// Hand a body over once, use it by name for ever after. Returns it, so the
+// call reads as a definition rather than a side effect.
+export function registerBody(body) {
+  if (!body?.id || typeof body.isLand !== "function") {
+    throw new TypeError("a body needs an id and an isLand(lat, lon)");
+  }
+  const id = String(body.id).toLowerCase();
+  REGISTRY.set(id, body);
+  // Anything already on the page that asked for this body by name was drawn
+  // as Earth. Redraw it as what it asked to be.
+  for (const m of LIVE) {
+    if (String(m.options?.body ?? "").toLowerCase() === id) { m._body = body; m.render(); }
+  }
+  return body;
+}
+
+export const knownBodies = () => [ ...REGISTRY.values() ];
+
+// Accepts a name, a body object, or nothing. An unknown NAME is worth saying
+// out loud — it almost always means the pack was never imported — but it is
+// not worth throwing over: a world map that renders Earth is a better failure
+// than a blank page.
+export function resolveBody(value) {
+  if (!value) return EARTH;
+  if (typeof value === "object") return value;
+  const found = REGISTRY.get(String(value).toLowerCase());
+  if (!found) {
+    console.warn(`[mappo] unknown body "${value}" — did you registerBody() its pack? Falling back to Earth.`);
+    return EARTH;
+  }
+  return found;
+}
+
 // ══════════ src/land.js ══════════
 // Land as SHAPE — the single source of truth behind every non-dot land style,
 // on both renderers.
@@ -234,7 +321,7 @@ const cache = new Map();
 // wrapX: treat column -1 and column `cols` as the far side of the map. The
 // globe wants this (there is no edge at the antimeridian, only more world);
 // the flat map does not (its frame really does end at ±180).
-function landAt(col, row, grid, wrapX) {
+function landAt(col, row, grid, wrapX, body) {
   if (row < 0 || row >= grid.rows) return false;
   let c = col;
   if (c < 0 || c >= grid.cols) {
@@ -242,7 +329,7 @@ function landAt(col, row, grid, wrapX) {
     c = ((c % grid.cols) + grid.cols) % grid.cols;
   }
   const p = cellCenter(c, row, grid);
-  return isLand(p.lat, p.lon);
+  return body.isLand(p.lat, p.lon);
 }
 
 // Chain directed boundary edges into closed rings. Each edge is stored under
@@ -280,8 +367,9 @@ function chain(edges) {
 // grid: { cols, rows, latRange }. Returns { cells, loops } in GRID units —
 // cells as [col, row], loop vertices as grid corners [col, row]. Renderers
 // scale (flat: × CELL) or project (globe: corner → lat/lon → sphere).
-export function buildLand(grid, { wrapX = false } = {}) {
-  const key = `${grid.cols}|${grid.rows}|${grid.latRange[0]}|${grid.latRange[1]}|${wrapX}`;
+export function buildLand(grid, { wrapX = false, body = EARTH } = {}) {
+  // The body is in the cache key: two spheres are not the same geometry.
+  const key = `${body.id}|${grid.cols}|${grid.rows}|${grid.latRange[0]}|${grid.latRange[1]}|${wrapX}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
@@ -289,13 +377,13 @@ export function buildLand(grid, { wrapX = false } = {}) {
   const edges = [];
   for (let row = 0; row < grid.rows; row++) {
     for (let col = 0; col < grid.cols; col++) {
-      if (!landAt(col, row, grid, wrapX)) continue;
+      if (!landAt(col, row, grid, wrapX, body)) continue;
       cells.push([ col, row ]);
       // Clockwise with y pointing down.
-      if (!landAt(col, row - 1, grid, wrapX)) edges.push([ col, row, col + 1, row ]);
-      if (!landAt(col + 1, row, grid, wrapX)) edges.push([ col + 1, row, col + 1, row + 1 ]);
-      if (!landAt(col, row + 1, grid, wrapX)) edges.push([ col + 1, row + 1, col, row + 1 ]);
-      if (!landAt(col - 1, row, grid, wrapX)) edges.push([ col, row + 1, col, row ]);
+      if (!landAt(col, row - 1, grid, wrapX, body)) edges.push([ col, row, col + 1, row ]);
+      if (!landAt(col + 1, row, grid, wrapX, body)) edges.push([ col + 1, row, col + 1, row + 1 ]);
+      if (!landAt(col, row + 1, grid, wrapX, body)) edges.push([ col + 1, row + 1, col, row + 1 ]);
+      if (!landAt(col - 1, row, grid, wrapX, body)) edges.push([ col, row + 1, col, row ]);
     }
   }
 
@@ -332,12 +420,13 @@ export function parseLandStyle(value) {
 // the flat map converts grid contours in its own units. Country borders are
 // vector-only — a 512×256 raster cannot express a border that follows a
 // river.
-export function landRings(source) {
-  return source === "vector" ? landShapes() : null;
+// Both of these now ask the BODY. The Moon answers null to each: a mare has
+// no coastline to trace and the Moon has no countries.
+export function landRings(source, body = EARTH) {
+  return body.rings?.(source) ?? null;
 }
-
-export function borderRings() {
-  return countryShapes();
+export function borderRings(body = EARTH) {
+  return body.borders?.() ?? null;
 }
 
 // ══════════ src/noise.js ══════════
@@ -604,28 +693,28 @@ export function latLonToXYZ(lat, lon) {
 // buildGlobePoints (same loop, same skip rule) — the phase-array
 // discipline, reused: geometry arrays never reorder, parallel arrays
 // annotate.
-export function buildGlobeFlags(cols, latRange, test, water = false) {
+export function buildGlobeFlags(cols, latRange, test, water = false, body = EARTH) {
   const rows = Math.round((cols / 360) * (latRange[1] - latRange[0]));
   const grid = { cols, rows, latRange };
   const out = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const c = cellCenter(col, row, grid);
-      if (isLand(c.lat, c.lon) === water) continue;
+      if (body.isLand(c.lat, c.lon) === water) continue;
       out.push(test(c.lat, c.lon) ? 1 : 0);
     }
   }
   return new Uint8Array(out);
 }
 
-export function buildGlobePoints(cols, latRange, water = false) {
+export function buildGlobePoints(cols, latRange, water = false, body = EARTH) {
   const rows = Math.round((cols / 360) * (latRange[1] - latRange[0]));
   const grid = { cols, rows, latRange };
   const out = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const c = cellCenter(col, row, grid);
-      if (isLand(c.lat, c.lon) === water) continue;
+      if (body.isLand(c.lat, c.lon) === water) continue;
       const p = latLonToXYZ(c.lat, c.lon);
       out.push(p.x, p.y, p.z);
     }
@@ -637,14 +726,14 @@ export function buildGlobePoints(cols, latRange, water = false) {
 // buildGlobePoints (same loop, same skip rule). Phase picks WHEN a dot
 // moves in the cycle, amp how far — the exact fields the flat renderer
 // bakes into its dot markup, so the six modes read the same on a sphere.
-export function buildGlobePhases(cols, latRange, mode, water = false) {
+export function buildGlobePhases(cols, latRange, mode, water = false, body = EARTH) {
   const rows = Math.round((cols / 360) * (latRange[1] - latRange[0]));
   const grid = { cols, rows, latRange };
   const out = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const c = cellCenter(col, row, grid);
-      if (isLand(c.lat, c.lon) === water) continue;
+      if (body.isLand(c.lat, c.lon) === water) continue;
       let p;
       switch (mode) {
         case "noise":   p = (noise2(col * 0.22, row * 0.22) + 1) / 2; break;
@@ -665,6 +754,7 @@ export class GlobeRenderer {
   constructor(container, options) {
     this.container = container;
     this.o = options;
+    this._body = resolveBody(options.body);
     // focus: start the spin facing a point — the rotation that brings
     // the focus longitude to the front (z-max at rot = -λ, since
     // latLonToXYZ puts λ=0 facing the viewer at angle 0).
@@ -763,6 +853,7 @@ export class GlobeRenderer {
   //   everything is rebuilt, which is what any caller that does not know gets.
   update(changed = null) {
     this._cvCache = null;
+    if (!changed || changed.includes("body")) this._body = resolveBody(this.o.body);
     // Re-checked on every update, not only at build: a colour can BECOME a
     // var() long after construction — a themed attribute set from JS, a knob,
     // a framework binding — and a globe that installed no observer because it
@@ -1016,7 +1107,7 @@ export class GlobeRenderer {
     const col = Math.min(cols - 1, Math.max(0, Math.floor(((lon + 180) / 360) * cols)));
     const row = Math.min(rows - 1, Math.max(0, Math.floor(((latMax - lat) / (latMax - latMin)) * rows)));
     const c = cellCenter(col, row, { cols, rows, latRange: this.o.latRange });
-    if (!isLand(c.lat, c.lon)) return null;
+    if (!this._body.isLand(c.lat, c.lon)) return null;
     return { kind: "dot", detail: { lat: c.lat, lon: c.lon, col, row, element: this.canvas } };
   }
 
@@ -1032,7 +1123,7 @@ export class GlobeRenderer {
 
   _rebuildData() {
     const cols = this.o.cols ?? 170; // auto: globes want density — foreshortening thins the limb
-    this.points = buildGlobePoints(cols, this.o.latRange);
+    this.points = buildGlobePoints(cols, this.o.latRange, false, this._body);
     // The graticule is pure lat/lon geometry — built once per option change,
     // projected per frame. Cheap enough to rebuild unconditionally.
     this._graticule = this.o.graticule
@@ -1042,15 +1133,15 @@ export class GlobeRenderer {
     // geometry — annotate it).
     if (this.o.highlightPolygon?.length) {
       const normalized = normalizeRings(this.o.highlightPolygon);
-      this.highlightFlags = buildGlobeFlags(cols, this.o.latRange, (lat, lon) => pointInRings(lat, lon, normalized));
+      this.highlightFlags = buildGlobeFlags(cols, this.o.latRange, (lat, lon) => pointInRings(lat, lon, normalized), false, this._body);
     } else {
       this.highlightFlags = null;
     }
     this.waterPoints = this.o.oceanColor && this.o.oceanColor !== "none"
-      ? buildGlobePoints(cols, this.o.latRange, true)
+      ? buildGlobePoints(cols, this.o.latRange, true, this._body)
       : null;
     this.phases = this.o.animation && this.o.animation !== "none"
-      ? buildGlobePhases(cols, this.o.latRange, this.o.animation)
+      ? buildGlobePhases(cols, this.o.latRange, this.o.animation, false, this._body)
       : null;
     const resolved = [ ...(this.o.cities || []), ...(this.o.markers || []) ]
       .map((c) => (typeof c === "string" ? resolveCity(c) : resolveCity(c)))
@@ -1307,7 +1398,7 @@ export class GlobeRenderer {
     const o = this.o;
     const ctx = this.ctx;
     // Vector source: real outlines, no grid involved.
-    const vector = landRings(o.landSource);
+    const vector = landRings(o.landSource, this._body);
     // A FILLED globe stays on the grid, even when vector data is asked for.
     //
     // Not a preference — a consistency requirement. The vector coastline is
@@ -1325,7 +1416,7 @@ export class GlobeRenderer {
         width: o.landStrokeWidth ?? 1
       });
       if (o.borders) {
-        this.#drawVectorLand(T, { fill: false, stroke: true }, borderRings(), {
+        this.#drawVectorLand(T, { fill: false, stroke: true }, borderRings(this._body), {
           fill: null,
           stroke: this._c(o.bordersColor ?? o.landStroke ?? o.dotColor),
           width: o.bordersWidth ?? 0.5,
@@ -1336,7 +1427,7 @@ export class GlobeRenderer {
     }
     // Borders are lines, so they clip cleanly and can ride any fill.
     if (o.borders && vector) {
-      this.#drawVectorLand(T, { fill: false, stroke: true }, borderRings(), {
+      this.#drawVectorLand(T, { fill: false, stroke: true }, borderRings(this._body), {
         fill: null,
         stroke: this._c(o.bordersColor ?? o.landStroke ?? o.dotColor),
         width: o.bordersWidth ?? 0.5,
@@ -1352,7 +1443,7 @@ export class GlobeRenderer {
     const rows = Math.round((cols / 360) * (o.latRange[1] - o.latRange[0]));
     const grid = { cols, rows, latRange: o.latRange };
     // wrapX: on a globe there is no edge at the antimeridian, only more world.
-    this._land ??= buildLand(grid, { wrapX: true });
+    this._land ??= buildLand(grid, { wrapX: true, body: this._body });
 
     if (style.fill) {
       // Batched by depth band, NOT one fill() per cell.
@@ -1744,6 +1835,9 @@ export const DEFAULTS = {
   // sphere — tilt becomes the axial tilt; hover/click and animation are
   // flat-only for now).
   mode: "flat",
+  // Which sphere. Earth unless a body pack has been registered and named;
+  // see src/body.js. Takes a name or a body object.
+  body: null,
   rotateSpeed: 4,             // globe spin, degrees per second (0 = still)
   globeRing: false,           // opt-in hairline halo around the globe
   // Backdrop (both modes)
@@ -1884,7 +1978,14 @@ export class Mappo {
   constructor(container, options = {}) {
     this.container = container;
     this.options = { ...DEFAULTS, ...options };
+    // Which sphere. Resolved once here and once per update, never per cell.
+    this._body = resolveBody(this.options.body);
+    // A body knows the band worth drawing — the Moon wants its poles, Earth
+    // does not want its ice. Only when the caller has not said otherwise.
+    if (!("latRange" in options) && !("latMin" in options) && !("latMax" in options) &&
+        this._body.latRange) this.options.latRange = this._body.latRange;
     this._dotsCache = new Map(); // "cols|latMin|latMax" → dots markup string
+    trackMap(this);
     this.render();
   }
 
@@ -1923,6 +2024,7 @@ export class Mappo {
   update(options = {}) {
     const changed = Object.keys(options).filter((k) => !sameOption(options[k], this.options[k]));
     Object.assign(this.options, options);
+    if (changed.includes("body")) this._body = resolveBody(this.options.body);
     if (changed.length === 0) return;
 
     if (changed.every((k) => CALLBACK_KEYS.has(k))) {
@@ -1967,6 +2069,7 @@ export class Mappo {
   }
 
   destroy() {
+    untrackMap(this);
     clearTimeout(this._rebuildTimer);
     this._globe?.destroy();
     this._globe = null;
@@ -2229,7 +2332,7 @@ if (this._overlayLayer) {
   // sea. Tracing per-cell rectangles instead would stroke a wireframe.
   #landMarkup(grid, o) {
     const style = parseLandStyle(o.land);
-    const vector = landRings(o.landSource);
+    const vector = landRings(o.landSource, this._body);
     // `borders` belongs in the key: the cached markup CONTAINS the borders
     // path, so leaving it out means turning borders off replays a cached scene
     // that still has them. (Caught by the demo toggles, not by a unit test —
@@ -2237,12 +2340,12 @@ if (this._overlayLayer) {
     const key = `land|${o.landSource}|${o.borders ? "b" : ""}|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
     let geom = this._dotsCache.get(key);
     if (!geom) {
-      const { cells, loops } = buildLand(grid);
+      const { cells, loops } = buildLand(grid, { body: this._body });
       geom = {
         d: vector
           ? this.#vectorPath(vector, grid)
           : loops.map((loop) => `M${loop.map(([ x, y ]) => `${x * CELL} ${y * CELL}`).join("L")}Z`).join(""),
-        borders: o.borders ? this.#vectorPath(borderRings(), grid) : "",
+        borders: o.borders ? this.#vectorPath(borderRings(this._body), grid) : "",
         cells
       };
       this._dotsCache.set(key, geom);
@@ -2272,7 +2375,7 @@ if (this._overlayLayer) {
   #landHighlightMarkup(grid, o) {
     if (!o.highlightPolygon?.length) return "";
     const normalized = normalizeRings(o.highlightPolygon);
-    const { cells } = buildLand(grid);
+    const { cells } = buildLand(grid, { body: this._body });
     const parts = [];
     for (const [ col, row ] of cells) {
       const c = cellCenter(col, row, grid);
@@ -2294,7 +2397,7 @@ if (this._overlayLayer) {
     for (let row = 0; row < grid.rows; row++) {
       for (let col = 0; col < grid.cols; col++) {
         const c = cellCenter(col, row, grid);
-        if (!isLand(c.lat, c.lon)) continue;
+        if (!this._body.isLand(c.lat, c.lon)) continue;
         dots++;
 
         // Every animation mode is a PHASE FIELD baked per dot; the stylesheet
@@ -2613,7 +2716,7 @@ if (this._overlayLayer) {
 // few rings — coastal cities often sit in a sea cell at coarse resolutions
 // (harbors do that), and a marker floating just off the coast looks broken.
 // Pure function (exported for tests and consumers doing their own math).
-export function snapToLand(lat, lon, grid) {
+export function snapToLand(lat, lon, grid, body = EARTH) {
   const { x, y } = project(lat, lon, grid);
   const col0 = Math.min(grid.cols - 1, Math.max(0, Math.floor(x)));
   const row0 = Math.min(grid.rows - 1, Math.max(0, Math.floor(y)));
@@ -2626,7 +2729,7 @@ export function snapToLand(lat, lon, grid) {
         const col = col0 + dc, row = row0 + dr;
         if (col < 0 || col >= grid.cols || row < 0 || row >= grid.rows) continue;
         const c = cellCenter(col, row, grid);
-        if (!isLand(c.lat, c.lon)) continue;
+        if (!body.isLand(c.lat, c.lon)) continue;
         const d = (col - x) ** 2 + (row - y) ** 2;
         if (!best || d < best.d) best = { col, row, d };
       }
@@ -2665,6 +2768,7 @@ function escapeAttr(value) {
 const ATTR_MAP = {
   // attribute      → [option, parser]
   "mode":             ["mode", String],
+  "body":             ["body", String],
   "globe-ring":       ["globeRing", (v) => v !== "false"],
   "land":             ["land", String],
   "land-color":       ["landColor", String],
