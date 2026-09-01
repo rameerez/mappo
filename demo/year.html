@@ -16,6 +16,11 @@
       not — so the two are given the SAME family of colour. The smooth line
       then reads as the edge and the steps disappear behind it. */
    --sea:#08182a; --land:#9fb6cc; --coast:#ffffff; --grid:#1d3a55;
+   /* Past this width the page stops spreading and starts centring. Two
+      elements pinned to opposite edges of a 2500 px screen are not a
+      composition, they are two things that happen to be on the same page. */
+   --stage:1720px;
+   --gutter:max(28px, calc(50vw - var(--stage) / 2));
    --tc-line:#1b2634; --tc-dim:#8b98ad; --tc-ink:#e8eef7; --tc-faint:#4a5668; --tc-accent:#ffb454;
  }
  *{box-sizing:border-box}
@@ -40,12 +45,12 @@
  .panel{position:fixed;pointer-events:none;z-index:5}
  .panel > *{pointer-events:auto}
 
- #tl{top:26px;left:28px;max-width:36ch}
+ #tl{top:26px;left:var(--gutter);max-width:36ch}
  #tl h1{margin:0 0 6px;font-size:19px;font-weight:600;letter-spacing:-.01em}
  #tl p{margin:0;color:var(--dim);font-size:13px}
  #tl .by{margin-top:10px;font-size:12px;color:var(--faint)}
 
- #tr{top:26px;right:28px;text-align:right}
+ #tr{top:26px;right:var(--gutter);text-align:right}
  #utc{font:600 30px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.01em}
  #utcdate{margin-top:7px;font:12px/1.6 ui-monospace,monospace;color:var(--dim)}
  #season{margin-top:3px;font:11px/1.6 ui-monospace,monospace;color:var(--faint)}
@@ -53,7 +58,7 @@
  /* ── the Earth, as the Sun sees it ─────────────────────────────────────── */
  /* The sun's-eye Earth is the thing worth looking at, so it gets the room.
     The orbit keeps the left of the page and answers a different question. */
- #earthpanel{top:50%;right:30px;transform:translateY(-50%);width:min(46vw,560px)}
+ #earthpanel{top:50%;right:var(--gutter);transform:translateY(-50%);width:min(46vw,560px)}
  .ecard{background:rgb(8 13 21 / .72);border:1px solid var(--line);border-radius:18px;
    padding:18px 20px 16px;backdrop-filter:blur(7px)}
  .ehead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:0 0 10px}
@@ -75,7 +80,7 @@
  #clocks .lit .t{color:var(--ink)}
 
  /* ── the numbers ───────────────────────────────────────────────────────── */
- #facts{bottom:26px;left:28px;width:264px}
+ #facts{bottom:26px;left:var(--gutter);width:264px}
  #facts dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0;
    font:11.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
  #facts dt{color:var(--faint)}
@@ -85,7 +90,7 @@
    text-transform:uppercase;color:var(--dim)}
 
  #tc{bottom:22px;left:50%;transform:translateX(-50%)}
- #scalewrap{bottom:26px;right:28px;text-align:right}
+ #scalewrap{bottom:26px;right:var(--gutter);text-align:right}
  #scalenote{margin-top:7px;font:10.5px/1.5 ui-monospace,monospace;color:var(--faint);max-width:30ch}
  #viewctl{display:flex;align-items:center;gap:9px;justify-content:flex-end;margin-top:9px;
    font:11px/1.5 ui-monospace,monospace;color:var(--faint)}
@@ -102,9 +107,23 @@
 
  @media(max-width:1300px){ #earthpanel{width:min(44vw,420px)} #tl{max-width:28ch} }
  @media(max-width:1000px){ #clocks{grid-template-columns:1fr auto} }
- @media(max-width:820px){
-   #earthpanel,#facts{display:none}
- }
+/* On a phone the panel and the numbers go, and everything that was pinned to
+   a corner has to stop fighting for the same corner: the title keeps the left
+   of the top row, the clock the right, and both control clusters stack at the
+   bottom where a thumb is anyway. */
+@media(max-width:820px){
+  #earthpanel,#facts{display:none}
+  #earth3d{width:74px;height:74px}
+  #tl{max-width:min(50vw,30ch)}
+  #tl h1{font-size:17px}
+  #tl p{font-size:12px}
+  #utc{font-size:23px}
+  #utcdate,#season{font-size:10.5px}
+  #scalewrap{bottom:92px;right:auto;left:50%;transform:translateX(-50%);text-align:center}
+  #scalenote{display:none}
+  #viewctl{justify-content:center;margin-top:9px}
+  #tc{bottom:16px}
+}
 </style>
 </head>
 <body>
@@ -337,10 +356,32 @@ function size() {
   pins.width = Math.round(pins.clientWidth * dpr);
   pins.height = Math.round(pins.clientHeight * dpr);
   const w = orbit.clientWidth, h = orbit.clientHeight;
-  // Leave the right third to the Earth panel rather than drawing under it.
-  // The orbit gets the left of the page now that the Earth has the right.
-  cx = w * 0.29; cy = h * 0.52;
-  S = Math.min(w * 0.23, h / (2 * COS_T) * 0.66);
+  // The orbit is centred in whatever the Earth panel leaves, mirrored about the
+  // same gutter — so it is not "the left 29%" of a screen that might be any
+  // width, it is the middle of its own half. At phone widths the panel is gone
+  // and its half becomes the whole page, which this still handles.
+  const panel = $("earthpanel");
+  const shown = getComputedStyle(panel).display !== "none";
+  const box = shown ? panel.getBoundingClientRect() : null;
+  const left = box ? w - box.right : 24;          // the gutter, mirrored
+  const right = box ? box.left - 26 : w - 24;     // where the panel begins
+  const zone = Math.max(220, right - left);
+
+  cx = left + zone / 2;
+  // Vertically it centres on the room it actually has, and takes no more of
+  // it than that: below the title, above the controls and the readouts. A
+  // short window is the case that catches this — the orbit had been sized
+  // from the full height and was laying its labels over them.
+  const top = shown ? 112 : 132;
+  const bottom = shown ? 176 : 168;
+  cy = (top + h - bottom) / 2;
+  const vHalf = Math.max(80, (h - top - bottom) / 2);
+  // The labels sit a sixth of a radius outside the ellipse and run on from
+  // there, so the orbit cannot have the whole zone — least of all on a phone,
+  // where a word is a bigger fraction of the screen than the orbit is.
+  // 1.17 is where the labels sit; COS_T is how much the camera foreshortens
+  // the vertical. Both have to fit, so both are in the bound.
+  S = Math.min(zone * (shown ? 0.46 : 0.34), vHalf / COS_T / 1.22);
   stars();
 }
 
@@ -361,10 +402,10 @@ function stars() {
 
 // ── the orbit ───────────────────────────────────────────────────────────────
 const MARKS = [
-  { lon: 0,   label: "March equinox" },
-  { lon: 90,  label: "June solstice" },
-  { lon: 180, label: "September equinox" },
-  { lon: 270, label: "December solstice" }
+  { lon: 0,   label: "March equinox",     short: "Mar equinox" },
+  { lon: 90,  label: "June solstice",     short: "Jun solstice" },
+  { lon: 180, label: "September equinox", short: "Sep equinox" },
+  { lon: 270, label: "December solstice", short: "Dec solstice" }
 ];
 let markDates = [], apsides = null, markYear = null;
 
@@ -411,6 +452,7 @@ function drawOrbit(s) {
 
   // The quarter days, each labelled with the date it falls on this year.
   marksFor(now().getUTCFullYear());
+  const narrow = orbit.clientWidth < 820;
   octx.textAlign = "center"; octx.textBaseline = "middle";
   MARKS.forEach((m, i) => {
     // The EARTH is opposite the Sun's longitude, so a "June solstice" marker
@@ -421,8 +463,8 @@ function drawOrbit(s) {
     octx.beginPath(); octx.moveTo(p.x, p.y); octx.lineTo(out.x, out.y); octx.stroke();
     octx.fillStyle = "#93a7bb";
     octx.font = "600 9.5px ui-monospace, SFMono-Regular, Menlo, monospace";
-    const lab = atLon(m.lon + 180, 1.19);
-    octx.fillText(m.label.toUpperCase(), lab.x, lab.y - 6);
+    const lab = atLon(m.lon + 180, 1.17);
+    octx.fillText((narrow ? m.short : m.label).toUpperCase(), lab.x, lab.y - 6);
     octx.fillStyle = "#5d7085";
     octx.font = "9.5px ui-monospace, SFMono-Regular, Menlo, monospace";
     octx.fillText(markDates[i] ? markDates[i].toISOString().slice(0, 10) : "", lab.x, lab.y + 6);
@@ -435,6 +477,7 @@ function drawOrbit(s) {
     const p = atLon(lon, rr);
     octx.fillStyle = "#54697d";
     octx.beginPath(); octx.arc(p.x, p.y, 2.2, 0, TAU); octx.fill();
+    if (narrow) continue;
     octx.fillStyle = "#68809a";
     octx.font = "9px ui-monospace, monospace";
     octx.fillText(`${label} ${(rr * AU_KM / 1e6).toFixed(1)} Mkm`, p.x, p.y + (key === "peri" ? 14 : -14));
@@ -454,22 +497,22 @@ function drawOrbit(s) {
   octx.fillStyle = "#ffd08a";
   octx.beginPath(); octx.arc(cx, cy, sunR, 0, TAU); octx.fill();
 
-// The Earth is a real globe now — see placeEarth3d — so the canvas only
-// labels it. At true scale the globe is hidden and this dot stands in,
-// because a thing you cannot see still needs saying where it is.
-const ep = atLon(lonHelio, r);
-if (trueScale) {
-  octx.fillStyle = "#bcd8ef";
-  octx.beginPath();
-  octx.arc(ep.x, ep.y, Math.max(0.7, EARTH_R_KM / AU_KM * S), 0, TAU);
-  octx.fill();
-}
-octx.fillStyle = "#c9dcee";
-octx.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
-octx.textAlign = "center";
-octx.fillText("EARTH", ep.x, ep.y + (trueScale ? 16 : 77));
-octx.textAlign = "left";
-earthPos = ep;
+  // The Earth is a real globe now — see placeEarth3d — so the canvas only
+  // labels it. At true scale the globe is hidden and this dot stands in,
+  // because a thing you cannot see still needs saying where it is.
+  const ep = atLon(lonHelio, r);
+  if (trueScale) {
+    octx.fillStyle = "#bcd8ef";
+    octx.beginPath();
+    octx.arc(ep.x, ep.y, Math.max(0.7, EARTH_R_KM / AU_KM * S), 0, TAU);
+    octx.fill();
+  }
+  octx.fillStyle = "#c9dcee";
+  octx.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+  octx.textAlign = "center";
+  octx.fillText("EARTH", ep.x, ep.y + (trueScale ? 16 : earth3d.offsetWidth * 0.62));
+  octx.textAlign = "left";
+  earthPos = ep;
 }
 
 // ── the Earth on the orbit ──────────────────────────────────────────────────
