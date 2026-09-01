@@ -15,7 +15,7 @@
       from the vector outline, and the fill is stepped where the outline is
       not — so the two are given the SAME family of colour. The smooth line
       then reads as the edge and the steps disappear behind it. */
-   --sea:#08182a; --land:#dfe8f2; --coast:#ffffff; --grid:#1d3a55;
+   --sea:#08182a; --land:#9fb6cc; --coast:#ffffff; --grid:#1d3a55;
    --tc-line:#1b2634; --tc-dim:#8b98ad; --tc-ink:#e8eef7; --tc-faint:#4a5668; --tc-accent:#ffb454;
  }
  *{box-sizing:border-box}
@@ -51,19 +51,23 @@
  #season{margin-top:3px;font:11px/1.6 ui-monospace,monospace;color:var(--faint)}
 
  /* ── the Earth, as the Sun sees it ─────────────────────────────────────── */
- #earthpanel{top:50%;right:28px;transform:translateY(-50%);width:290px}
- .ecard{background:rgb(8 13 21 / .8);border:1px solid var(--line);border-radius:14px;
-   padding:14px;backdrop-filter:blur(7px)}
+ /* The sun's-eye Earth is the thing worth looking at, so it gets the room.
+    The orbit keeps the left of the page and answers a different question. */
+ #earthpanel{top:50%;right:30px;transform:translateY(-50%);width:min(46vw,560px)}
+ .ecard{background:rgb(8 13 21 / .72);border:1px solid var(--line);border-radius:18px;
+   padding:18px 20px 16px;backdrop-filter:blur(7px)}
  .ehead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:0 0 10px}
- .ehead h2{margin:0;font:600 11px/1.4 ui-monospace,monospace;letter-spacing:.13em;
+ .ehead h2{margin:0;font:600 12px/1.4 ui-monospace,monospace;letter-spacing:.14em;
    text-transform:uppercase;color:var(--dim)}
- .ehead span{font:10.5px/1.4 ui-monospace,monospace;color:var(--faint)}
+ .ehead span{font:12px/1.4 ui-monospace,monospace;color:var(--dim)}
  #globewrap{position:relative;width:100%;aspect-ratio:1}
  #globewrap mappo-world{position:absolute;inset:0;width:100%;height:100%}
  #pins{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
- .enote{margin:10px 0 0;font:10.5px/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--faint)}
- #clocks{margin:11px 0 0;display:grid;grid-template-columns:1fr auto;gap:2px 10px;
-   font:11.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+ .enote{margin:13px 0 0;font:11.5px/1.6 ui-sans-serif,system-ui,sans-serif;color:var(--faint);max-width:62ch}
+ /* Two columns: eleven rows down the side of a big globe would be a list
+    with a picture next to it, which is the wrong way round. */
+ #clocks{margin:13px 0 0;display:grid;grid-template-columns:1fr auto 1fr auto;gap:2px 12px;
+   font:11.5px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
  #clocks .cname{color:var(--dim);display:flex;align-items:center;gap:6px}
  #clocks i{width:5px;height:5px;border-radius:50%;flex:none;background:var(--faint)}
  #clocks .lit i{background:var(--warm);box-shadow:0 0 6px var(--warm)}
@@ -96,10 +100,8 @@
    border-radius:8px;padding:6px 11px;font:12px/1.3 ui-monospace,monospace;cursor:pointer}
  #scalebtn:hover{border-color:var(--coast);color:var(--ink)}
 
- @media(max-width:1100px){
-   #earthpanel{width:220px}
-   #tl{max-width:30ch}
- }
+ @media(max-width:1300px){ #earthpanel{width:min(44vw,420px)} #tl{max-width:28ch} }
+ @media(max-width:1000px){ #clocks{grid-template-columns:1fr auto} }
  @media(max-width:820px){
    #earthpanel,#facts{display:none}
  }
@@ -111,8 +113,7 @@
 <canvas id="orbit"></canvas>
 <div id="earth3d">
   <mappo-world id="globe3d" mode="globe" cols="140" rotate-speed="0" interactive="false"
-    land="solid outline" land-source="grid"
-    land-color="var(--land)" land-stroke="#9fb6cb" land-stroke-width="0.7"
+    land="solid" land-source="grid" land-color="var(--land)"
     background="var(--sea)" globe-ring="true"
     graticule meridians="12" parallels="7"
     graticule-color="var(--grid)" graticule-opacity="0.5" equator-opacity="0.35"></mappo-world>
@@ -141,9 +142,8 @@
       <span id="subpoint">—</span>
     </div>
     <div id="globewrap">
-      <mappo-world id="earth" mode="globe" cols="176" rotate-speed="0" interactive="false"
-        land="solid outline" land-source="grid"
-        land-color="var(--land)" land-stroke="#9fb6cb" land-stroke-width="0.7"
+      <mappo-world id="earth" mode="globe" cols="200" rotate-speed="0" interactive="false"
+        land="solid" land-source="grid" land-color="var(--land)"
         background="var(--sea)"
         graticule meridians="24" parallels="11"
         graticule-color="var(--grid)" equator-color="#7fb2d8"
@@ -177,6 +177,7 @@ import { earthAt, seasonOf, solarLongitudeCrossing, apsis, AU_KM, EARTH_R_KM, SU
 import { withClocks, solarElevation } from "./clocks.js";
 import { createClock } from "./timectl.js";
 import { gmst } from "./astro.js";
+import { landShapes } from "../dist/mappo.js";
 
 const $ = (id) => document.getElementById(id);
 const TAU = Math.PI * 2, RAD = Math.PI / 180;
@@ -256,6 +257,31 @@ function axisVector(eps) {
   return { x: Math.cos(b) * Math.cos(90 * RAD), y: Math.cos(b) * Math.sin(90 * RAD), z: Math.sin(b) };
 }
 
+// A globe fills its land from the bitmask — blocky, and the cost of the fill
+// goes as cols², so buying a smooth edge that way is 12 ms at 260 columns for
+// one globe. Stroking the REAL coastline over the top costs 0.4 ms, because
+// an outline needs no clipping: lift the pen at the horizon and carry on.
+// So the blocks become shading and the vector line becomes the edge.
+const COAST = landShapes().filter((r) => r.length > 12);
+
+function strokeCoast(map, ctx, color, width, alpha) {
+  if (!map?.locate) return;
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.globalAlpha = alpha;
+  ctx.lineJoin = "round";
+  for (const ring of COAST) {
+    let pen = false;
+    for (let i = 0; i <= ring.length; i++) {
+      const [ lat, lon ] = ring[i % ring.length];     // closed: come back round
+      const q = map.locate(lat, lon);
+      if (!q || !q.front) { if (pen) { ctx.stroke(); pen = false; } continue; }
+      if (!pen) { ctx.beginPath(); ctx.moveTo(q.x, q.y); pen = true; }
+      else ctx.lineTo(q.x, q.y);
+    }
+    if (pen) ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
 // ── the Earth in the scene's frame ──────────────────────────────────────────
 //
 // mappo turns a globe with three angles — spin about the pole, tilt about the
@@ -312,8 +338,9 @@ function size() {
   pins.height = Math.round(pins.clientHeight * dpr);
   const w = orbit.clientWidth, h = orbit.clientHeight;
   // Leave the right third to the Earth panel rather than drawing under it.
-  cx = w * 0.42; cy = h * 0.52;
-  S = Math.min(w * 0.27, h / (2 * COS_T) * 0.70);
+  // The orbit gets the left of the page now that the Earth has the right.
+  cx = w * 0.29; cy = h * 0.52;
+  S = Math.min(w * 0.23, h / (2 * COS_T) * 0.66);
   stars();
 }
 
@@ -496,6 +523,8 @@ function drawNight3d(s, o) {
   const sx = dot3(sun, CAM.right), sy = -dot3(sun, CAM.up), sz = dot3(sun, CAM.toward);
   const ang = Math.atan2(sy, sx);
 
+  strokeCoast(globe3d.map, n3, "#ffffff", 0.9, 0.85);
+
   n3.beginPath();
   // The limb, on the side away from the Sun.
   n3.arc(ox, oy, R, ang + Math.PI / 2, ang + 3 * Math.PI / 2);
@@ -552,10 +581,14 @@ function aimEarth(s) {
 
 function drawPins(s) {
   const map = earth.map;
+  // Names only once the globe is big enough to hold them.
+  const labelled = pins.clientWidth > 300;
   pctx.setTransform(1, 0, 0, 1, 0, 0);
   pctx.clearRect(0, 0, pins.width, pins.height);
   pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (!map?.locate) return;
+
+  strokeCoast(map, pctx, "#f4f9ff", 1.15, 0.95);
 
   // The axis, pole to pole. In a sun's-eye view the 23.4° is not a lean you
   // add — it is already here, as the distance the pole sits from the middle of
@@ -590,13 +623,32 @@ function drawPins(s) {
     pctx.globalAlpha = 0.35 + 0.65 * q.depth;
     // A pale dot vanishes on pale land, so each marker carries its own
     // dark rim rather than relying on what happens to be underneath.
-    pctx.beginPath(); pctx.arc(q.x, q.y, lit ? 3 : 2.4, 0, TAU);
-    pctx.fillStyle = "rgba(6,14,24,.75)"; pctx.fill();
-    pctx.beginPath(); pctx.arc(q.x, q.y, lit ? 2 : 1.5, 0, TAU);
+    pctx.beginPath(); pctx.arc(q.x, q.y, lit ? 3.4 : 2.6, 0, TAU);
+    pctx.fillStyle = "rgba(6,14,24,.8)"; pctx.fill();
+    pctx.beginPath(); pctx.arc(q.x, q.y, lit ? 2.2 : 1.6, 0, TAU);
     pctx.fillStyle = lit ? "#ffb454" : "#7b8da0";
     pctx.fill();
+
+    // At this size the cities can carry their own names. Anything within a
+    // hair of the limb is skipped: a label there is half off the globe and
+    // reads as a smudge.
+    if (labelled && q.depth > 0.16) {
+      const flip = q.x > pins.clientWidth / 2;
+      pctx.textAlign = flip ? "right" : "left";
+      pctx.textBaseline = "middle";
+      pctx.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+      pctx.globalAlpha = 0.45 + 0.55 * q.depth;
+      const tx = q.x + (flip ? -9 : 9), ty = q.y - 1;
+      pctx.lineWidth = 3; pctx.lineJoin = "round";
+      pctx.strokeStyle = "rgba(4,9,17,.9)";
+      pctx.strokeText(c.name.toUpperCase(), tx, ty);
+      pctx.fillStyle = "#eef5fb";
+      pctx.fillText(c.name.toUpperCase(), tx, ty);
+    }
   }
   pctx.globalAlpha = 1;
+  pctx.textAlign = "left";
+  pctx.shadowBlur = 0;
 }
 
 // ── readouts ────────────────────────────────────────────────────────────────
