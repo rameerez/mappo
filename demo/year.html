@@ -10,7 +10,12 @@
  :root{
    --ink:#e8eef7; --dim:#8b98ad; --faint:#4a5668; --line:#1b2634;
    --sun:#ffb454; --warm:#ffd79a; --cool:#6fa8d0;
-   --sea:#050a13; --land:#16283c; --coast:#57a0cf; --grid:#16232f;
+   /* Land is the figure and water is the ground, so land gets the light.
+      The globe fills its landmass from the bitmask and strokes the coast
+      from the vector outline, and the fill is stepped where the outline is
+      not — so the two are given the SAME family of colour. The smooth line
+      then reads as the edge and the steps disappear behind it. */
+   --sea:#08182a; --land:#dfe8f2; --coast:#ffffff; --grid:#1d3a55;
    --tc-line:#1b2634; --tc-dim:#8b98ad; --tc-ink:#e8eef7; --tc-faint:#4a5668; --tc-accent:#ffb454;
  }
  *{box-sizing:border-box}
@@ -105,12 +110,12 @@
 <canvas id="sky"></canvas>
 <canvas id="orbit"></canvas>
 <div id="earth3d">
-  <mappo-world id="globe3d" mode="globe" cols="96" rotate-speed="0" interactive="false"
-    land="outline" land-source="vector"
-    land-stroke="var(--coast)" land-stroke-width="0.8"
-    background="#123049" globe-ring="true"
+  <mappo-world id="globe3d" mode="globe" cols="140" rotate-speed="0" interactive="false"
+    land="solid outline" land-source="grid"
+    land-color="var(--land)" land-stroke="#9fb6cb" land-stroke-width="0.7"
+    background="var(--sea)" globe-ring="true"
     graticule meridians="12" parallels="7"
-    graticule-color="var(--grid)" graticule-opacity="0.7" equator-opacity="0.45"></mappo-world>
+    graticule-color="var(--grid)" graticule-opacity="0.5" equator-opacity="0.35"></mappo-world>
   <canvas id="night3d"></canvas>
 </div>
 
@@ -136,13 +141,13 @@
       <span id="subpoint">—</span>
     </div>
     <div id="globewrap">
-      <mappo-world id="earth" mode="globe" cols="100" rotate-speed="0" interactive="false"
-        land="outline" land-source="vector"
-        land-stroke="var(--coast)" land-stroke-width="0.85"
+      <mappo-world id="earth" mode="globe" cols="176" rotate-speed="0" interactive="false"
+        land="solid outline" land-source="grid"
+        land-color="var(--land)" land-stroke="#9fb6cb" land-stroke-width="0.7"
         background="var(--sea)"
         graticule meridians="24" parallels="11"
-        graticule-color="var(--grid)" equator-color="var(--coast)"
-        graticule-opacity="0.8" equator-opacity="0.5" globe-ring="true"></mappo-world>
+        graticule-color="var(--grid)" equator-color="#7fb2d8"
+        graticule-opacity="0.42" equator-opacity="0.3" globe-ring="true"></mappo-world>
       <canvas id="pins"></canvas>
     </div>
     <p class="enote">The whole disc is daylight: its edge is the terminator.
@@ -583,8 +588,13 @@ function drawPins(s) {
     if (!q || !q.front) continue;
     const lit = solarElevation(c.lat, c.lon, s.dec, s.subLon) > 0;
     pctx.globalAlpha = 0.35 + 0.65 * q.depth;
-    pctx.fillStyle = lit ? "#ffd79a" : "#5b6b7d";
-    pctx.beginPath(); pctx.arc(q.x, q.y, lit ? 2.6 : 2, 0, TAU); pctx.fill();
+    // A pale dot vanishes on pale land, so each marker carries its own
+    // dark rim rather than relying on what happens to be underneath.
+    pctx.beginPath(); pctx.arc(q.x, q.y, lit ? 3 : 2.4, 0, TAU);
+    pctx.fillStyle = "rgba(6,14,24,.75)"; pctx.fill();
+    pctx.beginPath(); pctx.arc(q.x, q.y, lit ? 2 : 1.5, 0, TAU);
+    pctx.fillStyle = lit ? "#ffb454" : "#7b8da0";
+    pctx.fill();
   }
   pctx.globalAlpha = 1;
 }
