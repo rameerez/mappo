@@ -234,6 +234,24 @@ label.classList.toggle("is-night", solarElevation(lat, lon, dec, sunLon) &lt; 0)
     </div>
   </div>
 
+<!-- ─────────────────────── SATELLITES ─────────────────────── -->
+<h2>Ten thousand satellites <span>— the whole Starlink constellation, live</span></h2>
+<div class="card">
+  <div class="meta">
+    <h3><a href="./satellites.html">Starlink, right now →</a></h3>
+    <p>Every satellite in the constellation and the ISS, where they actually are this second,
+    on a full-screen globe you can spin — then the same positions on the flat map, where the
+    53° shell draws its own turnaround lines. The orbital elements come from CelesTrak and
+    the positions from an SGP4 propagator running in the page: no API key, no tracking
+    service, nothing to go stale but the elements themselves.</p>
+    <span class="tag">locate()</span><span class="tag">mode="globe"</span><span class="tag">land="outline"</span><span class="tag">land-source="vector"</span><span class="tag">10,725 points/frame</span>
+    <pre><code>// mappo hands back the projection it just drew with, so your own
+// canvas registers to the pixel — including things above the surface
+const p = map.locate(lat, lon, 1 + altitudeKm / 6371);
+if (p.front) ctx.fillRect(p.x, p.y, 2, 2);   // .depth fades it with the limb</code></pre>
+  </div>
+</div>
+
 <!-- ───────────────────────── ORBIT ───────────────────────── -->
 <h2>Earth in orbit <span>— a fixed 23.44° axis, carried around a sun</span></h2>
 <div class="card">

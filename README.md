@@ -211,7 +211,6 @@ const { cells, loops } = buildLand({ cols: 120, rows: 47, latRange: [-58, 84] })
 ```
 
 ## Roll — the lean (v0.5)
-## Roll — the lean (v0.5)
 
 ```html
 <mappo-world mode="globe" roll="-14.3" tilt="12"></mappo-world>
@@ -317,6 +316,33 @@ const { x, y } = projectNormalized(38.9, -10.1, { latRange: [-56, 78] });
 internally — so asking a host for it forces that host to re-derive mappo's
 arithmetic and keep it correct forever. Normalized coordinates need nothing but
 `latRange`, and map straight onto CSS percentages.
+
+## `locate()` — drawing your own layer (v0.6)
+
+`projectNormalized` answers about a flat map in the abstract. `locate()`
+answers about the frame **on screen right now**, which is what you need when
+the globe is turning and you want your own canvas over it:
+
+```js
+const p = map.locate(51.5, -0.1);          // CSS px from the corner of the element
+if (p.front) ctx.fillRect(p.x, p.y, 3, 3); // false when the Earth is in the way
+```
+
+The third argument is distance from the centre of the Earth in Earth radii, so
+anything in orbit lands where you would actually see it — including satellites
+over the far side, which show standing off the limb rather than vanishing:
+
+```js
+const s = map.locate(lat, lon, 1 + altitudeKm / 6371);
+```
+
+`depth` runs 0 at the limb to 1 facing you, the same fade the dots wear, so a
+point can be dimmed with the geometry rather than against it. On the flat map
+`front` is always true and the answer is the untransformed layout box —
+`tilt`/`rotate`/`perspective` are a CSS transform applied on top of it.
+
+[The Starlink demo](https://rameerez.github.io/mappo/demo/satellites.html) is
+ten thousand of these calls a frame.
 
 ## Backdrop
 

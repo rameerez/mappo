@@ -197,6 +197,35 @@ export class Mappo {
     this.render();
   }
 
+  // Where a point lands on screen, in CSS pixels from the top-left of the
+  // element — the projection the renderer itself uses, handed back so you can
+  // draw your own layer over the map and have it register to the pixel.
+  //
+  //   const p = map.locate(51.5, -0.1);        // London, on the surface
+  //   const s = map.locate(lat, lon, 1.086);   // and something in orbit
+  //
+  // `radius` is distance from the centre of the Earth in Earth radii, and only
+  // means anything on the globe: a flat map has no third dimension to leave.
+  // Returns null before the first frame, and { front: false } for a point the
+  // globe is currently hiding. On the flat map `front` is always true, and the
+  // answer ignores tilt/rotate/perspective — those are a CSS transform on top
+  // of the box this reports in.
+  locate(lat, lon, radius = 1) {
+    if (this._globe) return this._globe.locate(lat, lon, radius);
+    // The LAYOUT box, computed rather than measured: the svg fills the
+    // element's width and takes its height from the grid's aspect, and
+    // getBoundingClientRect would fold the tilt transform into the answer.
+    const w = this.container?.clientWidth ?? 0;
+    if (!w || !this.grid) return null;
+    const h = w * this.grid.rows / this.grid.cols;
+    const [ latMin, latMax ] = this.options.latRange;
+    return {
+      x: ((lon + 180) / 360) * w,
+      y: ((latMax - lat) / (latMax - latMin)) * h,
+      depth: 1, front: true
+    };
+  }
+
   // Differential update — see the header. Public contract: call with any
   // subset of options, as often as you like; the component picks the
   // cheapest sufficient refresh and never lets bursts stack up.
@@ -299,6 +328,16 @@ _placeOverlays() {
   render() {
     this._lastRebuild = performance.now();
     const o = this.options;
+
+    // <mappo-world> is an unknown element to the parser, so it is INLINE
+    // unless the page says otherwise — and an inline box has clientWidth 0.
+    // The globe used to defend against this alone, which left the flat map
+    // laying out against nothing and locate() with no width to answer in.
+    // One guarantee, made once, before either renderer runs.
+    if (typeof getComputedStyle === "function" && this.container?.style &&
+        getComputedStyle(this.container).display === "inline") {
+      this.container.style.display = "block";
+    }
 
     if (o.mode === "globe") {
       // Leaving the SVG scene: the canvas replaces the container's children,

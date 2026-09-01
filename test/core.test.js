@@ -4,7 +4,7 @@ import {
   isLand, MASK_W, MASK_H,
   project, cellCenter,
   CITIES, resolveCity,
-  snapToLand, DEFAULTS
+  snapToLand, DEFAULTS, Mappo
 } from "../dist/mappo.js";
 
 // The dist bundle is what ships — test THAT, not src/, so a build bug can
@@ -99,4 +99,19 @@ test("defaults: sane and internally consistent", () => {
   assert.ok(DEFAULTS.latRange[0] < DEFAULTS.latRange[1]);
   assert.equal(DEFAULTS.animation, "none", "animation animation is opt-in");
   assert.equal(DEFAULTS.interactive, true);
+});
+
+test("locate: the flat map answers in CSS pixels from its own corner", () => {
+  // No DOM here, so this exercises the arithmetic through a stand-in host —
+  // the contract being pinned is that lon -180…180 spans the width and the
+  // latRange spans the height, corner to corner.
+  const box = { clientWidth: 360, style: {} };
+  const map = Object.create(Mappo.prototype);
+  Object.assign(map, {
+    container: box, options: { ...DEFAULTS, latRange: [ -90, 90 ] },
+    grid: { cols: 360, rows: 180, latRange: [ -90, 90 ] }, _globe: null, svg: null
+  });
+  assert.deepEqual(map.locate(90, -180), { x: 0, y: 0, depth: 1, front: true });
+  assert.deepEqual(map.locate(-90, 180), { x: 360, y: 180, depth: 1, front: true });
+  assert.deepEqual(map.locate(0, 0), { x: 180, y: 90, depth: 1, front: true });
 });

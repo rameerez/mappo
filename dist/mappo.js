@@ -672,16 +672,11 @@ export class GlobeRenderer {
     this._raf = null;
     this._t = null;
 
-    // <mappo-world> is inline by default — an inline container has
-    // clientWidth 0, which turned v0.3.0's first cut into a stretched
-    // ribbon (square backing store, rectangular CSS box). Two guarantees
-    // fix it for good: the host becomes a block, and the canvas box is
-    // aspect-locked square via CSS so display and backing store can never
-    // disagree on shape.
-    if (typeof getComputedStyle === "function" &&
-        getComputedStyle(container).display === "inline") {
-      container.style.display = "block";
-    }
+    // The host is guaranteed block-level by Mappo#render before we get here
+    // — an inline container has clientWidth 0, which turned v0.3.0's first
+    // cut into a stretched ribbon. The second half of that fix lives here:
+    // the canvas box is aspect-locked square via CSS, so display size and
+    // backing store can never disagree on shape.
     // Harvest host overlay markup BEFORE the canvas replaces the
     // container's children, or replaceChildren would delete the very
     // labels the caller asked us to position. mappo adopts them: they are
@@ -1076,17 +1071,26 @@ export class GlobeRenderer {
   // times a frame and every property read shows up); everything else —
   // graticule, DOM overlays, future arcs — goes through here so there is a
   // single definition of the transform to keep correct.
-  #project(lat, lon, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo = 0, cosRo = 1 }) {
+  // @param radius [Number] distance from the centre of the Earth, in Earth
+  //   radii — 1 is the surface, 1.086 is Starlink. Everything the renderer
+  //   itself draws sits on the surface; the parameter exists for locate().
+  #project(lat, lon, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo = 0, cosRo = 1 }, radius = 1) {
     const p = latLonToXYZ(lat, lon);
-    const x1 = p.x * cosR + p.z * sinR;
-    const z1 = -p.x * sinR + p.z * cosR;
-    const y2 = p.y * cosT - z1 * sinT;
-    const z2 = p.y * sinT + z1 * cosT;
+    const px = p.x * radius, py = p.y * radius, pz = p.z * radius;
+    const x1 = px * cosR + pz * sinR;
+    const z1 = -px * sinR + pz * cosR;
+    const y2 = py * cosT - z1 * sinT;
+    const z2 = py * sinT + z1 * cosT;
     const dx = x1 * R, dy = -y2 * R;
     return {
   sx: cx + dx * cosRo - dy * sinRo,
   sy: cy + dx * sinRo + dy * cosRo,
-  z: z2, front: z2 > 0.01
+  z: z2,
+  // A point ON the sphere is visible when it faces us. A point ABOVE it is
+  // hidden only when the Earth is actually in the way, which it can only be
+  // inside the disc — so something in orbit over the far side still shows,
+  // standing off the limb, which is exactly where you would see it from here.
+  front: z2 > 0.01 || (radius > 1 && Math.hypot(x1, y2) > 1)
     };
   }
 
@@ -1445,6 +1449,23 @@ export class GlobeRenderer {
   // every frame must not also carry an eased transform, or the two fight.
   // The documented pattern is therefore a positioned root with a freely
   // styled child inside it.
+  // Where a point on — or above — the globe lands on screen, in CSS pixels
+  // from the top-left of the element. This is the same projection the frame
+  // was drawn with, so anything positioned by it is registered to the pixel.
+  //
+  // Returns null before the first frame. `front` is false only when the Earth
+  // is between you and the point.
+  locate(lat, lon, radius = 1) {
+    if (!this._T) return null;
+    const p = this.#project(lat, lon, this._T, radius);
+    return {
+      x: p.sx, y: p.sy,
+      depth: Math.max(0, Math.min(1, p.z / radius)),
+      front: p.front,
+      cx: this._T.cx, cy: this._T.cy, r: this._T.R
+    };
+  }
+
   #placeOverlays(T) {
     if (this.o.overlays === false || !this._overlayEls) return;
     for (const el of this._overlayEls) {
@@ -1557,6 +1578,9 @@ export class GlobeRenderer {
     const sinRo = Math.sin(roll), cosRo = Math.cos(roll);
 
     const T = { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo };
+    // Kept so locate() answers about the frame on screen right now, not
+    // about where the sphere was when someone last asked.
+    this._T = T;
 
     // Graticule under the dots: it is the grid the world sits on, not an
     // overlay drawn across it.
@@ -1827,6 +1851,35 @@ export class Mappo {
     this.render();
   }
 
+  // Where a point lands on screen, in CSS pixels from the top-left of the
+  // element — the projection the renderer itself uses, handed back so you can
+  // draw your own layer over the map and have it register to the pixel.
+  //
+  //   const p = map.locate(51.5, -0.1);        // London, on the surface
+  //   const s = map.locate(lat, lon, 1.086);   // and something in orbit
+  //
+  // `radius` is distance from the centre of the Earth in Earth radii, and only
+  // means anything on the globe: a flat map has no third dimension to leave.
+  // Returns null before the first frame, and { front: false } for a point the
+  // globe is currently hiding. On the flat map `front` is always true, and the
+  // answer ignores tilt/rotate/perspective — those are a CSS transform on top
+  // of the box this reports in.
+  locate(lat, lon, radius = 1) {
+    if (this._globe) return this._globe.locate(lat, lon, radius);
+    // The LAYOUT box, computed rather than measured: the svg fills the
+    // element's width and takes its height from the grid's aspect, and
+    // getBoundingClientRect would fold the tilt transform into the answer.
+    const w = this.container?.clientWidth ?? 0;
+    if (!w || !this.grid) return null;
+    const h = w * this.grid.rows / this.grid.cols;
+    const [ latMin, latMax ] = this.options.latRange;
+    return {
+      x: ((lon + 180) / 360) * w,
+      y: ((latMax - lat) / (latMax - latMin)) * h,
+      depth: 1, front: true
+    };
+  }
+
   // Differential update — see the header. Public contract: call with any
   // subset of options, as often as you like; the component picks the
   // cheapest sufficient refresh and never lets bursts stack up.
@@ -1929,6 +1982,16 @@ _placeOverlays() {
   render() {
     this._lastRebuild = performance.now();
     const o = this.options;
+
+    // <mappo-world> is an unknown element to the parser, so it is INLINE
+    // unless the page says otherwise — and an inline box has clientWidth 0.
+    // The globe used to defend against this alone, which left the flat map
+    // laying out against nothing and locate() with no width to answer in.
+    // One guarantee, made once, before either renderer runs.
+    if (typeof getComputedStyle === "function" && this.container?.style &&
+        getComputedStyle(this.container).display === "inline") {
+      this.container.style.display = "block";
+    }
 
     if (o.mode === "globe") {
       // Leaving the SVG scene: the canvas replaces the container's children,

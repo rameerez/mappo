@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Starlink, right now — mappo</title>
+<meta name="description" content="Every satellite in the Starlink constellation, and the ISS, plotted live on a mappo globe. The positions come from published orbital elements and 300 lines of SGP4 in the page — no API key, no tracking service.">
+<link rel="shortcut icon" href="../favicon/favicon.ico" type="image/x-icon">
+<style>
+ :root{
+   --ink:#e8eef7; --dim:#8b98ad; --faint:#4a5668; --line:#1b2634;
+   --sea:#050a13; --land:#16283c; --coast:#57a0cf; --grid:#16232f;
+   --s53:#ffb454; --s43:#4fd1c5; --s70:#a78bfa; --s97:#fb7185; --iss:#ffffff;
+ }
+ *{box-sizing:border-box}
+ html,body{height:100%}
+ body{margin:0;background:#04060a;color:var(--ink);overflow:hidden;
+   font:14px/1.5 ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+ a{color:var(--s53)}
+ .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+ /* The stage is square and centred; everything else floats over it. */
+ #stage{position:fixed;inset:0;display:grid;place-items:center}
+ #sky{position:fixed;inset:0;width:100%;height:100%;pointer-events:none}
+ #globe{position:relative;width:min(94vh,94vw);height:min(94vh,94vw)}
+ /* Flat is a different shape entirely: let the map set the height and the
+    canvas follow it, so the overlay covers the map and not a square of sky. */
+ #globe.flat{width:min(96vw,1700px);height:auto}
+ /* and the map back into normal flow, or an absolutely positioned child
+    leaves its auto-height parent measuring zero. */
+ #globe.flat mappo-world{position:static}
+ #globe mappo-world{position:absolute;inset:0}
+ /* The satellites ride on their own canvas, positioned by locate() against the
+    same frame the globe just drew — so they are registered to the pixel
+    without mappo having to know what a satellite is. */
+ /* width/height, not just inset: a canvas is a REPLACED element, so
+    left:0;right:0 with width:auto resolves to its intrinsic 300x150 and
+    quietly ignores the right edge. The dots then land outside their own
+    canvas and nothing shows. */
+ #sats{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+
+ /* ── the furniture ─────────────────────────────────────────────────────── */
+ .panel{position:fixed;pointer-events:none;z-index:5}
+ .panel > *{pointer-events:auto}
+ #tl{top:26px;left:28px;max-width:34ch}
+ #tl h1{margin:0 0 6px;font-size:19px;font-weight:600;letter-spacing:-.01em}
+ #tl p{margin:0;color:var(--dim);font-size:13px}
+ #tl .by{margin-top:10px;font-size:12px;color:var(--faint)}
+ #tr{top:26px;right:28px;text-align:right}
+ #count{font:600 34px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.02em}
+ #count small{display:block;font:500 11px/1.6 ui-sans-serif,system-ui,sans-serif;
+   letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-top:6px}
+ #clock{margin-top:14px;font:12px/1.6 ui-monospace,monospace;color:var(--dim)}
+ #bl{bottom:26px;left:28px}
+ #br{bottom:26px;right:28px;text-align:right}
+
+ .legend{display:flex;flex-direction:column;gap:5px}
+ .legend button{display:flex;align-items:center;gap:9px;background:none;border:0;padding:3px 0;
+   color:var(--dim);font:12px/1.4 ui-monospace,monospace;cursor:pointer;text-align:left}
+ .legend button:hover{color:var(--ink)}
+ .legend i{width:9px;height:9px;border-radius:50%;flex:none;box-shadow:0 0 8px currentColor}
+ .legend button[aria-pressed="false"]{opacity:.34}
+ .legend b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+
+ .controls{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+ .controls button{background:rgb(255 255 255 / .04);border:1px solid var(--line);color:var(--dim);
+   border-radius:8px;padding:6px 11px;font:12px/1.3 ui-monospace,monospace;cursor:pointer}
+ .controls button:hover{border-color:var(--coast);color:var(--ink)}
+ .controls button[aria-pressed="true"]{border-color:var(--s53);color:var(--s53)}
+ #iss-read{margin-top:12px;font:12px/1.7 ui-monospace,monospace;color:var(--dim);
+   font-variant-numeric:tabular-nums}
+ #iss-read b{color:var(--iss);font-weight:600}
+ #status{margin-top:8px;font:11px/1.6 ui-monospace,monospace;color:var(--faint);max-width:46ch}
+ #status.warn{color:var(--s53)}
+
+ /* The ISS is the one object here a person can point at, so it gets a name. */
+ #iss-tag{position:absolute;left:0;top:0;pointer-events:none;white-space:nowrap;
+   transform:translate(12px,-50%);font:600 11px/1 ui-monospace,monospace;
+   letter-spacing:.14em;color:var(--iss);text-shadow:0 0 10px rgb(0 0 0 / .9);opacity:0}
+
+ @media(max-width:820px){
+   #tl{max-width:none;right:28px}
+   #tr{top:auto;bottom:150px;right:28px}
+   #count{font-size:26px}
+   #bl,#br{position:static}
+ }
+</style>
+</head>
+<body>
+
+<canvas id="sky"></canvas>
+
+<div id="stage">
+  <div id="globe">
+    <mappo-world id="earth" mode="globe" cols="150" rotate-speed="1.2"
+      tilt="16" roll="-9"
+      land="outline" land-source="vector"
+      land-stroke="var(--coast)" land-stroke-width="0.95"
+      background="var(--sea)"
+      graticule meridians="24" parallels="11"
+      graticule-color="var(--grid)" equator-color="var(--coast)"
+      graticule-opacity="0.55" equator-opacity="0.32" globe-ring="true"></mappo-world>
+    <canvas id="sats"></canvas>
+    <div id="iss-tag" class="mono">ISS</div>
+  </div>
+</div>
+
+<div class="panel" id="tl">
+  <h1>Starlink, right now</h1>
+  <p>Every satellite in the constellation, where it actually is this second —
+  and the ISS with it.</p>
+  <p class="by">Drawn on <a href="../index.html">mappo</a> ·
+  <a href="./index.html">more demos</a></p>
+</div>
+
+<div class="panel" id="tr">
+  <div id="count" class="mono">—<small>satellites in orbit</small></div>
+  <div id="clock">—</div>
+</div>
+
+<div class="panel" id="bl">
+  <div class="legend" id="legend"></div>
+</div>
+
+<div class="panel" id="br">
+  <div class="controls">
+    <button id="mode" type="button">flat map</button>
+    <button id="spin" type="button" aria-pressed="true">spin</button>
+    <button id="track" type="button" aria-pressed="true">ISS track</button>
+    <button id="warp" type="button">1×</button>
+  </div>
+  <div id="iss-read">—</div>
+  <div id="status">loading orbital elements…</div>
+</div>
+
+<script type="module" src="../dist/mappo.js"></script>
+<script type="module">
+import { parseTle, propagate, gmst, geodetic } from "./sgp4.js";
+
+const $ = (id) => document.getElementById(id);
+const earth = $("earth");
+const sats = $("sats"), sctx = sats.getContext("2d");
+
+// ── where the numbers come from ─────────────────────────────────────────────
+// CelesTrak publishes the catalogue and asks you not to re-download a group
+// more often than it changes — twice a day for Starlink, and they return a
+// plain 403 with an explanation if you do. So the fetch is cached for two
+// hours in this browser, a stale cache beats a blank globe, and a snapshot
+// committed next to this file beats both being unavailable. Nothing here
+// needs a key, an account, or a tracking service.
+const GROUP = "https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle";
+const ONE = "https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=tle";
+const TWO_HOURS = 2 * 3600 * 1000;
+
+async function tles(key, url, fallback) {
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(key) || "null"); } catch {}
+  if (cached && Date.now() - cached.at < TWO_HOURS) return { text: cached.text, from: "cache" };
+  try {
+    const res = await fetch(url);
+    if (res.ok) {
+      const text = await res.text();
+      if (/^1 /m.test(text)) {
+        try { localStorage.setItem(key, JSON.stringify({ at: Date.now(), text })); } catch {}
+        return { text, from: "celestrak" };
+      }
+    }
+  } catch {}
+  if (cached) return { text: cached.text, from: "stale cache" };
+  const res = await fetch(fallback);
+  return { text: await res.text(), from: "snapshot" };
+}
+
+// ── the shells ──────────────────────────────────────────────────────────────
+// Starlink is not one cloud, it is a handful of shells at set inclinations,
+// and colouring by inclination is what makes that visible: the 53° band is
+// the dense mid-latitude lattice everyone pictures, and the 97° band is the
+// sun-synchronous one that walks over the poles.
+const SHELLS = [
+  { key: "s43", label: "43°",  color: "#4fd1c5", lo: 40,  hi: 47 },
+  { key: "s53", label: "53°",  color: "#ffb454", lo: 47,  hi: 60 },
+  { key: "s70", label: "70°",  color: "#a78bfa", lo: 60,  hi: 85 },
+  { key: "s97", label: "97°",  color: "#fb7185", lo: 85,  hi: 180 },
+  { key: "oth", label: "other", color: "#64748b", lo: -1, hi: 40 }
+];
+const shellOf = (incDeg) => SHELLS.find((s) => incDeg >= s.lo && incDeg < s.hi) ?? SHELLS[4];
+const on = new Set(SHELLS.map((s) => s.key));
+
+// ── state ───────────────────────────────────────────────────────────────────
+let fleet = [];            // { sat, shell }
+let iss = null;
+let places = [];           // { lat, lon, radius, shell } — refreshed on a timer
+let issAt = null, issTrack = [];
+let warp = 1, spinning = true, showTrack = true;
+let simEpoch = Date.now(), realEpoch = Date.now();
+const now = () => new Date(simEpoch + (Date.now() - realEpoch) * warp);
+
+const EARTH_R = 6371;      // km, for turning altitude into globe radii
+
+function propagateAll(when) {
+  const theta = gmst(when);
+  const out = [];
+  for (const f of fleet) {
+    const p = propagate(f.sat, (when - f.sat.epoch) / 60000);
+    if (!p) continue;
+    const g = geodetic(p, theta);
+    out.push({ lat: g.lat, lon: g.lon, radius: 1 + g.alt / EARTH_R, shell: f.shell });
+  }
+  places = out;
+
+  if (iss) {
+    const p = propagate(iss, (when - iss.epoch) / 60000);
+    issAt = p && { ...geodetic(p, theta), speed: 0 };
+    if (issAt) {
+      // Speed from a one-second finite difference: cheaper than carrying the
+      // velocity vector through, and accurate to the digit we print.
+      const q = propagate(iss, (when - iss.epoch) / 60000 + 1 / 60);
+      if (q) issAt.speed = Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z) * 3600;
+      issAt.radius = 1 + issAt.alt / EARTH_R;
+      // Where it has been and where it is going: ±45 minutes of ground track,
+      // which is most of one revolution.
+      issTrack = [];
+      for (let m = -45; m <= 45; m += 1.5) {
+        const t = new Date(+when + m * 60000);
+        const r = propagate(iss, (t - iss.epoch) / 60000);
+        if (r) issTrack.push(geodetic(r, gmst(t)));
+      }
+    }
+  }
+}
+
+// ── drawing ─────────────────────────────────────────────────────────────────
+let dpr = 1;
+function size() {
+  dpr = Math.min(2, devicePixelRatio || 1);
+  for (const c of [ sats, $("sky") ]) {
+    const r = c.getBoundingClientRect();
+    c.width = Math.round(r.width * dpr);
+    c.height = Math.round(r.height * dpr);
+  }
+  stars();
+}
+
+// A static field, drawn once. It is the only thing on this page that is not
+// telling the truth about where something is.
+function stars() {
+  const c = $("sky"), x = c.getContext("2d");
+  x.clearRect(0, 0, c.width, c.height);
+  for (let i = 0; i < 520; i++) {
+    const r = (Math.random() ** 3) * 1.3 * dpr + 0.25 * dpr;
+    x.globalAlpha = 0.10 + Math.random() * 0.5;
+    x.fillStyle = "#cfe0f5";
+    x.beginPath();
+    x.arc(Math.random() * c.width, Math.random() * c.height, r, 0, Math.PI * 2);
+    x.fill();
+  }
+  x.globalAlpha = 1;
+}
+
+const DEPTHS = 3;          // alpha bands: one fill() can only carry one alpha
+
+function draw() {
+  const map = earth.map;
+  // Self-healing rather than event-driven: switching modes changes the
+  // stage's shape only once the renderer has swapped, which is a beat after
+  // the click, and a backing store that disagrees with its CSS box draws
+  // every satellite in the wrong place. Checking is one layout read.
+  if (sats.width !== Math.round(sats.clientWidth * dpr) ||
+      sats.height !== Math.round(sats.clientHeight * dpr)) size();
+  // Clear in device pixels first, THEN scale: clearRect under a dpr
+  // transform would only wipe the top-left quarter on a retina screen.
+  sctx.setTransform(1, 0, 0, 1, 0, 0);
+  sctx.clearRect(0, 0, sats.width, sats.height);
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!map || !places.length) return;
+
+  // One Path2D per shell per depth band, so the whole constellation is a
+  // dozen fills rather than ten thousand.
+  const paths = new Map();
+  for (const s of SHELLS) paths.set(s.key, Array.from({ length: DEPTHS }, () => new Path2D()));
+
+  let visible = 0;
+  for (const p of places) {
+    if (!on.has(p.shell.key)) continue;
+    const q = map.locate(p.lat, p.lon, p.radius);
+    if (!q || !q.front) continue;
+    visible++;
+    const band = Math.min(DEPTHS - 1, Math.floor(q.depth * DEPTHS));
+    const r = 1.0 + 0.9 * q.depth;
+    const path = paths.get(p.shell.key)[band];
+    path.moveTo(q.x + r, q.y);
+    path.arc(q.x, q.y, r, 0, Math.PI * 2);
+  }
+
+  for (const s of SHELLS) {
+    if (!on.has(s.key)) continue;
+    sctx.fillStyle = s.color;
+    const band = paths.get(s.key);
+    for (let i = 0; i < DEPTHS; i++) {
+      sctx.globalAlpha = 0.42 + 0.58 * ((i + 0.5) / DEPTHS);
+      sctx.fill(band[i]);
+    }
+  }
+  sctx.globalAlpha = 1;
+
+  // The ISS, and the arc it is riding.
+  const tag = $("iss-tag");
+  if (issAt) {
+    if (showTrack && issTrack.length) {
+      sctx.strokeStyle = "#ffffff";
+      sctx.lineWidth = 1;
+      sctx.globalAlpha = 0.45;
+      sctx.beginPath();
+      // Lift the pen at the horizon on a globe, and at the antimeridian on a
+      // flat map: a track that crosses from +180 to -180 is one step east,
+      // and joining those two points draws a line straight back across the
+      // world. The test is the same either way — a jump no real arc makes.
+      const wrap = sats.clientWidth / 2;
+      let pen = null;
+      for (const g of issTrack) {
+        const q = map.locate(g.lat, g.lon, 1 + g.alt / EARTH_R);
+        if (!q || !q.front) { pen = null; continue; }
+        if (pen && Math.abs(q.x - pen.x) < wrap) sctx.lineTo(q.x, q.y);
+        else sctx.moveTo(q.x, q.y);
+        pen = q;
+      }
+      sctx.stroke();
+      sctx.globalAlpha = 1;
+    }
+    const q = map.locate(issAt.lat, issAt.lon, issAt.radius);
+    if (q && q.front) {
+      sctx.fillStyle = "#fff";
+      sctx.beginPath(); sctx.arc(q.x, q.y, 3.4, 0, Math.PI * 2); sctx.fill();
+      sctx.strokeStyle = "#fff"; sctx.globalAlpha = 0.5; sctx.lineWidth = 1;
+      sctx.beginPath(); sctx.arc(q.x, q.y, 8.5, 0, Math.PI * 2); sctx.stroke();
+      sctx.globalAlpha = 1;
+      tag.style.transform = `translate(${(q.x + 13).toFixed(1)}px, ${(q.y - 6).toFixed(1)}px)`;
+      tag.style.opacity = "1";
+    } else tag.style.opacity = "0";
+  }
+
+  $("count").firstChild.nodeValue = places.length.toLocaleString();
+  return visible;
+}
+
+// ── the loop ────────────────────────────────────────────────────────────────
+// Propagating ten thousand satellites costs ~20 ms, which is a whole frame, so
+// it runs on its own clock: half a second of orbit is under four kilometres,
+// far less than a pixel at this scale. Projection is what happens every frame,
+// because that is what changes when the globe turns.
+let lastProp = 0;
+function frame(ts) {
+  const cadence = warp > 1 ? 0 : 500;
+  if (ts - lastProp >= cadence) { lastProp = ts; propagateAll(now()); readouts(); }
+  draw();
+  requestAnimationFrame(frame);
+}
+
+function readouts() {
+  const t = now();
+  $("clock").textContent = t.toISOString().slice(0, 19).replace("T", "  ") + " UTC";
+  if (issAt) {
+    $("iss-read").innerHTML =
+      `<b>ISS</b>  ${issAt.lat >= 0 ? "N" : "S"}${Math.abs(issAt.lat).toFixed(2).padStart(5, "0")}` +
+      `  ${issAt.lon >= 0 ? "E" : "W"}${Math.abs(issAt.lon).toFixed(2).padStart(6, "0")}` +
+      `  ${issAt.alt.toFixed(0)} km  ${issAt.speed.toFixed(0)} km/h`;
+  }
+}
+
+// ── controls ────────────────────────────────────────────────────────────────
+function buildLegend(counts) {
+  $("legend").innerHTML = SHELLS.filter((s) => counts[s.key]).map((s) =>
+    `<button type="button" data-k="${s.key}" aria-pressed="true">` +
+    `<i style="background:${s.color};color:${s.color}"></i>` +
+    `<span>${s.label} shell &nbsp;<b>${counts[s.key].toLocaleString()}</b></span></button>`).join("");
+  $("legend").onclick = (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    const k = b.dataset.k;
+    on.has(k) ? on.delete(k) : on.add(k);
+    b.setAttribute("aria-pressed", String(on.has(k)));
+  };
+}
+
+$("mode").onclick = () => {
+  const toFlat = earth.getAttribute("mode") === "globe";
+  earth.setAttribute("mode", toFlat ? "flat" : "globe");
+  earth.setAttribute("lat-min", toFlat ? "-82" : "-58");
+  earth.setAttribute("lat-max", toFlat ? "82" : "84");
+  // tilt is the axis on a globe and a rotateX on a flat map — the same word
+  // for two different things, and the flat one would lean the map out from
+  // under the satellites, which are positioned in its untransformed box.
+  earth.setAttribute("tilt", toFlat ? "0" : "16");
+  $("globe").classList.toggle("flat", toFlat);
+  $("mode").textContent = toFlat ? "globe" : "flat map";
+  $("spin").disabled = toFlat;
+  size();
+};
+$("spin").onclick = () => {
+  spinning = !spinning;
+  earth.setAttribute("rotate-speed", spinning ? "1.2" : "0");
+  $("spin").setAttribute("aria-pressed", String(spinning));
+};
+$("track").onclick = () => {
+  showTrack = !showTrack;
+  $("track").setAttribute("aria-pressed", String(showTrack));
+};
+const WARPS = [ 1, 60, 600 ];
+$("warp").onclick = () => {
+  simEpoch = +now(); realEpoch = Date.now();
+  warp = WARPS[(WARPS.indexOf(warp) + 1) % WARPS.length];
+  $("warp").textContent = `${warp}×`;
+  $("warp").setAttribute("aria-pressed", String(warp !== 1));
+};
+
+// The stage is sized in viewport units, which are not resolved when this
+// module first runs, so a one-shot measurement catches the canvas at its
+// intrinsic size. Watch the box instead of guessing when it settles.
+new ResizeObserver(size).observe($("globe"));
+addEventListener("resize", size);
+
+// ── go ──────────────────────────────────────────────────────────────────────
+(async function start() {
+  size();
+  requestAnimationFrame(frame);
+
+  const [ group, station ] = await Promise.all([
+    tles("mappo-tle-starlink", GROUP, "./data/starlink.tle"),
+    tles("mappo-tle-iss", ONE, "./data/iss.tle")
+  ]);
+
+  const parsed = parseTle(group.text);
+  const counts = {};
+  fleet = parsed.map((sat) => {
+    const shell = shellOf(sat.inclo * 180 / Math.PI);
+    counts[shell.key] = (counts[shell.key] || 0) + 1;
+    return { sat, shell };
+  });
+  iss = parseTle(station.text)[0] ?? null;
+  buildLegend(counts);
+
+  const ages = fleet.map((f) => (Date.now() - f.sat.epoch) / 3600000).sort((a, b) => a - b);
+  const median = ages[Math.floor(ages.length / 2)] ?? 0;
+  const stale = group.from === "snapshot" || group.from === "stale cache";
+  $("status").className = stale ? "warn" : "";
+  $("status").textContent =
+    `${fleet.length.toLocaleString()} element sets · ${group.from} · median epoch ` +
+    `${median < 48 ? `${median.toFixed(0)} h` : `${(median / 24).toFixed(1)} d`} old · ` +
+    `positions from SGP4, computed here`;
+
+  propagateAll(now());
+  readouts();
+})();
+</script>
+</body>
+</html>
