@@ -127,6 +127,7 @@
     <button id="mode" type="button">flat map</button>
     <button id="spin" type="button" aria-pressed="true">spin</button>
     <button id="track" type="button" aria-pressed="true">ISS track</button>
+    <button id="cities" type="button" aria-pressed="true">cities</button>
     <button id="warp" type="button">1×</button>
   </div>
   <div id="iss-read">—</div>
@@ -183,6 +184,30 @@ const SHELLS = [
   { key: "s97", label: "97°",  color: "#fb7185", lo: 85,  hi: 180 },
   { key: "oth", label: "other", color: "#64748b", lo: -1, hi: 40 }
 ];
+// ── somewhere to stand ──────────────────────────────────────────────────────
+// A constellation with no ground under it is just confetti. Nine cities, far
+// enough apart to read at globe scale, each carrying its own local time — so
+// the sweep of the terminator and the hour on the clock agree, and time warp
+// shows the world turning under the orbits rather than the orbits drifting.
+const CITIES = [
+  { name: "Los Angeles", lat: 34.05,  lon: -118.24, tz: "America/Los_Angeles" },
+  { name: "New York",    lat: 40.71,  lon: -74.01,  tz: "America/New_York" },
+  { name: "São Paulo",   lat: -23.55, lon: -46.63,  tz: "America/Sao_Paulo" },
+  { name: "London",      lat: 51.51,  lon: -0.13,   tz: "Europe/London" },
+  { name: "Lagos",       lat: 6.52,   lon: 3.37,    tz: "Africa/Lagos" },
+  { name: "Moscow",      lat: 55.75,  lon: 37.62,   tz: "Europe/Moscow" },
+  { name: "Delhi",       lat: 28.61,  lon: 77.21,   tz: "Asia/Kolkata" },
+  { name: "Tokyo",       lat: 35.68,  lon: 139.69,  tz: "Asia/Tokyo" },
+  { name: "Sydney",      lat: -33.87, lon: 151.21,  tz: "Australia/Sydney" }
+];
+// Built once — a DateTimeFormat is expensive to make and free to reuse.
+for (const c of CITIES) {
+  c.clock = new Intl.DateTimeFormat([], {
+    hour: "2-digit", minute: "2-digit", hour12: false, timeZone: c.tz });
+  c.date = new Intl.DateTimeFormat([], {
+    weekday: "short", day: "numeric", month: "short", timeZone: c.tz });
+}
+
 const shellOf = (incDeg) => SHELLS.find((s) => incDeg >= s.lo && incDeg < s.hi) ?? SHELLS[4];
 const on = new Set(SHELLS.map((s) => s.key));
 
@@ -191,7 +216,7 @@ let fleet = [];            // { sat, shell }
 let iss = null;
 let places = [];           // { lat, lon, radius, shell } — refreshed on a timer
 let issAt = null, issTrack = [];
-let warp = 1, spinning = true, showTrack = true;
+let warp = 1, spinning = true, showTrack = true, showCities = true;
 let simEpoch = Date.now(), realEpoch = Date.now();
 const now = () => new Date(simEpoch + (Date.now() - realEpoch) * warp);
 
@@ -339,8 +364,64 @@ function draw() {
     } else tag.style.opacity = "0";
   }
 
+  if (showCities) drawCities(map);
+
   $("count").firstChild.nodeValue = places.length.toLocaleString();
   return visible;
+}
+
+// Last, so a label is never buried under the constellation it is orienting.
+function drawCities(map) {
+  const when = now();
+  const mid = sats.clientWidth / 2;
+  sctx.textBaseline = "middle";
+  sctx.shadowColor = "rgba(0,0,0,.95)";
+  for (const c of CITIES) {
+    const q = map.locate(c.lat, c.lon);
+    if (!q || !q.front) continue;
+    // Fade with the limb like everything else, but never all the way out:
+    // a city you cannot read is worse than one you have to lean into.
+    const a = 0.45 + 0.55 * q.depth;
+    // Flip the label to the inside of the disc near the edge, or it walks
+    // off the frame just as the city rotates into view.
+    const left = q.x > mid;
+    const dx = left ? -12 : 12;
+    sctx.textAlign = left ? "right" : "left";
+
+    sctx.shadowBlur = 0;
+    sctx.globalAlpha = a;
+    sctx.fillStyle = "#dce9f7";
+    sctx.beginPath(); sctx.arc(q.x, q.y, 2.4, 0, Math.PI * 2); sctx.fill();
+    sctx.globalAlpha = a * 0.45;
+    sctx.strokeStyle = "#dce9f7"; sctx.lineWidth = 1;
+    sctx.beginPath(); sctx.moveTo(q.x, q.y); sctx.lineTo(q.x + dx * 0.75, q.y); sctx.stroke();
+
+    sctx.shadowBlur = 6;
+    sctx.globalAlpha = a;
+    sctx.fillStyle = "#ffffff";
+    sctx.font = "600 11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    sctx.fillText(c.name.toUpperCase(), q.x + dx, q.y - 7);
+
+    const time = c.clock.format(when);
+    const date = c.date.format(when);
+    sctx.font = "600 12px ui-monospace, SFMono-Regular, Menlo, monospace";
+    const tw = sctx.measureText(time).width;
+    sctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    const dw = sctx.measureText("  " + date).width;
+    // Two weights on one line, so the pair has to be laid out by hand.
+    const x0 = left ? q.x + dx - tw - dw : q.x + dx;
+    sctx.textAlign = "left";
+    sctx.font = "600 12px ui-monospace, SFMono-Regular, Menlo, monospace";
+    sctx.fillStyle = "#ffd79a";
+    sctx.fillText(time, x0, q.y + 7);
+    sctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    sctx.globalAlpha = a * 0.7;
+    sctx.fillStyle = "#9fb0c4";
+    sctx.fillText("  " + date, x0 + tw, q.y + 7);
+  }
+  sctx.shadowBlur = 0;
+  sctx.globalAlpha = 1;
+  sctx.textAlign = "left";
 }
 
 // ── the loop ────────────────────────────────────────────────────────────────
@@ -403,6 +484,10 @@ $("spin").onclick = () => {
 $("track").onclick = () => {
   showTrack = !showTrack;
   $("track").setAttribute("aria-pressed", String(showTrack));
+};
+$("cities").onclick = () => {
+  showCities = !showCities;
+  $("cities").setAttribute("aria-pressed", String(showCities));
 };
 const WARPS = [ 1, 60, 600 ];
 $("warp").onclick = () => {
