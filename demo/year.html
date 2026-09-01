@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Where the Earth is — mappo</title>
+<meta name="description" content="The Earth's orbit and its rotation, at any moment you like. Kepler's equation solved in the page, the orbit drawn to scale, and the planet shown as the Sun sees it — so the terminator is the edge of the disc and the seasons are the pole tipping toward you.">
+<link rel="shortcut icon" href="../favicon/favicon.ico" type="image/x-icon">
+<style>
+ :root{
+   --ink:#e8eef7; --dim:#8b98ad; --faint:#4a5668; --line:#1b2634;
+   --sun:#ffb454; --warm:#ffd79a; --cool:#6fa8d0;
+   --sea:#050a13; --land:#16283c; --coast:#57a0cf; --grid:#16232f;
+   --tc-line:#1b2634; --tc-dim:#8b98ad; --tc-ink:#e8eef7; --tc-faint:#4a5668; --tc-accent:#ffb454;
+ }
+ *{box-sizing:border-box}
+ html,body{height:100%}
+ body{margin:0;background:#04060a;color:var(--ink);overflow:hidden;
+   font:14px/1.5 ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+ a{color:var(--sun)}
+ .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+ #sky{position:fixed;inset:0;width:100%;height:100%;pointer-events:none}
+ /* The orbit owns the page; the Earth panel is docked to the right of it. */
+ #orbit{position:fixed;inset:0;width:100%;height:100%}
+ .panel{position:fixed;pointer-events:none;z-index:5}
+ .panel > *{pointer-events:auto}
+
+ #tl{top:26px;left:28px;max-width:36ch}
+ #tl h1{margin:0 0 6px;font-size:19px;font-weight:600;letter-spacing:-.01em}
+ #tl p{margin:0;color:var(--dim);font-size:13px}
+ #tl .by{margin-top:10px;font-size:12px;color:var(--faint)}
+
+ #tr{top:26px;right:28px;text-align:right}
+ #utc{font:600 30px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.01em}
+ #utcdate{margin-top:7px;font:12px/1.6 ui-monospace,monospace;color:var(--dim)}
+ #season{margin-top:3px;font:11px/1.6 ui-monospace,monospace;color:var(--faint)}
+
+ /* ── the Earth, as the Sun sees it ─────────────────────────────────────── */
+ #earthpanel{top:50%;right:28px;transform:translateY(-50%);width:290px}
+ .ecard{background:rgb(8 13 21 / .8);border:1px solid var(--line);border-radius:14px;
+   padding:14px;backdrop-filter:blur(7px)}
+ .ehead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:0 0 10px}
+ .ehead h2{margin:0;font:600 11px/1.4 ui-monospace,monospace;letter-spacing:.13em;
+   text-transform:uppercase;color:var(--dim)}
+ .ehead span{font:10.5px/1.4 ui-monospace,monospace;color:var(--faint)}
+ #globewrap{position:relative;width:100%;aspect-ratio:1}
+ #globewrap mappo-world{position:absolute;inset:0;width:100%;height:100%}
+ #pins{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+ .enote{margin:10px 0 0;font:10.5px/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--faint)}
+ #clocks{margin:11px 0 0;display:grid;grid-template-columns:1fr auto;gap:2px 10px;
+   font:11.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+ #clocks .cname{color:var(--dim);display:flex;align-items:center;gap:6px}
+ #clocks i{width:5px;height:5px;border-radius:50%;flex:none;background:var(--faint)}
+ #clocks .lit i{background:var(--warm);box-shadow:0 0 6px var(--warm)}
+ #clocks .t{text-align:right;color:var(--faint)}
+ #clocks .lit .t{color:var(--ink)}
+
+ /* ── the numbers ───────────────────────────────────────────────────────── */
+ #facts{bottom:26px;left:28px;width:264px}
+ #facts dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0;
+   font:11.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
+ #facts dt{color:var(--faint)}
+ #facts dd{margin:0;text-align:right;color:var(--dim);font-variant-numeric:tabular-nums}
+ #facts dd b{color:var(--ink);font-weight:600}
+ #facts h2{margin:0 0 8px;font:600 11px/1.4 ui-monospace,monospace;letter-spacing:.13em;
+   text-transform:uppercase;color:var(--dim)}
+
+ #tc{bottom:22px;left:50%;transform:translateX(-50%)}
+ #scalewrap{bottom:26px;right:28px;text-align:right}
+ #scalenote{margin-top:7px;font:10.5px/1.5 ui-monospace,monospace;color:var(--faint);max-width:30ch}
+ #scalebtn{
+   background:rgb(255 255 255 / .04);border:1px solid var(--line);color:var(--dim);
+   border-radius:8px;padding:6px 11px;font:12px/1.3 ui-monospace,monospace;cursor:pointer}
+ #scalebtn:hover{border-color:var(--coast);color:var(--ink)}
+
+ @media(max-width:1100px){
+   #earthpanel{width:220px}
+   #tl{max-width:30ch}
+ }
+ @media(max-width:820px){
+   #earthpanel,#facts{display:none}
+ }
+</style>
+</head>
+<body>
+
+<canvas id="sky"></canvas>
+<canvas id="orbit"></canvas>
+
+<div class="panel" id="tl">
+  <h1>Where the Earth is</h1>
+  <p>Its place in the orbit and its place on its own axis, at any moment you
+  care to name — Kepler solved in the page, no almanac fetched.</p>
+  <p class="by">Drawn on <a href="../index.html">mappo</a> ·
+  <a href="./satellites.html">Starlink, right now</a> ·
+  <a href="./index.html">more demos</a></p>
+</div>
+
+<div class="panel" id="tr">
+  <div id="utc" class="mono">—</div>
+  <div id="utcdate">—</div>
+  <div id="season">—</div>
+</div>
+
+<div class="panel" id="earthpanel">
+  <div class="ecard">
+    <div class="ehead">
+      <h2>As the Sun sees it</h2>
+      <span id="subpoint">—</span>
+    </div>
+    <div id="globewrap">
+      <mappo-world id="earth" mode="globe" cols="230" rotate-speed="0" interactive="false"
+        land="solid outline" land-source="vector"
+        land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="0.7"
+        background="var(--sea)"
+        graticule meridians="24" parallels="11"
+        graticule-color="var(--grid)" equator-color="var(--coast)"
+        graticule-opacity="0.8" equator-opacity="0.5" globe-ring="true"></mappo-world>
+      <canvas id="pins"></canvas>
+    </div>
+    <p class="enote">The whole disc is daylight: its edge is the terminator, and
+    the pole leaning toward you or away is the season.</p>
+    <div id="clocks"></div>
+  </div>
+</div>
+
+<div class="panel" id="facts">
+  <h2>Right now</h2>
+  <dl id="factrows"></dl>
+</div>
+
+<div class="panel" id="tc"></div>
+<div class="panel" id="scalewrap">
+  <button id="scalebtn" type="button" title="show the bodies at their real size">true scale</button>
+  <div id="scalenote">Sun ×9 · Earth ×430 · the orbit itself is to scale</div>
+</div>
+
+<script type="module" src="../dist/mappo.js"></script>
+<script type="module">
+import { earthAt, seasonOf, solarLongitudeCrossing, apsis, AU_KM, EARTH_R_KM, SUN_R_KM } from "./astro.js";
+import { withClocks, solarElevation } from "./clocks.js";
+import { createClock } from "./timectl.js";
+
+const $ = (id) => document.getElementById(id);
+const TAU = Math.PI * 2, RAD = Math.PI / 180;
+const orbit = $("orbit"), octx = orbit.getContext("2d");
+const pins = $("pins"), pctx = pins.getContext("2d");
+const earth = $("earth");
+const CITIES = withClocks();
+
+// A year either way, and a ladder that can cross it: at one month per second
+// the whole orbit takes twelve. The label is the honest unit rather than the
+// multiplier, because "2592000×" tells you nothing you can picture.
+const SPEEDS = [ -2592000, -86400, -3600, -60, -1, 1, 60, 3600, 86400, 2592000 ];
+const RATE = { 1: "1×", 60: "1 min/s", 3600: "1 h/s", 86400: "1 day/s", 2592000: "1 mo/s" };
+
+const clock = createClock({
+  mount: $("tc"),
+  windowH: 24 * 400,
+  speeds: SPEEDS,
+  rateLabel: (w) => (w < 0 ? "−" : "") + (RATE[Math.abs(w)] ?? `${Math.abs(w)}×`),
+  hint: "drag to move a year either way",
+  onScrub: () => { paint(); }
+});
+const now = () => clock.now();
+
+// ── the view ────────────────────────────────────────────────────────────────
+// Looking down on the ecliptic from above the north pole, but not straight
+// down: tipping the camera turns the orbit into an ellipse on screen and lets
+// the Earth's axis read as a lean rather than as a vertical stick.
+const VIEW_TILT = 34 * RAD;     // from the pole
+const VIEW_AZ = 118 * RAD;      // which way the perihelion end points
+const COS_T = Math.cos(VIEW_TILT), SIN_T = Math.sin(VIEW_TILT);
+
+let dpr = 1, S = 1, cx = 0, cy = 0;
+// You cannot draw both bodies to scale on one screen: at this size the Sun is
+// two pixels and the Earth is two hundredths of one. So they are enlarged by
+// DIFFERENT amounts, which is a thing worth saying rather than hiding — and
+// the toggle collapses both to nothing so you can see why.
+const SUN_X = 9, EARTH_X = 430;
+let trueScale = false;
+
+// Ecliptic (x, y, z) in AU → screen pixels.
+function project(x, y, z = 0) {
+  const px = x * Math.cos(VIEW_AZ) + y * Math.sin(VIEW_AZ);
+  const py = -x * Math.sin(VIEW_AZ) + y * Math.cos(VIEW_AZ);
+  return { x: cx + px * S, y: cy - (py * COS_T + z * SIN_T) * S };
+}
+const atLon = (lonDeg, r = 1) => project(r * Math.cos(lonDeg * RAD), r * Math.sin(lonDeg * RAD));
+
+// The Earth's axis, in ecliptic coordinates: the north celestial pole sits at
+// ecliptic longitude 90° and latitude 90° − ε. That fixed direction is the
+// whole of the seasons — in June the Earth is on the far side and the pole
+// leans into the Sun; in December it is on this side and leans away.
+function axisVector(eps) {
+  const b = (90 - eps) * RAD;
+  return { x: Math.cos(b) * Math.cos(90 * RAD), y: Math.cos(b) * Math.sin(90 * RAD), z: Math.sin(b) };
+}
+
+// ── sizing ──────────────────────────────────────────────────────────────────
+function size() {
+  dpr = Math.min(2, devicePixelRatio || 1);
+  for (const c of [ orbit, $("sky") ]) {
+    c.width = Math.round(c.clientWidth * dpr);
+    c.height = Math.round(c.clientHeight * dpr);
+  }
+  pins.width = Math.round(pins.clientWidth * dpr);
+  pins.height = Math.round(pins.clientHeight * dpr);
+  const w = orbit.clientWidth, h = orbit.clientHeight;
+  // Leave the right third to the Earth panel rather than drawing under it.
+  cx = w * 0.42; cy = h * 0.52;
+  S = Math.min(w * 0.27, h / (2 * COS_T) * 0.70);
+  stars();
+}
+
+function stars() {
+  const c = $("sky"), x = c.getContext("2d");
+  x.setTransform(1, 0, 0, 1, 0, 0);
+  x.clearRect(0, 0, c.width, c.height);
+  for (let i = 0; i < 460; i++) {
+    x.globalAlpha = 0.10 + Math.random() * 0.45;
+    x.fillStyle = "#cfe0f5";
+    x.beginPath();
+    x.arc(Math.random() * c.width, Math.random() * c.height,
+      (Math.random() ** 3) * 1.3 * dpr + 0.25 * dpr, 0, TAU);
+    x.fill();
+  }
+  x.globalAlpha = 1;
+}
+
+// ── the orbit ───────────────────────────────────────────────────────────────
+const MARKS = [
+  { lon: 0,   label: "March equinox" },
+  { lon: 90,  label: "June solstice" },
+  { lon: 180, label: "September equinox" },
+  { lon: 270, label: "December solstice" }
+];
+let markDates = [], apsides = null, markYear = null;
+
+function marksFor(year) {
+  if (markYear === year) return;
+  markYear = year;
+  const from = new Date(Date.UTC(year, 0, 1));
+  markDates = MARKS.map((m) => solarLongitudeCrossing(m.lon, from));
+  apsides = { peri: apsis(year, "perihelion"), aph: apsis(year, "aphelion") };
+}
+
+function drawOrbit(s) {
+  octx.setTransform(1, 0, 0, 1, 0, 0);
+  octx.clearRect(0, 0, orbit.width, orbit.height);
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const { a, e, lonHelio, r, obliquity } = s;
+
+  // The ellipse, sampled rather than drawn with ctx.ellipse: the view tips it,
+  // and a tipped ellipse is not an ellipse the canvas knows how to draw.
+  octx.beginPath();
+  for (let i = 0; i <= 360; i++) {
+    const nu = i * RAD;
+    const rr = a * (1 - e * e) / (1 + e * Math.cos(nu));
+    const p = atLon(s.perihelionLon + i, rr);
+    i ? octx.lineTo(p.x, p.y) : octx.moveTo(p.x, p.y);
+  }
+  octx.closePath();
+  octx.strokeStyle = "#3c5570"; octx.lineWidth = 1; octx.stroke();
+
+  // Where the Earth has come from: a month of arc, fading out behind it.
+  const back = 34;
+  let prev = null;
+  for (let i = 0; i <= back; i++) {
+    const q = earthAt(new Date(+now() - i * 86400000));
+    const p = atLon(q.lonHelio, q.r);
+    const p2 = prev; prev = p;
+    if (!p2) continue;
+    octx.globalAlpha = 0.95 * (1 - i / back);
+    octx.strokeStyle = "#a8cbe8"; octx.lineWidth = 2;
+    octx.beginPath(); octx.moveTo(p.x, p.y); octx.lineTo(p2.x, p2.y); octx.stroke();
+  }
+  octx.globalAlpha = 1;
+
+  // The quarter days, each labelled with the date it falls on this year.
+  marksFor(now().getUTCFullYear());
+  octx.textAlign = "center"; octx.textBaseline = "middle";
+  MARKS.forEach((m, i) => {
+    // The EARTH is opposite the Sun's longitude, so a "June solstice" marker
+    // belongs where the Earth is in June, not where the Sun appears to be.
+    const p = atLon(m.lon + 180, 1);
+    const out = atLon(m.lon + 180, 1.11);
+    octx.strokeStyle = "#41586f"; octx.lineWidth = 1;
+    octx.beginPath(); octx.moveTo(p.x, p.y); octx.lineTo(out.x, out.y); octx.stroke();
+    octx.fillStyle = "#93a7bb";
+    octx.font = "600 9.5px ui-monospace, SFMono-Regular, Menlo, monospace";
+    const lab = atLon(m.lon + 180, 1.19);
+    octx.fillText(m.label.toUpperCase(), lab.x, lab.y - 6);
+    octx.fillStyle = "#5d7085";
+    octx.font = "9.5px ui-monospace, SFMono-Regular, Menlo, monospace";
+    octx.fillText(markDates[i] ? markDates[i].toISOString().slice(0, 10) : "", lab.x, lab.y + 6);
+  });
+
+  // Perihelion and aphelion — the axis people assume the seasons come from.
+  for (const [ key, lon, label ] of [
+    [ "peri", s.perihelionLon, "perihelion" ], [ "aph", s.perihelionLon + 180, "aphelion" ] ]) {
+    const rr = key === "peri" ? apsides.peri.r : apsides.aph.r;
+    const p = atLon(lon, rr);
+    octx.fillStyle = "#54697d";
+    octx.beginPath(); octx.arc(p.x, p.y, 2.2, 0, TAU); octx.fill();
+    octx.fillStyle = "#68809a";
+    octx.font = "9px ui-monospace, monospace";
+    octx.fillText(`${label} ${(rr * AU_KM / 1e6).toFixed(1)} Mkm`, p.x, p.y + (key === "peri" ? 14 : -14));
+  }
+
+  // The Sun, at the focus — which is the origin, because the focus is where
+  // the Sun is. Drawing the orbit around its centre instead is the commonest
+  // way this picture is told wrong.
+  const sunR = Math.max(0.7, SUN_R_KM / AU_KM * S * (trueScale ? 1 : SUN_X));
+  const halo = Math.max(sunR * 4.2, 26);
+  const glow = octx.createRadialGradient(cx, cy, sunR * 0.6, cx, cy, halo);
+  glow.addColorStop(0, "rgba(255,206,130,.5)");
+  glow.addColorStop(0.28, "rgba(255,168,66,.16)");
+  glow.addColorStop(1, "rgba(255,150,40,0)");
+  octx.fillStyle = glow;
+  octx.beginPath(); octx.arc(cx, cy, halo, 0, TAU); octx.fill();
+  octx.fillStyle = "#ffd08a";
+  octx.beginPath(); octx.arc(cx, cy, sunR, 0, TAU); octx.fill();
+
+  // The Earth: dark, with the half facing the Sun lit, and its axis drawn at
+  // the tilt that makes the year mean anything.
+  const ep = atLon(lonHelio, r);
+  const earthR = Math.max(0.7, EARTH_R_KM / AU_KM * S * (trueScale ? 1 : EARTH_X));
+  const toSun = Math.atan2(cy - ep.y, cx - ep.x);
+  octx.fillStyle = "#1b2f45";
+  octx.beginPath(); octx.arc(ep.x, ep.y, earthR, 0, TAU); octx.fill();
+  octx.fillStyle = "#bcd8ef";
+  octx.beginPath(); octx.arc(ep.x, ep.y, earthR, toSun - Math.PI / 2, toSun + Math.PI / 2); octx.fill();
+
+  if (earthR > 3) {
+    const ax = axisVector(obliquity);
+    const tip = ep;
+    const len = earthR * 2.1;
+    const dir = project(ax.x, ax.y, ax.z);
+    const dx = (dir.x - project(0, 0, 0).x), dy = (dir.y - project(0, 0, 0).y);
+    const n = Math.hypot(dx, dy) || 1;
+    octx.strokeStyle = "#8fb4d6"; octx.lineWidth = 1;
+    octx.globalAlpha = 0.85;
+    octx.beginPath();
+    octx.moveTo(tip.x - dx / n * len, tip.y - dy / n * len);
+    octx.lineTo(tip.x + dx / n * len, tip.y + dy / n * len);
+    octx.stroke();
+    octx.globalAlpha = 1;
+    octx.fillStyle = "#8fb4d6";
+    octx.font = "600 8.5px ui-monospace, monospace";
+    octx.fillText("N", tip.x + dx / n * (len + 7), tip.y + dy / n * (len + 7));
+  }
+
+  octx.fillStyle = "#c9dcee";
+  octx.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+  octx.fillText("EARTH", ep.x, ep.y + earthR + 13);
+  octx.textAlign = "left";
+}
+
+// ── the Earth panel ─────────────────────────────────────────────────────────
+// The globe is aimed at the subsolar point, so the disc IS the daylit
+// hemisphere and its edge IS the terminator — no shading to get wrong.
+let aimedAt = null;
+function aimEarth(s) {
+  // Re-aiming is cheap now, but not free: skip it until the world has actually
+  // turned enough to see, which is a fifth of a degree.
+  if (aimedAt && Math.abs(aimedAt.lon - s.subLon) < 0.2 && Math.abs(aimedAt.dec - s.dec) < 0.05) return;
+  aimedAt = { lon: s.subLon, dec: s.dec };
+  earth.setAttribute("focus", `${s.dec.toFixed(3)},${s.subLon.toFixed(3)}`);
+  earth.setAttribute("tilt", s.dec.toFixed(3));
+}
+
+function drawPins(s) {
+  const map = earth.map;
+  pctx.setTransform(1, 0, 0, 1, 0, 0);
+  pctx.clearRect(0, 0, pins.width, pins.height);
+  pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!map?.locate) return;
+  for (const c of CITIES) {
+    const q = map.locate(c.lat, c.lon);
+    if (!q || !q.front) continue;
+    const lit = solarElevation(c.lat, c.lon, s.dec, s.subLon) > 0;
+    pctx.globalAlpha = 0.35 + 0.65 * q.depth;
+    pctx.fillStyle = lit ? "#ffd79a" : "#5b6b7d";
+    pctx.beginPath(); pctx.arc(q.x, q.y, lit ? 2.6 : 2, 0, TAU); pctx.fill();
+  }
+  pctx.globalAlpha = 1;
+}
+
+// ── readouts ────────────────────────────────────────────────────────────────
+let eventCache = { key: null, value: null };
+const nextEvent = (from) => {
+  // A day at a time for up to a year, then sixty bisections — worth doing
+  // once a day rather than once a frame.
+  const key = from.toISOString().slice(0, 13);
+  if (eventCache.key === key) return eventCache.value;
+  let best = null;
+  for (const m of MARKS) {
+    const d = solarLongitudeCrossing(m.lon, from);
+    if (d && (!best || d < best.date)) best = { date: d, label: m.label };
+  }
+  eventCache = { key, value: best };
+  return best;
+};
+
+function readouts(s) {
+  const t = now();
+  $("utc").textContent = t.toISOString().slice(11, 19);
+  $("utcdate").textContent = t.toISOString().slice(0, 10) + "  ·  UTC (Zulu)";
+  $("season").textContent = seasonOf(s.lonSun).name;
+
+  const ev = nextEvent(t);
+  const days = ev ? (ev.date - t) / 86400000 : 0;
+  const speed = 29.78 * Math.sqrt(2 / s.r - 1);          // vis-viva, km/s
+  const rows = [
+    [ "distance to Sun", `<b>${(s.rKm / 1e6).toFixed(2)}</b> Mkm` ],
+    [ "", `${s.r.toFixed(5)} AU` ],
+    [ "orbital speed", `<b>${speed.toFixed(2)}</b> km/s` ],
+    [ "moving at", `${s.degPerDay.toFixed(4)}°/day` ],
+    [ "solar longitude", `${s.lonSun.toFixed(3)}°` ],
+    [ "sun overhead at", `${s.dec >= 0 ? "N" : "S"}${Math.abs(s.dec).toFixed(2)} ` +
+                         `${s.subLon >= 0 ? "E" : "W"}${Math.abs(s.subLon).toFixed(2)}` ],
+    [ "axial tilt", `${s.obliquity.toFixed(3)}°` ],
+    [ "sundial − clock", `${s.eot >= 0 ? "+" : "−"}${Math.abs(s.eot).toFixed(1)} min` ],
+    [ ev ? `to ${ev.label.split(" ")[0]} ${ev.label.split(" ")[1]}` : "", ev ? `${days.toFixed(1)} d` : "" ]
+  ];
+  $("factrows").innerHTML = rows.map(([ k, v ]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+
+  $("subpoint").textContent =
+    `${s.dec >= 0 ? "N" : "S"}${Math.abs(s.dec).toFixed(1)}° ` +
+    `${s.subLon >= 0 ? "E" : "W"}${Math.abs(s.subLon).toFixed(1)}°`;
+
+  $("clocks").innerHTML = CITIES.map((c) => {
+    const lit = solarElevation(c.lat, c.lon, s.dec, s.subLon) > 0;
+    return `<div class="cname${lit ? " lit" : ""}"><i></i>${c.name}</div>` +
+           `<div class="t${lit ? " lit" : ""}">${c.clock.format(t)}</div>`;
+  }).join("");
+}
+
+// ── the loop ────────────────────────────────────────────────────────────────
+function paint() {
+  const s = earthAt(now());
+  drawOrbit(s);
+  aimEarth(s);
+  drawPins(s);
+  readouts(s);
+  clock.render();
+}
+
+let lastPaint = 0;
+function frame(ts) {
+  clock.step();
+  // The orbit is cheap and the readouts are not; at real speed nothing visible
+  // changes in a tenth of a second, and at a month per second everything does.
+  if (Math.abs(clock.warp) > 1 || clock.scrubbing || ts - lastPaint > 120) {
+    lastPaint = ts;
+    paint();
+  }
+  requestAnimationFrame(frame);
+}
+
+$("scalebtn").onclick = () => {
+  trueScale = !trueScale;
+  $("scalebtn").textContent = trueScale ? "enlarge bodies" : "true scale";
+  $("scalenote").textContent = trueScale
+    ? "true scale — the Sun is 2 px and the Earth is a fiftieth of one"
+    : "Sun ×9 · Earth ×430 · the orbit itself is to scale";
+  $("scalebtn").setAttribute("aria-pressed", String(trueScale));
+  paint();
+};
+
+// A ResizeObserver on the body would watch a box that this very callback
+// resizes, which is a loop with a spinning fan attached. The window event is
+// enough for canvases pinned to the viewport.
+addEventListener("resize", () => { size(); paint(); });
+
+size();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -12,7 +12,10 @@
 // the elements were FITTED with these, and WGS-84 numbers here would put
 // the satellites in slightly wrong places while looking more correct.
 //
-// No dependencies, like everything else here.
+// The only import is our own clock: sidereal time is not an SGP4 idea, and
+// the orbit page needs the same one.
+
+import { gmst } from "./astro.js";
 
 const PI = Math.PI, TAU = 2 * PI, DEG = PI / 180;
 
@@ -282,17 +285,9 @@ export function propagate(s, t) {
 
 // ── frames and time ─────────────────────────────────────────────────────────
 
-export const julian = (date) => date.getTime() / 86400000 + 2440587.5;
-
-// Greenwich Mean Sidereal Time, IAU-82. This is the one number that turns an
-// inertial position into a place on a turning Earth, and it is why a satellite
-// map needs no API: the sky is where the arithmetic says it is.
-export function gmst(date) {
-  const tut1 = (julian(date) - 2451545) / 36525;
-  let s = -6.2e-6 * tut1 * tut1 * tut1 + 0.093104 * tut1 * tut1 +
-    (876600 * 3600 + 8640184.812866) * tut1 + 67310.54841;   // seconds of arc-time
-  return mod2pi(s * DEG / 240);
-}
+// Sidereal time and the Julian day live in astro.js: the orbit page needs the
+// same two functions, and two copies of a time scale is one copy too many.
+export { julian, gmst } from "./astro.js";
 
 // TEME → geodetic latitude/longitude/altitude on the WGS-84 ellipsoid. The
 // latitude is iterated because the ellipsoid makes it implicit; five passes

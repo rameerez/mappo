@@ -248,7 +248,7 @@ export class Mappo {
       return;
     }
     if (this.options.mode === "globe") {
-      if (this._globe) { this._globe.update(); dbg("update:", changed, "→ globe refresh"); }
+      if (this._globe) { this._globe.update(changed); dbg("update:", changed, "→ globe refresh"); }
       else this.#scheduleRebuild();
       return;
     }

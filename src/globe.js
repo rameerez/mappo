@@ -186,17 +186,48 @@ export class GlobeRenderer {
   // owning Mappo, so no diffing is possible here). Rebuilding the point
   // buffer is a few ms even at max resolution — just do it. The rotation
   // angle deliberately survives.
-  update() {
+  // Options that only change how the existing geometry is PAINTED or POINTED.
+  // Everything else — resolution, land, the point set, what is on it — has to
+  // be rebuilt, and an unknown key is treated as "rebuild" so a new option can
+  // never quietly land in the cheap path.
+  static PAINT_ONLY = new Set([
+    "tilt", "roll", "rotateSpeed", "focus", "globeRing", "background",
+    "dotColor", "dotHoverColor", "dotHoverScale", "landColor", "landStroke",
+    "landStrokeWidth", "bordersColor", "bordersWidth", "bordersOpacity",
+    "graticuleColor", "equatorColor", "graticuleOpacity", "equatorOpacity",
+    "markerColor", "markerScale", "markerHoverScale", "highlightColor"
+  ]);
+
+  // @param changed [Array|null] option keys that actually changed. Omit it and
+  //   everything is rebuilt, which is what any caller that does not know gets.
+  update(changed = null) {
     this._cvCache = null;
-    this._land = null;
     // Re-checked on every update, not only at build: a colour can BECOME a
     // var() long after construction — a themed attribute set from JS, a knob,
     // a framework binding — and a globe that installed no observer because it
     // started out with literals would then sit at whatever the palette was
     // when it was built, and never follow the theme again.
     this._watchTheme();
-    this._rebuildData();
+
+    // Rebuilding the point set and re-decoding the coastline costs about
+    // 13 ms at cols=150. Pointing the globe somewhere costs nothing. Pages
+    // that re-aim every frame — a sun's-eye view, a follow-that-satellite —
+    // were paying the first price for the second thing.
+    const cheap = changed?.length && changed.every((k) => GlobeRenderer.PAINT_ONLY.has(k));
+    if (!cheap) {
+      this._land = null;
+      this._rebuildData();
+    }
+    if (!changed || changed.includes("focus")) this.#aim();
     this._draw();
+  }
+
+  // focus is live, not just an opening position: setting it again re-aims.
+  // The rotation that brings a longitude to the front is its negation, since
+  // latLonToXYZ puts λ=0 facing the viewer at angle 0.
+  #aim() {
+    if (!this.o.focus) return;
+    this.angle = ((-this.o.focus.lon % 360) + 360) % 360;
   }
 
   // Colours given as CSS variables follow the host's theme. Watch the document

@@ -86,38 +86,9 @@
    letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-top:6px}
  #clock{margin-top:14px;font:12px/1.6 ui-monospace,monospace;color:var(--dim)}
 #bl{bottom:26px;left:28px}
- /* ── the clock you can drag ───────────────────────────────────────────── */
- #tc{bottom:22px;left:50%;transform:translateX(-50%);width:min(660px,58vw)}
- .timebar{display:flex;align-items:center;gap:11px;
-  background:rgb(10 16 26 / .72);border:1px solid var(--line);border-radius:13px;
-  padding:9px 13px;backdrop-filter:blur(7px)}
- .timebar button{background:none;border:1px solid transparent;color:var(--dim);
-  border-radius:7px;padding:4px 9px;font:12px/1.3 ui-monospace,monospace;cursor:pointer;
-  flex:none;min-width:38px}
- .timebar button:hover{color:var(--ink);border-color:var(--line)}
- .timebar button[aria-pressed="true"]{color:var(--s53)}
- /* Transport, the way a game does it: three keys you can hit without reading
-    them, and the rate shown beside rather than hidden inside a button. */
- .transport{display:flex;gap:2px;flex:none}
- .timebar .tb{min-width:31px;padding:4px 6px;font-size:11px;letter-spacing:.5px}
- .rate{flex:none;min-width:54px;text-align:center;color:var(--s53);
-   font:600 11.5px/1.3 ui-monospace,monospace;font-variant-numeric:tabular-nums}
- .rate.held{color:var(--faint)}
- /* A hairline at the middle of the track: without it the slider has no zero,
-    and "back to now" becomes a place you can only reach with the button. */
- #scrub{flex:1;min-width:0;height:4px;-webkit-appearance:none;appearance:none;
-   background:
-     linear-gradient(90deg,transparent calc(50% - .5px),rgb(220 233 247 / .45) calc(50% - .5px),
-       rgb(220 233 247 / .45) calc(50% + .5px),transparent calc(50% + .5px)),
-     linear-gradient(90deg,#20303f,#3a5670,#20303f);
-   border-radius:3px;cursor:ew-resize}
- #scrub::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;
-  background:var(--s53);border:2px solid #0b1119;box-shadow:0 0 9px rgb(255 180 84 / .55);cursor:grab}
- #scrub::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:var(--s53);
-  border:2px solid #0b1119;cursor:grab}
- #offset{margin-top:8px;text-align:center;font:11px/1.5 ui-monospace,monospace;color:var(--faint)}
- #offset b{color:var(--dim);font-weight:600}
- @media(max-width:820px){ #tc{width:calc(100vw - 56px)} }
+ /* The bar itself is timectl.js — see demo/timectl.js. Only where it sits
+    is this page's business. */
+ #tc{bottom:22px;left:50%;transform:translateX(-50%)}
  #br{bottom:26px;right:28px;text-align:right}
 
  .legend{display:flex;flex-direction:column;gap:5px}
@@ -198,20 +169,7 @@
   <div id="clock">—</div>
 </div>
 
-<div class="panel" id="tc">
-  <div class="timebar">
-    <div class="transport">
-      <button id="rew" class="tb" type="button" title="backwards, faster" aria-label="rewind">◀◀</button>
-      <button id="play" class="tb" type="button" aria-pressed="true" title="play or pause" aria-label="play or pause">❚❚</button>
-      <button id="ff" class="tb" type="button" title="forwards, faster" aria-label="fast forward">▶▶</button>
-    </div>
-    <span id="rate" class="rate" aria-live="polite">1×</span>
-    <input id="scrub" type="range" min="-2880" max="2880" step="1" value="0"
-      aria-label="time offset from now, in minutes">
-    <button id="nowbtn" type="button" title="back to real time at 1x speed">reset</button>
-  </div>
-  <div id="offset">real time · drag to move up to two days either way</div>
-</div>
+<div class="panel" id="tc"></div>
 
 <div class="panel" id="bl">
   <div class="legend" id="legend"></div>
@@ -231,6 +189,7 @@
 <script type="module" src="../dist/mappo.js"></script>
 <script type="module">
 import { parseTle, propagate, gmst, geodetic } from "./sgp4.js";
+import { createClock } from "./timectl.js";
 
 const $ = (id) => document.getElementById(id);
 const earth = $("earth");
@@ -321,32 +280,19 @@ let selected = null, selTrack = [], selAt = null, selInfo = null;
 // rather than objects: this is rebuilt sixty times a second and ten thousand
 // fresh objects a frame is a garbage collector you can see.
 let hitX = new Float32Array(0), hitY = new Float32Array(0), hitI = new Int32Array(0), hitN = 0;
-let warp = 1, spinning = true, showTrack = true, showCities = true;
+let spinning = true, showTrack = true, showCities = true;
 
-// One clock for the whole page, and the slider is a view of it rather than a
-// separate control — so scrubbing, playing and the speed buttons can never
-// disagree about what time it is. The window is +/- two days because that is
-// roughly how far an element set stays honest; past that SGP4 is extrapolating
-// through manoeuvres it was never told about.
-const WINDOW = 2880 * 60000;              // minutes -> ms, each way
-let simTime = Date.now();
-let lastReal = Date.now();
-let playing = true, scrubbing = false;
-const now = () => new Date(simTime);
-
-function step() {
-  const t = Date.now();
-  if (playing) simTime += (t - lastReal) * warp;
-  lastReal = t;
-  // Running to the end of the window stops rather than silently pinning: at
-  // 600x you get there in eight minutes, and a clock that stops telling the
-  // truth while the button still says "playing" is worse than one that stops.
-  const off = simTime - Date.now();
-  if (Math.abs(off) > WINDOW) {
-    simTime = Date.now() + Math.sign(off) * WINDOW;
-    setPlaying(false);
-  }
-}
+// The clock, the slider and the transport are all timectl. The window is two
+// days either way because that is roughly how far an element set stays
+// honest; past that SGP4 is extrapolating through manoeuvres it was never
+// told about.
+const clock = createClock({
+  mount: $("tc"),
+  windowH: 48,
+  hint: "drag to move up to two days either way",
+  onScrub: () => { propagateAll(now()); readouts(); }
+});
+const now = () => clock.now();
 
 const EARTH_R = 6371;      // km, for turning altitude into globe radii
 
@@ -674,32 +620,16 @@ function drawCities(map) {
 // because that is what changes when the globe turns.
 let lastProp = 0;
 function frame(ts) {
-  step();
-  const cadence = Math.abs(warp) > 1 || scrubbing ? 0 : 500;
+  clock.step();
+  const cadence = Math.abs(clock.warp) > 1 || clock.scrubbing ? 0 : 500;
   if (ts - lastProp >= cadence) { lastProp = ts; propagateAll(now()); readouts(); }
   draw();
   requestAnimationFrame(frame);
 }
 
-// How far from real time, in words rather than in minutes.
-function saySpan(ms) {
-  const m = Math.round(Math.abs(ms) / 60000);
-  if (m < 1) return null;
-  const h = Math.floor(m / 60), d = Math.floor(h / 24);
-  const parts = d ? [ `${d} d`, `${h % 24} h` ] : h ? [ `${h} h`, `${m % 60} min` ] : [ `${m} min` ];
-  return parts.filter((x) => !/^0 /.test(x)).join(" ");
-}
-
 function readouts() {
-  const t = now();
-  $("clock").textContent = t.toISOString().slice(0, 19).replace("T", "  ") + " UTC";
-  const off = simTime - Date.now();
-  if (!scrubbing) $("scrub").value = String(Math.round(off / 60000));
-  const span = saySpan(off);
-  $("offset").innerHTML = span
-    ? `<b>${span} ${off > 0 ? "ahead of" : "behind"}</b> real time` +
-      (playing ? "" : " · paused")
-    : (playing ? "real time" : "real time · paused");
+  $("clock").textContent = now().toISOString().slice(0, 19).replace("T", "  ") + " UTC";
+  clock.render();
   if (issAt) {
     $("iss-read").innerHTML =
       `<b>ISS</b>  ${issAt.lat >= 0 ? "N" : "S"}${Math.abs(issAt.lat).toFixed(2).padStart(5, "0")}` +
@@ -818,68 +748,6 @@ $("cities").onclick = () => {
   showCities = !showCities;
   $("cities").setAttribute("aria-pressed", String(showCities));
 };
-// A shuttle, not a cycle: rewind walks left along the ladder and fast-forward
-// walks right, so holding one direction accelerates and the other slows you
-// down and then turns you round. There is no wrap — hitting the end of a
-// transport control and finding yourself at the other end is disorienting.
-const SPEEDS = [ -600, -60, -1, 1, 60, 600 ];
-let speedIx = SPEEDS.indexOf(1);
-
-function showRate() {
-  $("rate").textContent = `${warp > 0 ? "" : "−"}${Math.abs(warp)}×`;
-  $("rate").classList.toggle("held", !playing);
-  $("rew").setAttribute("aria-pressed", String(playing && warp < 0));
-  $("ff").setAttribute("aria-pressed", String(playing && warp > 1));
-}
-function setPlaying(on) {
-  playing = on;
-  $("play").textContent = on ? "❚❚" : "▶";
-  $("play").setAttribute("aria-pressed", String(on));
-  showRate();
-}
-function setSpeed(ix) {
-  speedIx = Math.max(0, Math.min(SPEEDS.length - 1, ix));
-  warp = SPEEDS[speedIx];
-  setPlaying(true);
-}
-$("play").onclick = () => setPlaying(!playing);
-$("rew").onclick = () => setSpeed(speedIx - 1);
-$("ff").onclick = () => setSpeed(speedIx + 1);
-
-// The same three keys, for anyone whose hands are already on the keyboard.
-// Skipped while a control has focus, so the slider keeps its own arrows.
-addEventListener("keydown", (e) => {
-  if (e.target instanceof HTMLElement && e.target.closest("input, button")) return;
-  if (e.key === " ") { e.preventDefault(); setPlaying(!playing); }
-  else if (e.key === "ArrowLeft") setSpeed(speedIx - 1);
-  else if (e.key === "ArrowRight") setSpeed(speedIx + 1);
-});
-// One button back to solid ground: the real clock, real speed, running.
-$("nowbtn").onclick = () => {
-  simTime = Date.now(); lastReal = Date.now();
-  scrub.value = "0";
-  setSpeed(SPEEDS.indexOf(1));
-  // Repaint now rather than on the next frame: a control that answers a
-  // beat late reads as a control that did not work.
-  propagateAll(now());
-  readouts();
-};
-// While the pointer is down the slider is the authority; the rest of the time
-// it follows the clock. Without that the frame loop fights the drag.
-const scrub = $("scrub");
-const grab = () => { scrubbing = true; };
-const drop = () => { scrubbing = false; lastReal = Date.now(); };
-scrub.addEventListener("pointerdown", grab);
-scrub.addEventListener("pointerup", drop);
-scrub.addEventListener("pointercancel", drop);
-scrub.addEventListener("input", () => {
-  simTime = Date.now() + Number(scrub.value) * 60000;
-  lastReal = Date.now();
-  propagateAll(now());
-  readouts();
-});
-// A keyboard user never fires pointerup, so commit on change too.
-scrub.addEventListener("change", drop);
 
 // The stage is sized in viewport units, which are not resolved when this
 // module first runs, so a one-shot measurement catches the canvas at its
