@@ -1,9 +1,10 @@
 // The cities these pages keep time in.
 //
 // A map with no ground under it is just geometry, and the fastest way to give
-// someone their bearings is a clock they recognise. Eleven, far enough apart to
-// read at globe scale and spread widely enough in longitude that some of them
-// are always in the dark.
+// someone their bearings is a clock they recognise. Twelve, far enough apart to
+// read at globe scale, spread widely enough in longitude that some of them are
+// always in the dark, and an even number so a two-column list does not end on a
+// ragged row.
 //
 // mappo's own registry has coordinates for a hundred and sixty cities but no
 // time zones — a map component has no business shipping the tz database — so
@@ -19,6 +20,7 @@ export const CLOCK_CITIES = [
   { name: "Lagos",       lat: 6.52,   lon: 3.37,    tz: "Africa/Lagos" },
   { name: "Moscow",      lat: 55.75,  lon: 37.62,   tz: "Europe/Moscow" },
   { name: "Delhi",       lat: 28.61,  lon: 77.21,   tz: "Asia/Kolkata" },
+  { name: "Singapore",   lat: 1.35,   lon: 103.82,  tz: "Asia/Singapore" },
   { name: "Tokyo",       lat: 35.68,  lon: 139.69,  tz: "Asia/Tokyo" },
   { name: "Sydney",      lat: -33.87, lon: 151.21,  tz: "Australia/Sydney" }
 ];
