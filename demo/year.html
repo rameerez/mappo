@@ -23,6 +23,13 @@
  #sky{position:fixed;inset:0;width:100%;height:100%;pointer-events:none}
  /* The orbit owns the page; the Earth panel is docked to the right of it. */
  #orbit{position:fixed;inset:0;width:100%;height:100%}
+ /* The Earth itself, riding the orbit: a real globe in the SCENE's frame,
+    not the Sun's — which is what lets you watch the axis hold its heading
+    while the planet goes round it. */
+ #earth3d{position:fixed;left:0;top:0;width:126px;height:126px;z-index:3;
+   pointer-events:none;will-change:transform}
+ #earth3d mappo-world{position:absolute;inset:0;width:100%;height:100%}
+ #night3d{position:absolute;inset:0;width:100%;height:100%}
  .panel{position:fixed;pointer-events:none;z-index:5}
  .panel > *{pointer-events:auto}
 
@@ -87,6 +94,15 @@
 
 <canvas id="sky"></canvas>
 <canvas id="orbit"></canvas>
+<div id="earth3d">
+  <mappo-world id="globe3d" mode="globe" cols="96" rotate-speed="0" interactive="false"
+    land="outline" land-source="vector"
+    land-stroke="var(--coast)" land-stroke-width="0.8"
+    background="#123049" globe-ring="true"
+    graticule meridians="12" parallels="7"
+    graticule-color="var(--grid)" graticule-opacity="0.7" equator-opacity="0.45"></mappo-world>
+  <canvas id="night3d"></canvas>
+</div>
 
 <div class="panel" id="tl">
   <h1>Where the Earth is</h1>
@@ -142,6 +158,7 @@
 import { earthAt, seasonOf, solarLongitudeCrossing, apsis, AU_KM, EARTH_R_KM, SUN_R_KM } from "./astro.js";
 import { withClocks, solarElevation } from "./clocks.js";
 import { createClock } from "./timectl.js";
+import { gmst } from "./astro.js";
 
 const $ = (id) => document.getElementById(id);
 const TAU = Math.PI * 2, RAD = Math.PI / 180;
@@ -175,7 +192,7 @@ const VIEW_TILT = 34 * RAD;     // from the pole
 const VIEW_AZ = 118 * RAD;      // which way the perihelion end points
 const COS_T = Math.cos(VIEW_TILT), SIN_T = Math.sin(VIEW_TILT);
 
-let dpr = 1, S = 1, cx = 0, cy = 0;
+let dpr = 1, S = 1, cx = 0, cy = 0, earthPos = { x: 0, y: 0 };
 // You cannot draw both bodies to scale on one screen: at this size the Sun is
 // two pixels and the Earth is two hundredths of one. So they are enlarged by
 // DIFFERENT amounts, which is a thing worth saying rather than hiding — and
@@ -198,6 +215,57 @@ const atLon = (lonDeg, r = 1) => project(r * Math.cos(lonDeg * RAD), r * Math.si
 function axisVector(eps) {
   const b = (90 - eps) * RAD;
   return { x: Math.cos(b) * Math.cos(90 * RAD), y: Math.cos(b) * Math.sin(90 * RAD), z: Math.sin(b) };
+}
+
+// ── the Earth in the scene's frame ──────────────────────────────────────────
+//
+// mappo turns a globe with three angles — spin about the pole, tilt about the
+// screen's horizontal, roll in the screen plane — which is three degrees of
+// freedom, which is enough to point a sphere anywhere. So the scene's camera
+// and the Earth's real axis can be handed to it exactly, rather than
+// approximated: build the matrix, read the angles back out of it.
+//
+// The third row of roll ∘ tilt ∘ spin contains no roll at all, which is what
+// makes the decomposition closed-form rather than an optimisation.
+const dot3 = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+const cross3 = (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
+
+// Camera basis in ecliptic coordinates — the same two angles project() uses.
+const CAM = {
+  right:  { x: Math.cos(VIEW_AZ), y: Math.sin(VIEW_AZ), z: 0 },
+  up:     { x: -Math.sin(VIEW_AZ) * COS_T, y: Math.cos(VIEW_AZ) * COS_T, z: SIN_T },
+  toward: { x: Math.sin(VIEW_AZ) * SIN_T, y: -Math.cos(VIEW_AZ) * SIN_T, z: COS_T }
+};
+
+const eq2ecl = (v, eps) => ({
+  x: v.x,
+  y: v.y * Math.cos(eps) + v.z * Math.sin(eps),
+  z: -v.y * Math.sin(eps) + v.z * Math.cos(eps)
+});
+
+// The Earth's own axes in ecliptic coordinates. The pole is FIXED — that is
+// the entire reason there are seasons — and only the prime meridian turns,
+// at one sidereal revolution a day.
+function bodyAxes(thetaRad, epsDeg) {
+  const eps = epsDeg * RAD;
+  const yb = eq2ecl({ x: 0, y: 0, z: 1 }, eps);
+  const zb = eq2ecl({ x: Math.cos(thetaRad), y: Math.sin(thetaRad), z: 0 }, eps);
+  return { xb: cross3(yb, zb), yb, zb };
+}
+
+function orientation(thetaRad, epsDeg) {
+  const b = bodyAxes(thetaRad, epsDeg);
+  const A = [
+    [ dot3(CAM.right, b.xb),  dot3(CAM.right, b.yb),  dot3(CAM.right, b.zb) ],
+    [ -dot3(CAM.up, b.xb),    -dot3(CAM.up, b.yb),    -dot3(CAM.up, b.zb) ],
+    [ dot3(CAM.toward, b.xb), dot3(CAM.toward, b.yb), dot3(CAM.toward, b.zb) ]
+  ];
+  return {
+    spin: Math.atan2(-A[2][0], A[2][2]),
+    tilt: Math.asin(Math.max(-1, Math.min(1, A[2][1]))),
+    roll: Math.atan2(A[0][1], -A[1][1]),
+    axes: b
+  };
 }
 
 // ── sizing ──────────────────────────────────────────────────────────────────
@@ -326,39 +394,107 @@ function drawOrbit(s) {
   octx.fillStyle = "#ffd08a";
   octx.beginPath(); octx.arc(cx, cy, sunR, 0, TAU); octx.fill();
 
-  // The Earth: dark, with the half facing the Sun lit, and its axis drawn at
-  // the tilt that makes the year mean anything.
-  const ep = atLon(lonHelio, r);
-  const earthR = Math.max(0.7, EARTH_R_KM / AU_KM * S * (trueScale ? 1 : EARTH_X));
-  const toSun = Math.atan2(cy - ep.y, cx - ep.x);
-  octx.fillStyle = "#1b2f45";
-  octx.beginPath(); octx.arc(ep.x, ep.y, earthR, 0, TAU); octx.fill();
+// The Earth is a real globe now — see placeEarth3d — so the canvas only
+// labels it. At true scale the globe is hidden and this dot stands in,
+// because a thing you cannot see still needs saying where it is.
+const ep = atLon(lonHelio, r);
+if (trueScale) {
   octx.fillStyle = "#bcd8ef";
-  octx.beginPath(); octx.arc(ep.x, ep.y, earthR, toSun - Math.PI / 2, toSun + Math.PI / 2); octx.fill();
+  octx.beginPath();
+  octx.arc(ep.x, ep.y, Math.max(0.7, EARTH_R_KM / AU_KM * S), 0, TAU);
+  octx.fill();
+}
+octx.fillStyle = "#c9dcee";
+octx.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+octx.textAlign = "center";
+octx.fillText("EARTH", ep.x, ep.y + (trueScale ? 16 : 77));
+octx.textAlign = "left";
+earthPos = ep;
+}
 
-  if (earthR > 3) {
-    const ax = axisVector(obliquity);
-    const tip = ep;
-    const len = earthR * 2.1;
-    const dir = project(ax.x, ax.y, ax.z);
-    const dx = (dir.x - project(0, 0, 0).x), dy = (dir.y - project(0, 0, 0).y);
-    const n = Math.hypot(dx, dy) || 1;
-    octx.strokeStyle = "#8fb4d6"; octx.lineWidth = 1;
-    octx.globalAlpha = 0.85;
-    octx.beginPath();
-    octx.moveTo(tip.x - dx / n * len, tip.y - dy / n * len);
-    octx.lineTo(tip.x + dx / n * len, tip.y + dy / n * len);
-    octx.stroke();
-    octx.globalAlpha = 1;
-    octx.fillStyle = "#8fb4d6";
-    octx.font = "600 8.5px ui-monospace, monospace";
-    octx.fillText("N", tip.x + dx / n * (len + 7), tip.y + dy / n * (len + 7));
+// ── the Earth on the orbit ──────────────────────────────────────────────────
+const earth3d = $("earth3d"), globe3d = $("globe3d");
+const night3d = $("night3d"), n3 = night3d.getContext("2d");
+let spun = null;
+
+function placeEarth3d(s, at) {
+  const half = earth3d.offsetWidth / 2;
+  earth3d.style.transform = `translate(${(at.x - half).toFixed(1)}px, ${(at.y - half).toFixed(1)}px)`;
+
+  const o = orientation(gmst(now()), s.obliquity);
+  // Tilt and roll are constants — they depend on the camera and on an axis
+  // that does not move — so only the spin is worth re-sending.
+  if (spun === null) {
+    globe3d.map?.update({ tilt: o.tilt / RAD, roll: o.roll / RAD,
+                          focus: { lat: 0, lon: -o.spin / RAD } });
+  } else if (Math.abs(o.spin - spun) > 0.004) {
+    globe3d.map?.update({ focus: { lat: 0, lon: -o.spin / RAD } });
   }
+  spun = o.spin;
+  return o;
+}
 
-  octx.fillStyle = "#c9dcee";
-  octx.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
-  octx.fillText("EARTH", ep.x, ep.y + earthR + 13);
-  octx.textAlign = "left";
+// Night, exactly. The terminator is the great circle at right angles to the
+// Sun, and a great circle in an orthographic projection is an ELLIPSE: full
+// radius across the line of sight, squashed to R·|s·z| along it. So the dark
+// side is a lune bounded by that ellipse and the limb — no sampling, no
+// clipping, no spherical polygon to get wrong.
+function drawNight3d(s, o) {
+  const w = night3d.clientWidth, h = night3d.clientHeight;
+  if (night3d.width !== Math.round(w * dpr)) {
+    night3d.width = Math.round(w * dpr); night3d.height = Math.round(h * dpr);
+  }
+  n3.setTransform(1, 0, 0, 1, 0, 0);
+  n3.clearRect(0, 0, night3d.width, night3d.height);
+  n3.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // mappo draws its sphere at 0.40 of the box, centred.
+  const R = w * 0.40, ox = w / 2, oy = h / 2;
+
+  // The direction to the Sun, in camera coordinates (screen y points down).
+  const L = s.lonSun * RAD;
+  const sun = { x: Math.cos(L), y: Math.sin(L), z: 0 };
+  const sx = dot3(sun, CAM.right), sy = -dot3(sun, CAM.up), sz = dot3(sun, CAM.toward);
+  const ang = Math.atan2(sy, sx);
+
+  n3.beginPath();
+  // The limb, on the side away from the Sun.
+  n3.arc(ox, oy, R, ang + Math.PI / 2, ang + 3 * Math.PI / 2);
+  // and back along the terminator. Which half of the ellipse depends on
+  // whether the face we are looking at is the lit one: when the Sun is
+  // behind the Earth the night reaches past the middle of the disc.
+  n3.ellipse(ox, oy, R * Math.abs(sz), R, ang,
+             3 * Math.PI / 2, Math.PI / 2, sz > 0);
+  n3.closePath();
+  n3.fillStyle = "rgba(2,5,11,.80)";
+  n3.fill();
+
+  // The axis, pole to pole, drawn over the top.
+  const pole = (lat) => {
+    const p = { x: 0, y: lat > 0 ? 1 : -1, z: 0 };
+    const sR = Math.sin(o.spin), cR = Math.cos(o.spin);
+    const sT = Math.sin(o.tilt), cT = Math.cos(o.tilt);
+    const sO = Math.sin(o.roll), cO = Math.cos(o.roll);
+    const x1 = p.x * cR + p.z * sR, z1 = -p.x * sR + p.z * cR;
+    const y2 = p.y * cT - z1 * sT;
+    const dx = x1 * R, dy = -y2 * R;
+    return { x: ox + dx * cO - dy * sO, y: oy + dx * sO + dy * cO };
+  };
+  const np = pole(90), sp = pole(-90);
+  const dx = np.x - sp.x, dy = np.y - sp.y, n = Math.hypot(dx, dy) || 1;
+  const pad = 9;
+  n3.strokeStyle = "#9fc4e4"; n3.lineWidth = 1; n3.globalAlpha = 0.65;
+  n3.setLineDash([ 3, 3 ]);
+  n3.beginPath();
+  n3.moveTo(sp.x - dx / n * pad, sp.y - dy / n * pad);
+  n3.lineTo(np.x + dx / n * pad, np.y + dy / n * pad);
+  n3.stroke();
+  n3.setLineDash([]);
+  n3.globalAlpha = 1;
+  n3.fillStyle = "#bcd8ef";
+  n3.font = "600 8.5px ui-monospace, SFMono-Regular, Menlo, monospace";
+  n3.textAlign = "center"; n3.textBaseline = "middle";
+  n3.fillText("N", np.x + dx / n * (pad + 5), np.y + dy / n * (pad + 5));
 }
 
 // ── the Earth panel ─────────────────────────────────────────────────────────
@@ -477,6 +613,8 @@ function readouts(s) {
 function paint() {
   const s = earthAt(now());
   drawOrbit(s);
+  const o = placeEarth3d(s, earthPos);
+  drawNight3d(s, o);
   aimEarth(s);
   drawPins(s);
   readouts(s);
@@ -498,6 +636,7 @@ function frame(ts) {
 $("scalebtn").onclick = () => {
   trueScale = !trueScale;
   $("scalebtn").textContent = trueScale ? "enlarge bodies" : "true scale";
+  earth3d.style.display = trueScale ? "none" : "";
   $("scalenote").textContent = trueScale
     ? "true scale — the Sun is 2 px and the Earth is a fiftieth of one"
     : "Sun ×9 · Earth ×430 · the orbit itself is to scale";
