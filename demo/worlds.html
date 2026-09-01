@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Other worlds — mappo</title>
+<meta name="description" content="mappo drawing bodies that are not the Earth. The Moon and Mars ship as separate packs you opt into; the engine never learns what a mare or a dichotomy is.">
+<link rel="shortcut icon" href="../favicon/favicon.ico" type="image/x-icon">
+<style>
+ :root{ --ink:#e8eef7; --dim:#8b98ad; --faint:#4a5668; --line:#1b2634; --accent:#ffb454;
+        --regolith:#8e9aa8; --mare:#39424f; }
+ *{box-sizing:border-box}
+ body{margin:0;background:#04060a;color:var(--ink);
+   font:14px/1.6 ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+ .wrap{max-width:1180px;margin:0 auto;padding:34px 26px 90px}
+ h1{font-size:25px;margin:0 0 8px;letter-spacing:-.015em}
+ .lede{color:var(--dim);max-width:72ch;margin:0}
+ .by{color:var(--faint);font-size:12.5px;margin:12px 0 0}
+ a{color:var(--accent)}
+ h2{font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:var(--dim);
+   margin:40px 0 6px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+ .note{color:var(--faint);font-size:12.5px;max-width:76ch;margin:0 0 16px}
+ .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:20px}
+ .card{background:rgb(9 14 22 / .8);border:1px solid var(--line);border-radius:16px;padding:15px}
+ .card h3{margin:0 0 3px;font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+   letter-spacing:.07em;text-transform:uppercase;color:var(--dim)}
+ .card p{margin:0 0 11px;color:var(--faint);font-size:12.5px}
+ mappo-world,mappo-moon,mappo-mars,mappo-earth{display:block;width:100%}
+ pre{margin:12px 0 0;background:#070b11;border:1px solid var(--line);border-radius:9px;
+   padding:11px 13px;overflow-x:auto;font:11.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;
+   color:#9fb2c6}
+ .sites .pin{pointer-events:auto;text-decoration:none}
+ .sites .pin > i{position:absolute;left:0;top:0;width:6px;height:6px;margin:-3px 0 0 -3px;
+   border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgb(255 180 84 / .18)}
+ .sites .pin[data-kind="artemis"] > i,.sites .pin[data-kind="candidate"] > i{
+   background:#6fd3c5;box-shadow:0 0 0 3px rgb(111 211 197 / .2)}
+ .sites .pin[data-kind="feature"] > i{background:#a78bfa;box-shadow:0 0 0 3px rgb(167 139 250 / .2)}
+ .sites .pin > span{position:absolute;left:0;top:0;white-space:nowrap;
+   transform:translate(9px,-50%);font:600 9px/1 ui-monospace,monospace;letter-spacing:.11em;
+   text-transform:uppercase;color:#e8f0f8;text-shadow:0 1px 5px rgb(0 0 0 / .95);
+   opacity:calc(.15 + .85*var(--mappo-depth,1))}
+ .sites .pin[data-mappo-behind]{visibility:hidden}
+ .scale{display:flex;align-items:center;gap:30px;justify-content:center;padding:10px 0 2px;flex-wrap:wrap}
+ .scale figure{margin:0;text-align:center}
+ .scale figcaption{margin-top:9px;font:11px/1.5 ui-monospace,monospace;color:var(--faint)}
+ .num{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Other worlds</h1>
+<p class="lede">mappo drawing things that are not the Earth. The engine has no idea:
+it asks a <em>body</em> whether a given latitude and longitude is inside or outside.
+On Earth that means land against sea, on the Moon maria against highlands, on Mars the
+northern lowlands against the southern highlands. One question, three spheres.</p>
+<p class="by">A prototype · <a href="../index.html">mappo</a> ·
+<a href="./index.html">more demos</a></p>
+
+<h2>Opting in</h2>
+<p class="note">Earth is in the bundle because a world map is what people came for.
+Everything else is a separate file you ask for by name — the Moon is 11&nbsp;KB gzipped
+and Mars is 8&nbsp;KB, and nobody putting a world map in a hero section should download
+either. A tag per body is sugar on top: it sets the default, and <code>body=</code>
+still wins if you write both.</p>
+<div class="card">
+<pre><code>import { registerBody, defineBodyElement } from "mappo";
+import { MOON } from "mappo/bodies/moon";
+import { MARS } from "mappo/bodies/mars";
+
+registerBody(MOON);
+registerBody(MARS);
+defineBodyElement("mappo-moon", "moon");
+defineBodyElement("mappo-mars", "mars");
+
+&lt;mappo-world body="moon"&gt;   &lt;!-- always works --&gt;
+&lt;mappo-moon&gt;                 &lt;!-- the same thing, said shorter --&gt;
+&lt;mappo-earth&gt;                &lt;!-- ships with mappo; an alias of mappo-world --&gt;</code></pre>
+</div>
+
+<h2>Outlines, not pixels</h2>
+<p class="note">A body can carry vector outlines as well as a bitmask, and the Moon now
+does — traced from the same threshold the mask uses, so the line and the squares are the
+same boundary at two levels of detail. That is exactly the relationship Earth's coastline
+has with Earth's bitmask. Left is <code>land="outline"</code>; right is the grid it came from.</p>
+<div class="row">
+  <div class="card">
+    <h3>land-source="vector"</h3>
+    <p>5,859 points, simplified to a fifth of a degree. A mare edge is smooth in nature
+    and only looked like a staircase because we sampled it on a grid.</p>
+    <mappo-moon mode="globe" cols="160" rotate-speed="0" focus="0,0" tilt="0"
+      land="outline" land-source="vector"
+      land-stroke="#cfd8e2" land-stroke-width="0.9"
+      background="#12161d" globe-ring="true"
+      graticule meridians="12" parallels="7"
+      graticule-color="#2a323d" graticule-opacity="0.7" equator-opacity="0.5"></mappo-moon>
+  </div>
+  <div class="card">
+    <h3>land-source="grid"</h3>
+    <p>The bitmask the outline was traced from, filled. Same boundary, drawn as cells —
+    and the cells follow <code>cols</code>, so resolution is a slider.</p>
+    <mappo-moon mode="globe" cols="160" rotate-speed="0" focus="0,0" tilt="0"
+      land="solid outline" land-source="grid"
+      land-color="var(--mare)" land-stroke="#5d6a7a" land-stroke-width="0.6"
+      background="var(--regolith)" globe-ring="true"
+      graticule meridians="12" parallels="7"
+      graticule-color="#6d7a89" graticule-opacity="0.35" equator-opacity="0.3"></mappo-moon>
+  </div>
+</div>
+
+<h2>Flat, too</h2>
+<p class="note">Nothing about the flat renderer is Earth-shaped either. Both of these are
+the same component in <code>mode="flat"</code>, with a different pack behind them.</p>
+<div class="row">
+  <div class="card">
+    <h3>The Moon · maria</h3>
+    <p>The near side is on the right and left edges; the empty middle is the far side,
+    which is nearly all highland.</p>
+    <mappo-moon mode="flat" cols="260" lat-min="-90" lat-max="90"
+      land="solid outline" land-source="vector"
+      land-color="var(--mare)" land-stroke="#5d6a7a" land-stroke-width="0.5"
+      background="var(--regolith)"></mappo-moon>
+  </div>
+  <div class="card">
+    <h3>Mars · the dichotomy</h3>
+    <p>One clean line around the planet: everything north of it is a third of the
+    surface and several kilometres lower than everything south.</p>
+    <mappo-mars mode="flat" cols="260" lat-min="-90" lat-max="90"
+      land="solid outline" land-source="vector"
+      land-color="#4a3a3f" land-stroke="#d98b6a" land-stroke-width="0.5"
+      background="#c98a63"></mappo-mars>
+  </div>
+</div>
+
+<h2>Mars, and where anyone has managed to stop</h2>
+<p class="note">Nine landings, and almost all of them low, flat and near the equator —
+the same constraint that kept Apollo near the lunar equator. Teal is a landing region
+that gets argued about for crewed missions; violet is there for scale.</p>
+<div class="card sites"><div id="marshost"></div></div>
+
+<h2>Three worlds, one renderer, true relative size</h2>
+<p class="note">Drawn at the same moment by the same code. Mars is half the Earth across
+and the Moon is a quarter — and Mars has more dry land than the Earth does, which is the
+sort of thing this picture is for.</p>
+<div class="card">
+  <div class="scale">
+    <figure>
+      <mappo-earth style="width:300px" mode="globe" cols="130" rotate-speed="3" tilt="16" roll="-10"
+        land="solid outline" land-source="vector"
+        land-color="#c8d8e6" land-stroke="#ffffff" land-stroke-width="0.5"
+        background="#08182a" globe-ring="true"></mappo-earth>
+      <figcaption>Earth · <span class="num">12,742 km</span></figcaption>
+    </figure>
+    <figure>
+      <mappo-mars style="width:159.6px" mode="globe" cols="110" rotate-speed="3" tilt="12"
+        land="solid outline" land-source="grid"
+        land-color="#4a3a3f" land-stroke="#d98b6a" land-stroke-width="0.5"
+        background="#c98a63" globe-ring="true"></mappo-mars>
+      <figcaption>Mars · <span class="num">6,779 km</span></figcaption>
+    </figure>
+    <figure>
+      <mappo-moon style="width:81.8px" mode="globe" cols="90" rotate-speed="3" tilt="6"
+        land="solid" land-source="grid" land-color="var(--mare)"
+        background="var(--regolith)" globe-ring="true"></mappo-moon>
+      <figcaption>Moon · <span class="num">3,475 km</span></figcaption>
+    </figure>
+  </div>
+</div>
+
+<p class="by" style="margin-top:36px">
+Maria from the Clementine 750&nbsp;nm albedo mosaic; Martian elevation from MOLA (both
+public domain, NASA/USGS). Each threshold is set to reproduce a published figure — maria
+at 16% of the lunar sphere, lowlands at a third of Mars — and then checked against places
+whose heights are known. Both binaries are interpretations, not coastlines: one is a
+brightness, the other an elevation, and neither is a shore.</p>
+
+</div>
+
+<script type="module" src="../dist/mappo.js"></script>
+<script type="module">
+  import { registerBody, defineBodyElement } from "../dist/mappo.js";
+  import { MOON } from "../dist/bodies/moon.js";
+  import { MARS, MARS_SITES } from "../dist/bodies/mars.js";
+
+  // The elements upgraded as mappo loaded, before any of this ran. registerBody
+  // redraws the ones that asked for a body they could not get, which is why the
+  // order does not have to be documented.
+  registerBody(MOON);
+  registerBody(MARS);
+  defineBodyElement("mappo-moon", "moon");
+  defineBodyElement("mappo-mars", "mars");
+
+  // Overlay children have to exist before the element upgrades, so this one is
+  // built here rather than written into the markup.
+  const mars = document.createElement("mappo-mars");
+  for (const [ k, v ] of Object.entries({
+    mode: "globe", cols: "170", "rotate-speed": "4", tilt: "14", roll: "-8",
+    land: "solid outline", "land-source": "grid",
+    "land-color": "#4a3a3f", "land-stroke": "#d98b6a", "land-stroke-width": "0.5",
+    background: "#c98a63", "globe-ring": "true",
+    graticule: "", meridians: "12", parallels: "7",
+    "graticule-color": "#8d5f47", "graticule-opacity": "0.4", "equator-opacity": "0.3"
+  })) mars.setAttribute(k, v);
+  mars.innerHTML = MARS_SITES.map((s) =>
+    `<a class="pin" data-kind="${s.kind}" data-lat="${s.lat}" data-lon="${s.lon}" href="#"><i></i><span>${s.name}</span></a>`
+  ).join("");
+  document.getElementById("marshost").append(mars);
+</script>
+</body>
+</html>

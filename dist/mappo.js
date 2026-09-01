@@ -2848,6 +2848,11 @@ const ATTR_MAP = {
 export const MappoElement = typeof HTMLElement === "undefined" ? null :
 class MappoElement extends HTMLElement {
   static observedAttributes = Object.keys(ATTR_MAP);
+  // Set by the subclasses defineBodyElement() makes. The tag becomes a
+  // DEFAULT, never an override: <mappo-moon body="mars"> is a strange thing
+  // to write but it should mean Mars, because the attribute is the truth and
+  // the tag is only a nicer way to say the usual case.
+  static defaultBody = null;
 
   connectedCallback() {
     // Light DOM on purpose: consumers restyle .mappo-dot/.mappo-marker with plain
@@ -2883,14 +2888,36 @@ class MappoElement extends HTMLElement {
       delete options.latMin;
       delete options.latMax;
     }
+    // Not `=== undefined`: an absent attribute is reset to its DEFAULT here,
+    // and the default body is null. The tag fills in for "nobody said".
+    if (!options.body && this.constructor.defaultBody) {
+      options.body = this.constructor.defaultBody;
+    }
     return options;
   }
 };
 
+// A tag per body, for pages that only ever draw one. <mappo-moon> is easier
+// to read than <mappo-world body="moon">, and easier to get wrong in exactly
+// one way — so the tag sets the default and the attribute still wins.
+//
+//   registerBody(MOON);
+//   defineBodyElement("mappo-moon", "moon");
+//
+// mappo-earth is the same idea for the body that ships in the box.
+export function defineBodyElement(tag, bodyId) {
+  if (!MappoElement || typeof customElements === "undefined" || customElements.get(tag)) return;
+  hideOverlaysUntilDefined(tag);
+  customElements.define(tag, class extends MappoElement { static defaultBody = bodyId; });
+}
+
 export function register(tag = "mappo-world") {
   if (!MappoElement || customElements.get(tag)) return;
   hideOverlaysUntilDefined(tag);
-  customElements.define(tag, MappoElement);
+  // A subclass per tag, because a constructor can only be handed to the
+  // registry once — registering mappo-earth with the same class threw and
+  // took mappo-world down with it. Same component, different constructors.
+  customElements.define(tag, class extends MappoElement {});
 }
 
 // Overlay children are ordinary markup, which means the browser lays them out
@@ -2907,4 +2934,4 @@ function hideOverlaysUntilDefined(tag) {
   document.head?.prepend(style);
 }
 // ══════════ auto-register ══════════
-if (typeof customElements !== "undefined") register();
+if (typeof customElements !== "undefined") { register(); register("mappo-earth"); }

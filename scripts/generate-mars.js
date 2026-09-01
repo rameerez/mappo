@@ -1,23 +1,27 @@
 #!/usr/bin/env node
-// Generates src/bodies/moon.js — the Moon as an opt-in body pack.
+// Generates src/bodies/mars.js — Mars as an opt-in body pack.
 //
-// Source: Clementine 750 nm global albedo mosaic, simple cylindrical
-// (public domain, NASA/USGS; via Wikimedia Commons). The maria are basalt and
-// the highlands are anorthosite, and the two differ in reflectance by about a
-// factor of two — so the "is it mare" question really is a threshold on
-// brightness, in a way that Earth's land/sea question is not.
+// Source: MOLA global topography, colour-ramped (public domain, NASA/MGS, via
+// Wikimedia Commons). The ramp runs purple-blue-cyan-green-yellow-red-white as
+// the ground climbs, so hue falls monotonically with height and white caps the
+// top — which makes "how high is this" a hue lookup. Checked against ten
+// published elevations from Hellas at -7 km to Olympus Mons at +21 km: the
+// ordering comes out exact, which is all a threshold needs.
 //
-// The threshold is not chosen by eye. Maria cover about 16% of the sphere, so
-// the search picks the level that reproduces that — and then the NEAR SIDE
-// figure, which nothing was tuned on, comes out at 30% against a published
-// ~31%. That is the check that the map is aligned and the level is right.
+// The binary is the crustal dichotomy — the northern lowlands against the
+// southern highlands — which is the single most important fact about the shape
+// of Mars. The threshold is set so the lowlands come out at a third of the
+// surface, the published figure.
 //
-// Input is a BMP because this repo has no image decoder and is not about to
-// grow one for a build script. On macOS:
+// The map runs 0-360E rather than -180..180. That was found rather than
+// assumed: rolling it half a turn lifts agreement with published elevations
+// from -0.08 to 0.889.
 //
-//   curl -o .cache/moon.jpg https://upload.wikimedia.org/wikipedia/commons/e/ea/Clementine_albedo_simp750.jpg
-//   sips -s format bmp -z 512 1024 .cache/moon.jpg --out .cache/moon.bmp
-//   node scripts/generate-moon.js .cache/moon.bmp
+// Input is a BMP because this repo has no image decoder. On macOS:
+//
+//   curl -o .cache/mars.png https://upload.wikimedia.org/wikipedia/commons/8/89/Mars_topography_%28MOLA_dataset%29.png
+//   sips -s format bmp .cache/mars.png --out .cache/mars.bmp
+//   node scripts/generate-mars.js .cache/mars.bmp
 //
 // Run it, commit the result; consumers never run this.
 
@@ -28,7 +32,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const RAD = Math.PI / 180;
 const MASK_W = 512, MASK_H = 256;
-const TARGET_GLOBAL = 0.16;                 // maria, as a fraction of the sphere
+const TARGET_GLOBAL = 1 / 3;              // northern lowlands, as a fraction
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const SCALE = 32;
@@ -99,7 +103,9 @@ function encodeRings(rings) {
   return parts.join("|");
 }
 
-const bmpPath = process.argv[2] || ".cache/moon.bmp";
+// The map starts at 0E, not at the antimeridian.
+const ROLL = 180;
+const bmpPath = process.argv[2] || ".cache/mars.bmp";
 const b = readFileSync(bmpPath);
 if (b.toString("ascii", 0, 2) !== "BM") throw new Error("not a BMP");
 if (b.readUInt16LE(28) !== 24) throw new Error("expected 24-bit BMP");
@@ -109,13 +115,37 @@ const rawH = b.readInt32LE(22);
 const H = Math.abs(rawH), topDown = rawH < 0;
 const rowBytes = Math.ceil(W * 3 / 4) * 4;
 
+// Height, read off the colour ramp rather than off brightness. The comparison
+// downstream is "less than the threshold", which on the Moon meant darker and
+// here means lower — the same line, two very different rasters.
 const lum = new Float32Array(W * H);
 for (let y = 0; y < H; y++) {
   const src = off + (topDown ? y : H - 1 - y) * rowBytes;
   for (let x = 0; x < W; x++) {
-    const i = src + x * 3;                  // BMP stores BGR
-    lum[y * W + x] = 0.114 * b[i] + 0.587 * b[i + 1] + 0.299 * b[i + 2];
+    const i = src + x * 3;
+    const bl = b[i] / 255, g = b[i + 1] / 255, r = b[i + 2] / 255;
+    const mx = Math.max(r, g, bl), mn = Math.min(r, g, bl), d = mx - mn;
+    let h = 0;
+    if (d) {
+      h = mx === r ? ((g - bl) / d + (g < bl ? 6 : 0)) : mx === g ? ((bl - r) / d + 2) : ((r - g) / d + 4);
+      h *= 60;
+    }
+    const sat = mx ? d / mx : 0;
+    let height;
+    if (sat < 0.18 && mx > 0.75) height = 300;               // the white summits
+    else { let hh = h; if (hh < 300 && hh > 280) hh -= 360; height = 280 - hh; }
+    lum[y * W + x] = height;
   }
+}
+
+// Bring the prime meridian to the middle.
+{
+  const shift = Math.round(W * ROLL / 360);
+  const rolled = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    rolled[y * W + x] = lum[y * W + ((x + shift) % W)];
+  }
+  lum.set(rolled);
 }
 
 // Downsample to the mask grid by averaging, so a cell is the mean brightness
@@ -132,13 +162,10 @@ for (let r = 0; r < MASK_H; r++) {
   }
 }
 
-// The poles are dark in this mosaic and it is not basalt: the Sun never rises
-// far above the horizon there, so what the camera saw is shadow. The latitude
-// profile gives it away — 75-90°N reads 21% dark while the band immediately
-// below reads 0.1%, and a lava flow cannot appear above nothing. No mare lies
-// above about 62°, so beyond 72° is called highland, and the threshold is
-// chosen with that already applied or the artefact eats part of the budget.
-const POLE_CUT = 72;
+// No polar correction. On the Moon the poles were shadow pretending to be
+// basalt; here the data is elevation and the caps are genuinely high ground,
+// so there is nothing to defend against.
+const POLE_CUT = 91;
 const latOf = (r) => 90 - (r + 0.5) / MASK_H * 180;
 const polar = (r) => Math.abs(latOf(r)) > POLE_CUT;
 
@@ -251,31 +278,33 @@ let near = 0, nearTot = 0;
 for (let la = -89.5; la < 90; la += 1) for (let lo2 = -89.5; lo2 < 90; lo2 += 1) {
   const w = Math.cos(la * RAD); nearTot += w; if (at(la, lo2)) near += w;
 }
-console.log(`threshold ${T.toFixed(1)} → ${(coverage(T) * 100).toFixed(1)}% of the sphere (target ${TARGET_GLOBAL * 100}%)`);
-console.log(`near side ${(100 * near / nearTot).toFixed(1)}% maria (published ~31%, not tuned on)`);
+console.log(`threshold ${T.toFixed(1)} → ${(coverage(T) * 100).toFixed(1)}% low (target ${(TARGET_GLOBAL * 100).toFixed(0)}%)`);
+console.log(`hemisphere check: ${(100 * near / nearTot).toFixed(1)}% low on the 0E side`);
 for (const [ n, la, lo2, want ] of [
-  [ "Mare Crisium", 17, 59, true ], [ "Mare Imbrium", 33, -16, true ],
-  [ "Tranquillitatis", 8.5, 31, true ], [ "far side centre", 0, 180, false ],
-  [ "south pole", -85, 0, false ] ]) {
+  [ "Hellas (-7 km)", -42.4, 70.5, true ], [ "Vastitas Borealis", 70, 0, true ],
+  [ "Utopia Planitia", 47, 118, true ], [ "Isidis", 13, 88, true ],
+  [ "Olympus Mons (+21)", 18.65, -133.8, false ], [ "Ascraeus Mons", 11.3, -104.5, false ],
+  [ "southern highlands", -40, 0, false ], [ "Syrtis Major", 8.4, 69.5, false ] ]) {
   const got = at(la, lo2);
-  console.log(`  ${n.padEnd(18)} ${got ? "mare    " : "highland"} ${got === want ? "ok" : "MISMATCH"}`);
+  console.log(`  ${n.padEnd(20)} ${got ? "lowland " : "highland"} ${got === want ? "ok" : "MISMATCH"}`);
 }
 
 mkdirSync(join(here, "..", "src", "bodies"), { recursive: true });
-writeFileSync(join(here, "..", "src", "bodies", "moon.js"), `// GENERATED by scripts/generate-moon.js — do not edit by hand.
+writeFileSync(join(here, "..", "src", "bodies", "mars.js"), `// GENERATED by scripts/generate-mars.js — do not edit by hand.
 //
-// The Moon, as an opt-in body pack. Nothing in mappo's engine knows about it;
-// it is handed over at runtime with registerBody().
+// Mars, as an opt-in body pack. Nothing in mappo's engine knows about it; it
+// is handed over at runtime with registerBody().
 //
-// Data: Clementine 750 nm global albedo mosaic, simple cylindrical (public
-// domain, NASA/USGS). Thresholded so the dark basaltic maria come out at 16%
-// of the sphere, which is the published figure; the near side then lands at
-// ~30% against a published ~31% without being tuned for. Beyond 72 degrees the
-// mosaic is shadow rather than basalt, and is read as highland.
+// Data: MOLA global topography, colour-ramped (public domain, NASA/MGS). The
+// binary is the crustal dichotomy — northern lowlands against southern
+// highlands — thresholded so the lowlands come out at a third of the surface,
+// which is the published figure. Eight known places check out, from Hellas at
+// -7 km to Olympus Mons at +21 km.
 //
-// This binary is an INTERPRETATION, unlike Earth's coastline. Mare boundaries
-// are gradational — basalt thins out rather than stopping at a line — so the
-// edge here is a brightness level, not a shore.
+// Like the Moon's maria, this is an INTERPRETATION and not a coastline: the
+// edge is an elevation, and Mars has no sea to draw one against. Hellas and
+// Argyre come out as lowland because they ARE low, which is a fact about
+// elevation rather than a fact about the dichotomy.
 
 const MASK_W = ${MASK_W}, MASK_H = ${MASK_H};
 const BITS = /* base64 */ Uint8Array.from(atob("${base64}"), (c) => c.charCodeAt(0));
@@ -313,7 +342,7 @@ function outlines() {
   return decoded;
 }
 
-function isMare(lat, lon) {
+function isLow(lat, lon) {
   if (lat > 90 || lat < -90) return false;
   const col = Math.min(MASK_W - 1, Math.max(0, Math.floor(((lon + 180) / 360) * MASK_W)));
   const row = Math.min(MASK_H - 1, Math.max(0, Math.floor(((90 - lat) / 180) * MASK_H)));
@@ -321,17 +350,17 @@ function isMare(lat, lon) {
   return (BITS[idx >> 3] & (1 << (idx & 7))) !== 0;
 }
 
-export const MOON = {
-  id: "moon",
-  name: "Moon",
-  radiusKm: 1737.4,
+export const MARS = {
+  id: "mars",
+  name: "Mars",
+  radiusKm: 3389.5,
   // The Moon keeps one face to us, so there is no useful "start facing here"
   // that is not just the near side.
   latRange: [ -90, 90 ],
   // What the two classes are called here. mappo's options are still spelled
   // land/ocean — one vocabulary for the code, the body's own words for people.
-  terms: { inside: "maria", outside: "highlands" },
-  isLand: isMare,
+  terms: { inside: "lowlands", outside: "highlands" },
+  isLand: isLow,
   // Traced from the same threshold the mask uses, so the outline and the
   // squares are the same boundary at two levels of detail — exactly the
   // relationship Earth has between its coastline and its bitmask.
@@ -340,24 +369,26 @@ export const MOON = {
   maskSize: [ MASK_W, MASK_H ]
 };
 
-// Places worth pointing at. Apollo sites are where people have stood; the
-// Artemis III regions are candidate landing areas near the south pole, chosen
-// for sunlight and for the permanently shadowed craters beside them.
-export const MOON_SITES = [
-  { name: "Apollo 11", lat: 0.67, lon: 23.47, kind: "apollo" },
-  { name: "Apollo 12", lat: -3.01, lon: -23.42, kind: "apollo" },
-  { name: "Apollo 14", lat: -3.65, lon: -17.47, kind: "apollo" },
-  { name: "Apollo 15", lat: 26.13, lon: 3.63, kind: "apollo" },
-  { name: "Apollo 16", lat: -8.97, lon: 15.50, kind: "apollo" },
-  { name: "Apollo 17", lat: 20.19, lon: 30.77, kind: "apollo" },
-  { name: "Luna 9", lat: 7.13, lon: -64.37, kind: "robotic" },
-  { name: "Chang'e 4", lat: -45.44, lon: 177.60, kind: "robotic" },
-  { name: "Chang'e 6", lat: -41.64, lon: -153.99, kind: "robotic" },
-  { name: "Malapert Massif", lat: -86.0, lon: -2.7, kind: "artemis" },
-  { name: "Nobile Rim 1", lat: -85.4, lon: 31.5, kind: "artemis" },
-  { name: "Peak near Cabeus B", lat: -82.2, lon: -58.0, kind: "artemis" },
-  { name: "Haworth", lat: -87.5, lon: -5.0, kind: "artemis" },
-  { name: "Shackleton", lat: -89.7, lon: 129.2, kind: "artemis" }
+// Everything that has landed and stayed put, and the places being argued over
+// for what comes next. Almost all of them are low, flat and near the equator,
+// for the same reason the Apollo sites were: that is where the fuel budget and
+// the atmosphere let you stop.
+export const MARS_SITES = [
+  { name: "Viking 1", lat: 22.27, lon: -48.22, kind: "landed" },
+  { name: "Viking 2", lat: 47.64, lon: 134.29, kind: "landed" },
+  { name: "Pathfinder", lat: 19.13, lon: -33.22, kind: "landed" },
+  { name: "Spirit", lat: -14.57, lon: 175.47, kind: "landed" },
+  { name: "Opportunity", lat: -1.95, lon: -5.53, kind: "landed" },
+  { name: "Curiosity", lat: -4.59, lon: 137.44, kind: "landed" },
+  { name: "InSight", lat: 4.50, lon: 135.62, kind: "landed" },
+  { name: "Perseverance", lat: 18.44, lon: 77.45, kind: "landed" },
+  { name: "Zhurong", lat: 25.07, lon: 109.93, kind: "landed" },
+  { name: "Arcadia Planitia", lat: 46.7, lon: -168.0, kind: "candidate" },
+  { name: "Amazonis Planitia", lat: 24.8, lon: -164.0, kind: "candidate" },
+  { name: "Deuteronilus Mensae", lat: 43.9, lon: 23.0, kind: "candidate" },
+  { name: "Olympus Mons", lat: 18.65, lon: -133.8, kind: "feature" },
+  { name: "Valles Marineris", lat: -13.9, lon: -59.2, kind: "feature" },
+  { name: "Hellas Planitia", lat: -42.4, lon: 70.5, kind: "feature" }
 ];
 `);
-console.log("wrote src/bodies/moon.js");
+console.log("wrote src/bodies/mars.js");

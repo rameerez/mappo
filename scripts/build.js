@@ -21,7 +21,7 @@ const MODULES = ["mask.js", "projection.js", "graticule.js", "shapes.js", "body.
 // what people came for; the Moon is 4.5 KB gzipped that nobody should pay for
 // unless they asked. Each pack is standalone — it imports nothing from the
 // engine, it is handed to registerBody() by the consumer.
-const BODIES = ["moon.js"];
+const BODIES = ["moon.js", "mars.js"];
 
 // The concatenation removes import lines, which means an aliased import has
 // nothing left to bind its new name to and fails at runtime as an undefined
@@ -47,7 +47,7 @@ const banner = `// mappo v${JSON.parse(readFileSync(join(here, "..", "package.js
 
 const footer = `
 // ══════════ auto-register ══════════
-if (typeof customElements !== "undefined") register();
+if (typeof customElements !== "undefined") { register(); register("mappo-earth"); }
 `;
 
 mkdirSync(join(here, "..", "dist"), { recursive: true });
