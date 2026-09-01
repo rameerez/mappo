@@ -1,14 +1,14 @@
-// <world-map> — the zero-JS way in. Every renderer option that makes
+// <mappo-world> — the zero-JS way in. Every renderer option that makes
 // sense as markup is an attribute; change an attribute, the map re-renders.
 //
-//   <world-map cities="London, Lagos, Singapore" tilt="40"
-//                 dot-shape="circle" marker-color="#2262fe"></world-map>
+//   <mappo-world cities="London, Lagos, Singapore" tilt="40"
+//                 dot-shape="circle" marker-color="#2262fe"></mappo-world>
 //
 // Callbacks aren't attributes (functions don't serialize) — listen for the
-// bubbling CustomEvents instead: worldmap:cityclick, :cityenter,
-// :dotclick, :dotenter. For full control, use the WorldMap class.
+// bubbling CustomEvents instead: mappo:cityclick, :cityenter,
+// :dotclick, :dotenter. For full control, use the Mappo class.
 
-import { WorldMap, DEFAULTS } from "./renderer.js";
+import { Mappo, DEFAULTS } from "./renderer.js";
 
 const ATTR_MAP = {
   // attribute      → [option, parser]
@@ -89,14 +89,14 @@ const ATTR_MAP = {
 // evaluates at definition time, and this module must stay importable where
 // no DOM exists (Node tests, SSR pipelines). There, the element export is
 // null and register() no-ops — the data/geometry APIs still work.
-export const WorldMapElement = typeof HTMLElement === "undefined" ? null :
-class WorldMapElement extends HTMLElement {
+export const MappoElement = typeof HTMLElement === "undefined" ? null :
+class MappoElement extends HTMLElement {
   static observedAttributes = Object.keys(ATTR_MAP);
 
   connectedCallback() {
-    // Light DOM on purpose: consumers restyle .wm-dot/.wm-marker with plain
+    // Light DOM on purpose: consumers restyle .mappo-dot/.mappo-marker with plain
     // CSS — a shadow root would wall that off for zero benefit here.
-    this.map = new WorldMap(this, this.#optionsFromAttributes());
+    this.map = new Mappo(this, this.#optionsFromAttributes());
   }
 
   disconnectedCallback() {
@@ -131,10 +131,10 @@ class WorldMapElement extends HTMLElement {
   }
 };
 
-export function register(tag = "world-map") {
-  if (!WorldMapElement || customElements.get(tag)) return;
+export function register(tag = "mappo-world") {
+  if (!MappoElement || customElements.get(tag)) return;
   hideOverlaysUntilDefined(tag);
-  customElements.define(tag, WorldMapElement);
+  customElements.define(tag, MappoElement);
 }
 
 // Overlay children are ordinary markup, which means the browser lays them out

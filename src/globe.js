@@ -100,7 +100,7 @@ export function buildGlobePhases(cols, latRange, mode, water = false) {
 
 export class GlobeRenderer {
   // @param container [HTMLElement] emptied; a square canvas fills its width.
-  // @param options   [Object] the owning WorldMap's options (shared ref).
+  // @param options   [Object] the owning Mappo's options (shared ref).
   constructor(container, options) {
     this.container = container;
     this.o = options;
@@ -111,7 +111,7 @@ export class GlobeRenderer {
     this._raf = null;
     this._t = null;
 
-    // <world-map> is inline by default — an inline container has
+    // <mappo-world> is inline by default — an inline container has
     // clientWidth 0, which turned v0.3.0's first cut into a stretched
     // ribbon (square backing store, rectangular CSS box). Two guarantees
     // fix it for good: the host becomes a block, and the canvas box is
@@ -131,7 +131,7 @@ export class GlobeRenderer {
       : Array.from(container.querySelectorAll("[data-lat][data-lon]"));
 
     this.canvas = document.createElement("canvas");
-    this.canvas.className = "wm-globe";
+    this.canvas.className = "mappo-globe";
     this.canvas.style.display = "block";
     this.canvas.style.width = "100%";
     this.canvas.style.aspectRatio = "1 / 1";
@@ -139,7 +139,7 @@ export class GlobeRenderer {
     if (this._overlayEls.length) {
       if (getComputedStyle(container).position === "static") container.style.position = "relative";
       this._overlayLayer = document.createElement("div");
-      this._overlayLayer.className = "wm-overlay";
+      this._overlayLayer.className = "mappo-overlay";
       // pointer-events:none on the LAYER, not the children: the layer must
       // not swallow drag-to-spin, but a label that wants to be clickable
       // only has to set pointer-events:auto on itself.
@@ -188,7 +188,7 @@ export class GlobeRenderer {
   }
 
   // Any option may have changed (the options object is shared with the
-  // owning WorldMap, so no diffing is possible here). Rebuilding the point
+  // owning Mappo, so no diffing is possible here). Rebuilding the point
   // buffer is a few ms even at max resolution — just do it. The rotation
   // angle deliberately survives.
   update() {
@@ -250,13 +250,13 @@ export class GlobeRenderer {
 
   // ── pointer layer: hover/click events + drag-to-spin ─────────────────────
   // Mirrors the flat renderer's contract exactly: onDotClick/onDotEnter/
-  // onCityClick/onCityEnter callbacks + bubbling worldmap:* CustomEvents,
+  // onCityClick/onCityEnter callbacks + bubbling mappo:* CustomEvents,
   // gated by `interactive`. On top of that, the globe is grabbable: drag
   // spins it directly, a flick carries momentum, and the spin relaxes back
   // to rotateSpeed on an exponential (~0.8s) — seamless handoff, no snap.
 
   // One marker/highlight footprint, honoring the shape options — the canvas
-  // twin of the flat renderer's <use href="#wm-marker-shape">.
+  // twin of the flat renderer's <use href="#mappo-marker-shape">.
   #drawShape(sx, sy, size, shape) {
     const ctx = this.ctx;
     if (shape === "square") {
@@ -432,7 +432,7 @@ export class GlobeRenderer {
     const cb = this.o[`on${kind === "city" ? "City" : "Dot"}${phase}`];
     if (cb) cb(detail);
     this.container.dispatchEvent(new CustomEvent(
-      `worldmap:${kind}${phase.toLowerCase()}`,
+      `mappo:${kind}${phase.toLowerCase()}`,
       { detail, bubbles: true }
     ));
   }

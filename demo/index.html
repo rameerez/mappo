@@ -32,7 +32,7 @@ html[data-theme="dark"] .stage{box-shadow:0 24px 70px -30px rgb(0 0 0 / .8)}
        background:radial-gradient(60% 100% at 50% 0%,rgb(109 138 166 / .12),transparent 70%)}
 html[data-theme="dark"] .stage-glow{
        background:radial-gradient(60% 100% at 50% 0%,rgba(79,209,197,.16),transparent 70%)}
-.stage world-map{position:relative}
+.stage mappo-world{position:relative}
 .stage-cap{display:flex;flex-direction:column;gap:2px;padding:16px 2px 20px;
        font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--stage-cap)}
 .stage-cap strong{color:var(--stage-ink);font-weight:600;letter-spacing:.02em}
@@ -135,7 +135,7 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
 <!-- ───────────────────────── HERO ───────────────────────── -->
 <div class="hero">
   <div>
-    <world-map id="hero" mode="globe" cols="160" rotate-speed="6"
+    <mappo-world id="hero" mode="globe" cols="160" rotate-speed="6"
       tilt="18" roll="-14.3"
       land="outline" land-source="vector"
       land-stroke="var(--coast)" land-stroke-width="0.9"
@@ -148,20 +148,20 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
       <a class="pin" data-lat="-1.29" data-lon="36.82"  href="#"><span>Nairobi</span></a>
       <a class="pin" data-lat="40.7"  data-lon="-74.0"  href="#"><span>New York</span></a>
       <a class="pin" data-lat="55.75" data-lon="37.62"  href="#"><span>Moscow</span></a>
-    </world-map>
+    </mappo-world>
   </div>
   <div>
     <h3 style="margin:0 0 6px;font-size:17px">Real coastlines, leaning, with your own labels</h3>
     <p style="color:var(--muted);margin:0 0 12px">Drag it. The labels are ordinary anchors in your markup —
     mappo positions them every frame and publishes how far each has turned away, so they fade and hide
     at the horizon with plain CSS.</p>
-    <pre><code>&lt;world-map mode="globe" rotate-speed="6"
+    <pre><code>&lt;mappo-world mode="globe" rotate-speed="6"
   tilt="18" roll="-14.3"
   land="solid outline" land-source="vector"
   graticule meridians="24" parallels="11"&gt;
   &lt;a data-lat="38.7" data-lon="-9.1"&gt;&lt;span&gt;Lisbon&lt;/span&gt;&lt;/a&gt;
   &lt;a data-lat="35.7" data-lon="139.7"&gt;&lt;span&gt;Tokyo&lt;/span&gt;&lt;/a&gt;
-&lt;/world-map&gt;
+&lt;/mappo-world&gt;
 
 .pin &gt; span { opacity: calc(.28 + .72*var(--mappo-depth,1)) }
 .pin[data-mappo-behind] { visibility: hidden }</code></pre>
@@ -176,7 +176,7 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
       <!-- One map, under a shadow that is plotted, not painted: the terminator
            comes out of projectNormalized() at the same latRange the element is
            drawn at, so the edge of night lands on the geography exactly. -->
-      <world-map id="flatshow"
+      <mappo-world id="flatshow"
         cols="300"
         lat-min="-58" lat-max="76"
         land="solid outline" land-source="vector" borders
@@ -194,7 +194,7 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
         <a class="lead" data-lat="1.35"   data-lon="103.82" data-tz="Asia/Singapore"   href="#t9"><i></i><span><b>Singapore</b><em></em></span></a>
         <a class="lead" data-lat="25.29"  data-lon="51.53"  data-tz="Asia/Qatar"       href="#t10"><i></i><span><b>Doha</b><em></em></span></a>
         <a class="lead" data-lat="28.61"  data-lon="77.21"  data-tz="Asia/Kolkata"     href="#t11"><i></i><span><b>Delhi</b><em></em></span></a>
-      </world-map>
+      </mappo-world>
 
       <!-- Twilight as a ramp: twelve nested bands from the horizon down through
            astronomical twilight, each the region where the sun is already below a
@@ -242,12 +242,12 @@ label.classList.toggle("is-night", solarElevation(lat, lon, dec, sunLon) &lt; 0)
       <div class="orbit-path"></div>
       <div class="sun"></div>
       <div class="carrier" id="carrier">
-        <world-map mode="globe" cols="140" rotate-speed="45" tilt="23.44"
+        <mappo-world mode="globe" cols="140" rotate-speed="45" tilt="23.44"
           land="solid outline" land-source="vector"
           land-color="#6ea8ff" land-stroke="#bcd4ff" land-stroke-width="0.8"
           background="#0d1b33" graticule meridians="24" parallels="11"
           graticule-color="#1e2a3d" equator-color="#6ea8ff" equator-opacity="0.4"
-          globe-ring="true"></world-map>
+          globe-ring="true"></mappo-world>
       </div>
       <div class="hud">
         <div>axial tilt <b>23.44°</b> — fixed in space, never counter-rotated</div>
@@ -261,8 +261,8 @@ label.classList.toggle("is-night", solarElevation(lat, lon, dec, sunLon) &lt; 0)
     Because the container never counter-rotates, the tilt keeps pointing the same way all year — which is
     what gives a planet seasons.</p>
     <pre><code>&lt;div class="carrier"&gt;
-  &lt;world-map mode="globe" tilt="23.44" rotate-speed="45"
-    land="solid outline" land-source="vector"&gt;&lt;/world-map&gt;
+  &lt;mappo-world mode="globe" tilt="23.44" rotate-speed="45"
+    land="solid outline" land-source="vector"&gt;&lt;/mappo-world&gt;
 &lt;/div&gt;
 
 const phase = (t % YEAR_MS) / YEAR_MS, a = phase * Math.PI * 2;
@@ -293,8 +293,8 @@ carrier.style.transform =
       <button data-opt="borders" data-val="off" aria-pressed="true">no borders</button>
       <button data-opt="borders" data-val="on" aria-pressed="false">borders</button>
     </div>
-    <world-map id="play" cols="140" land="solid outline"
-      land-color="var(--land)" land-stroke="var(--coast)" rotate-speed="5" roll="-12"></world-map>
+    <mappo-world id="play" cols="140" land="solid outline"
+      land-color="var(--land)" land-stroke="var(--coast)" rotate-speed="5" roll="-12"></mappo-world>
   </div>
   <div>
     <h3 style="margin:0 0 6px;font-size:17px">Every combination is one attribute</h3>
@@ -310,49 +310,49 @@ carrier.style.transform =
 <h2>Globe <span>— roll, tilt, and how they compose</span></h2>
 <div class="grid">
   <div class="card"><div class="art">
-    <world-map mode="globe" cols="140" rotate-speed="0" roll="0" tilt="0"
-      land="outline" land-source="vector" land-stroke="var(--coast)"></world-map>
+    <mappo-world mode="globe" cols="140" rotate-speed="0" roll="0" tilt="0"
+      land="outline" land-source="vector" land-stroke="var(--coast)"></mappo-world>
   </div><div class="meta"><h3>Upright</h3>
     <p>No lean, no tilt — the reference frame.</p>
     <pre><code>roll="0" tilt="0"</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <world-map mode="globe" cols="140" rotate-speed="0" roll="-14.3" tilt="0"
-      land="outline" land-source="vector" land-stroke="var(--coast)"></world-map>
+    <mappo-world mode="globe" cols="140" rotate-speed="0" roll="-14.3" tilt="0"
+      land="outline" land-source="vector" land-stroke="var(--coast)"></mappo-world>
   </div><div class="meta"><h3>Roll — the lean</h3>
     <p>Turns the finished disc in the plane of the screen. Watch the equator.</p>
     <pre><code>roll="-14.3"</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <world-map mode="globe" cols="140" rotate-speed="0" roll="0" tilt="30"
+    <mappo-world mode="globe" cols="140" rotate-speed="0" roll="0" tilt="30"
       land="solid outline" land-source="vector" land-color="var(--land)" land-stroke="var(--coast)"
       graticule meridians="24" parallels="11" graticule-color="var(--grid)"
-      equator-color="var(--coast)" equator-opacity="0.4"></world-map>
+      equator-color="var(--coast)" equator-opacity="0.4"></mappo-world>
   </div><div class="meta"><h3>Tilt — the axis</h3>
     <p>Leans the axis away from you. A foreshortening, not a rotation.</p>
     <pre><code>tilt="30" graticule</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <world-map mode="globe" cols="140" rotate-speed="0" roll="-14.3" tilt="25"
+    <mappo-world mode="globe" cols="140" rotate-speed="0" roll="-14.3" tilt="25"
       land="solid outline" land-source="vector" land-color="var(--land)" land-stroke="var(--coast)"
       graticule meridians="24" parallels="11" graticule-color="var(--grid)"
-      equator-color="var(--coast)" equator-opacity="0.4"></world-map>
+      equator-color="var(--coast)" equator-opacity="0.4"></mappo-world>
   </div><div class="meta"><h3>Both, composed</h3>
     <p>Different gestures; they stack.</p>
     <pre><code>roll="-14.3" tilt="25"</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <world-map mode="globe" cols="150" rotate-speed="0" roll="-10"
+    <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-10"
       land="solid" land-source="vector" borders land-color="var(--land)"
-      borders-color="var(--coast)" borders-opacity="0.8"></world-map>
+      borders-color="var(--coast)" borders-opacity="0.8"></mappo-world>
   </div><div class="meta"><h3>Country borders</h3>
     <p>Every national boundary, on the sphere.</p>
     <pre><code>land="solid" land-source="vector" borders</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <world-map mode="globe" cols="150" rotate-speed="0" roll="-10" dot-color="var(--coast)"
+    <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-10" dot-color="var(--coast)"
       graticule meridians="24" parallels="23"
-      graticule-color="var(--grid)" equator-color="var(--accent)" equator-opacity="0.4"></world-map>
+      graticule-color="var(--grid)" equator-color="var(--accent)" equator-opacity="0.4"></mappo-world>
   </div><div class="meta"><h3>Dots + dense graticule</h3>
     <p>24 meridians, 23 parallels — one lands on 0° and is dropped, so the equator is never double-drawn.</p>
     <pre><code>graticule meridians="24" parallels="23"</code></pre></div></div>
@@ -362,45 +362,45 @@ carrier.style.transform =
 <h2>Flat <span>— grid detail versus real geography</span></h2>
 <div class="grid">
   <div class="card"><div class="art">
-    <world-map cols="120" dot-color="var(--coast)"></world-map>
+    <mappo-world cols="120" dot-color="var(--coast)"></mappo-world>
   </div><div class="meta"><h3>The dot field</h3>
     <p>What mappo is named for. Resolution is a runtime parameter.</p>
-    <pre><code>&lt;world-map cols="120"&gt;&lt;/world-map&gt;</code></pre></div></div>
+    <pre><code>&lt;mappo-world cols="120"&gt;&lt;/mappo-world&gt;</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <world-map cols="120" land="outline" land-stroke="var(--coast)"></world-map>
+    <mappo-world cols="120" land="outline" land-stroke="var(--coast)"></mappo-world>
   </div><div class="meta"><h3>Grid contours</h3>
     <p>Traced from the bitmask. Blocky by design, follows <code>cols</code>, free.</p>
     <pre><code>land="outline"</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <world-map cols="120" land="outline" land-source="vector" land-stroke="var(--coast)"></world-map>
+    <mappo-world cols="120" land="outline" land-source="vector" land-stroke="var(--coast)"></mappo-world>
   </div><div class="meta"><h3>Vector coastlines</h3>
     <p>Natural Earth at 1/32°. Smooth at any size, independent of <code>cols</code>. ~13 KB.</p>
     <pre><code>land="outline" land-source="vector"</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <world-map cols="120" land="solid outline" land-source="vector" borders
-      land-color="var(--land)" land-stroke="var(--coast)" borders-opacity="0.6"></world-map>
+    <mappo-world cols="120" land="solid outline" land-source="vector" borders
+      land-color="var(--land)" land-stroke="var(--coast)" borders-opacity="0.6"></mappo-world>
   </div><div class="meta"><h3>Everything</h3>
     <p>Filled, coasted, bordered.</p>
     <pre><code>land="solid outline" land-source="vector" borders</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <world-map cols="120" land="solid" land-source="vector" land-color="var(--land)"
+    <mappo-world cols="120" land="solid" land-source="vector" land-color="var(--land)"
       highlight-color="var(--accent)"
-      highlight-polygon='[[[42.1,-8.2],[41.9,-6.2],[39.7,-7.0],[38.0,-7.0],[37.0,-7.4],[37.0,-8.9],[38.7,-9.5],[41.0,-8.9],[42.1,-8.2]]]'></world-map>
+      highlight-polygon='[[[42.1,-8.2],[41.9,-6.2],[39.7,-7.0],[38.0,-7.0],[37.0,-7.4],[37.0,-8.9],[38.7,-9.5],[41.0,-8.9],[42.1,-8.2]]]'></mappo-world>
   </div><div class="meta"><h3>Highlight a region</h3>
     <p>You supply the rings; mappo ships no boundary dataset for this on purpose.</p>
     <pre><code>highlight-polygon='[[[42.1,-8.2],…]]'
 highlight-color="#c2410c"</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <world-map cols="120" land="solid" land-source="vector" land-color="var(--land)">
+    <mappo-world cols="120" land="solid" land-source="vector" land-color="var(--land)">
       <a class="pin" data-lat="38.7" data-lon="-9.1" href="#"><span>Lisbon</span></a>
       <a class="pin" data-lat="-23.5" data-lon="-46.6" href="#"><span>São Paulo</span></a>
       <a class="pin" data-lat="35.7" data-lon="139.7" href="#"><span>Tokyo</span></a>
-    </world-map>
+    </mappo-world>
   </div><div class="meta"><h3>Overlays, flat</h3>
     <p>Identical attributes and CSS hooks as the globe — written once per build instead of per frame.</p>
     <pre><code>&lt;a data-lat="38.7" data-lon="-9.1"&gt;&lt;span&gt;Lisbon&lt;/span&gt;&lt;/a&gt;</code></pre></div></div>
@@ -679,7 +679,7 @@ setInterval(paintNight, 30000);
       state.landSource === "vector" ? 'land-source="vector"' : null,
       state.borders === "on" ? "borders" : null
     ].filter(Boolean).join("\n  ");
-    code.textContent = `<world-map cols="140"\n  ${attrs}\n  land-color="#c9d3bd"\n  land-stroke="#5f7a4a">\n</world-map>`;
+    code.textContent = `<mappo-world cols="140"\n  ${attrs}\n  land-color="#c9d3bd"\n  land-stroke="#5f7a4a">\n</mappo-world>`;
   }
 
   document.querySelectorAll(".controls button").forEach((btn) => {

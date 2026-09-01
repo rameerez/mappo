@@ -12,7 +12,7 @@ no build step, no dependencies.
 ```html
 <script type="module" src="https://unpkg.com/mappo"></script>
 
-<world-map cities="London, Lagos, Singapore" tilt="40"></world-map>
+<mappo-world cities="London, Lagos, Singapore" tilt="40"></mappo-world>
 ```
 
 That's the whole integration.
@@ -48,7 +48,7 @@ pin "mappo", to: "mappo.js" # vendor dist/mappo.js
 ## The element
 
 ```html
-<world-map
+<mappo-world
   cities="London, Lagos, Singapore, New York"
   cols="140"
   dot-shape="circle"
@@ -57,17 +57,17 @@ pin "mappo", to: "mappo.js" # vendor dist/mappo.js
   marker-pulse="true"   <!-- animations are opt-in; default is a calm, static map -->
   tilt="40"
   animation="wave"
-></world-map>
+></mappo-world>
 ```
 
 Attributes are live — change one, the map re-renders. Interaction bubbles as
 DOM events:
 
 ```js
-map.addEventListener("worldmap:cityclick", (e) => {
+map.addEventListener("mappo:cityclick", (e) => {
   console.log(e.detail.name, e.detail.lat, e.detail.lon);
 });
-// also: worldmap:cityenter, :dotclick, :dotenter
+// also: mappo:cityenter, :dotclick, :dotenter
 ```
 
 ## Globe mode
@@ -75,8 +75,8 @@ map.addEventListener("worldmap:cityclick", (e) => {
 The same world, wrapped on a sphere and spinning:
 
 ```html
-<world-map mode="globe" cols="170" tilt="18" rotate-speed="4"
-           dot-shape="square" cities="Madrid, Nairobi, Tokyo"></world-map>
+<mappo-world mode="globe" cols="170" tilt="18" rotate-speed="4"
+           dot-shape="square" cities="Madrid, Nairobi, Tokyo"></mappo-world>
 ```
 
 Globe mode renders on canvas (a rotating globe re-projects every dot every
@@ -100,13 +100,13 @@ pulse. Custom SVG path dot shapes fall back to squares on canvas.
 Three attributes turn the globe from a decoration into a *"here"*:
 
 ```html
-<world-map mode="globe" rotate-speed="0"
+<mappo-world mode="globe" rotate-speed="0"
            focus="48.86,2.35"
            markers="Paris@48.86,2.35"
            marker-shape="pin" marker-scale="4" marker-pulse="true"
            highlight-color="#8fabe0"
            highlight-polygon='[[[51.1,2.5],[50.1,1.4],[49.4,-1.9],[48.6,-4.6],[47.3,-2.5],[46.2,-1.2],[43.4,-1.8],[42.5,3.0],[43.5,7.0],[46.4,6.8],[49.0,8.1],[51.1,2.5]]]'
-></world-map>
+></mappo-world>
 ```
 
 - **`markers="Name@lat,lon;..."`** — coordinate pins, no gazetteer lookup.
@@ -141,10 +141,10 @@ annotate them), and the draw loop batches colour switches on flag runs.
 One option, four values, **identical on the flat map and the globe**:
 
 ```html
-<world-map land="dots"></world-map>           <!-- the dot field (default) -->
-<world-map land="solid"></world-map>          <!-- filled landmass -->
-<world-map land="outline"></world-map>        <!-- coastline only -->
-<world-map land="solid outline"></world-map>  <!-- filled, coast on top -->
+<mappo-world land="dots"></mappo-world>           <!-- the dot field (default) -->
+<mappo-world land="solid"></mappo-world>          <!-- filled landmass -->
+<mappo-world land="outline"></mappo-world>        <!-- coastline only -->
+<mappo-world land="solid outline"></mappo-world>  <!-- filled, coast on top -->
 ```
 
 `land` is a space-separated token list, so combinations read the way you would
@@ -162,9 +162,9 @@ All three accept `var(--x)`, like every other colour.
 ### Two levels of detail: `land-source`
 
 ```html
-<world-map land="outline"></world-map>                      <!-- grid (default) -->
-<world-map land="outline" land-source="vector"></world-map> <!-- real coastlines -->
-<world-map land="solid" land-source="vector" borders></world-map>
+<mappo-world land="outline"></mappo-world>                      <!-- grid (default) -->
+<mappo-world land="outline" land-source="vector"></mappo-world> <!-- real coastlines -->
+<mappo-world land="solid" land-source="vector" borders></mappo-world>
 ```
 
 | Source | What it is | Cost |
@@ -214,7 +214,7 @@ const { cells, loops } = buildLand({ cols: 120, rows: 47, latRange: [-58, 84] })
 ## Roll — the lean (v0.5)
 
 ```html
-<world-map mode="globe" roll="-14.3" tilt="12"></world-map>
+<mappo-world mode="globe" roll="-14.3" tilt="12"></mappo-world>
 ```
 
 `roll` turns the finished globe in the plane of the screen; `tilt` leans its
@@ -227,9 +227,9 @@ overlays all rotate together. Hit-testing un-rolls the pointer first.
 
 
 ```html
-<world-map mode="globe" graticule meridians="24" parallels="23"
+<mappo-world mode="globe" graticule meridians="24" parallels="23"
            graticule-color="var(--color-border)" equator-color="var(--color-accent)"
-           graticule-opacity="0.28" equator-opacity="0.6"></world-map>
+           graticule-opacity="0.28" equator-opacity="0.6"></mappo-world>
 ```
 
 Meridians are evenly spaced longitudes from −180; parallels are evenly spaced
@@ -252,8 +252,8 @@ same circle never flatten into one ellipse. Globe mode today; the geometry
 Any colour option accepts `var(--name)` — with an optional fallback:
 
 ```html
-<world-map dot-color="var(--brand-500, #d3dce6)"
-           graticule-color="var(--border)"></world-map>
+<mappo-world dot-color="var(--brand-500, #d3dce6)"
+           graticule-color="var(--border)"></mappo-world>
 ```
 
 They resolve against `document.documentElement` and **re-resolve when the theme
@@ -264,14 +264,14 @@ nothing.
 
 ## Overlays: your DOM, our geometry (v0.5)
 
-Put your own markup inside `<world-map>` with `data-lat`/`data-lon` and mappo
+Put your own markup inside `<mappo-world>` with `data-lat`/`data-lon` and mappo
 positions it:
 
 ```html
-<world-map mode="globe" graticule>
+<mappo-world mode="globe" graticule>
   <a class="pin" data-lat="38.7" data-lon="-9.1" href="/lisbon"><span>Lisbon</span></a>
   <a class="pin" data-lat="35.7" data-lon="139.7" href="/tokyo"><span>Tokyo</span></a>
-</world-map>
+</mappo-world>
 ```
 
 This exists because labels usually need to be *real*: crawlable, translatable,
@@ -324,8 +324,8 @@ arithmetic and keep it correct forever. Normalized coordinates need nothing but
 Three knobs fill the empty space, in either mode:
 
 ```html
-<world-map mode="globe" ocean-color="#e8eef5" background="#f8fafc"
-           globe-ring="true"></world-map>
+<mappo-world mode="globe" ocean-color="#e8eef5" background="#f8fafc"
+           globe-ring="true"></mappo-world>
 ```
 
 - `dot-hover-color` defaults to **auto**: a contrast-aware shade of
@@ -343,9 +343,9 @@ Three knobs fill the empty space, in either mode:
 ## The JS API
 
 ```js
-import { WorldMap } from "mappo";
+import { Mappo } from "mappo";
 
-const map = new WorldMap(document.querySelector("#hero-map"), {
+const map = new Mappo(document.querySelector("#hero-map"), {
   cols: 140,                       // dots across the world — the resolution
   latRange: [-58, 84],             // default framing cuts Antarctica
   dotShape: "circle",              // "circle" | "square" | "triangle" | SVG path (24×24)
@@ -378,8 +378,8 @@ your own renderer on the same data.
 
 ## Styling
 
-The component renders into light DOM with plain classes (`.wm-dot`,
-`.wm-marker`, `.wm-svg`, `.wm-tilt`) — your stylesheet wins. The built-in
+The component renders into light DOM with plain classes (`.mappo-dot`,
+`.mappo-marker`, `.mappo-svg`, `.mappo-tilt`) — your stylesheet wins. The built-in
 styles are defaults, not law. `prefers-reduced-motion` disables all
 animation automatically.
 
@@ -394,7 +394,7 @@ its mode, and neither should become the other.
 **Why the flat map stays SVG:**
 
 1. **SVG-ness is a feature, not an implementation detail.** Dots are real
-   DOM elements: you restyle `.wm-dot` from your own stylesheet, markers
+   DOM elements: you restyle `.mappo-dot` from your own stylesheet, markers
    are focusable, hover states are plain CSS, everything shows up in
    devtools, and the output is vector-crisp at any zoom and in print.
    Every canvas map library forfeits all of that. It's the reason this one

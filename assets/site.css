@@ -9,7 +9,7 @@
 :root{
   --bg:#fffbf5; --card:#fff; --ink:#16181d; --muted:#6b7280; --line:#e6e1d8;
   --pill:#fff; --accent:#c2410c;
-  /* map colours, exposed as tokens so a theme flip repaints every <world-map>
+  /* map colours, exposed as tokens so a theme flip repaints every <mappo-world>
      on the page without a line of JavaScript — mappo re-resolves var() itself */
   --land:#c9d3bd; --coast:#5f7a4a; --grid:#ddd8cd; --sea:#f4f6f2; --ocean:#dfe6da;
   /* The dot field needs its own tone: --land is a fill, read across a whole
@@ -64,6 +64,6 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .tok-s{color:var(--muted)}
 .tok-k{color:var(--accent);font-weight:600}
 
-world-map{display:block;width:100%}
+mappo-world{display:block;width:100%}
 
 .foot{margin-top:40px;color:var(--muted);font-size:13.5px}

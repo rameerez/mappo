@@ -63,7 +63,7 @@
   <div class="row">
     <div class="panel">
       <div class="label">Globe · graticule + overlays + var() colours</div>
-      <world-map id="g"
+      <mappo-world id="g"
         mode="globe"
         cols="150"
         rotate-speed="6"
@@ -82,25 +82,25 @@
         <a class="pin" data-lat="35.7" data-lon="139.7" href="#tokyo"><span>Tokyo</span></a>
         <a class="pin" data-lat="-33.9" data-lon="18.4" href="#cpt"><span>Cape Town</span></a>
         <a class="pin" data-lat="51.5" data-lon="-0.13" href="#ldn"><span>London</span></a>
-      </world-map>
+      </mappo-world>
     </div>
 
     <div class="panel">
       <div class="label">Globe · graticule off (baseline, unchanged behaviour)</div>
-      <world-map mode="globe" cols="150" rotate-speed="6" tilt="16"
-                 dot-color="var(--land)" globe-ring="true"></world-map>
+      <mappo-world mode="globe" cols="150" rotate-speed="6" tilt="16"
+                 dot-color="var(--land)" globe-ring="true"></mappo-world>
     </div>
   </div>
 
 <div class="panel" style="max-width:1100px;margin-top:40px">
   <div class="label">Flat · same overlay API (data-lat/data-lon), positions written once per build</div>
-  <world-map id="flat" cols="150" dot-color="var(--land)" dot-shape="circle">
+  <mappo-world id="flat" cols="150" dot-color="var(--land)" dot-shape="circle">
     <a class="pin" data-lat="38.7" data-lon="-9.1" href="#f1"><span>Lisbon</span></a>
     <a class="pin" data-lat="-23.5" data-lon="-46.6" href="#f2"><span>São Paulo</span></a>
     <a class="pin" data-lat="35.7" data-lon="139.7" href="#f3"><span>Tokyo</span></a>
     <a class="pin" data-lat="-33.9" data-lon="18.4" href="#f4"><span>Cape Town</span></a>
     <a class="pin" data-lat="61.0" data-lon="-149.9" href="#f5"><span>Anchorage</span></a>
-  </world-map>
+  </mappo-world>
 </div>
 
   <script type="module" src="../dist/mappo.js"></script>

@@ -28,7 +28,7 @@
 //       leading+trailing debounced to ≥150ms spacing, with an LRU cache of
 //       dot-markup strings per resolution (dragging back and forth replays
 //       cached geometry instead of recomputing it).
-//   Animation phases (--wm-pw wave / --wm-pn noise) are baked into every dot
+//   Animation phases (--mappo-pw wave / --mappo-pn noise) are baked into every dot
 //   at build time and consumed via calc() in CSS, so animation mode AND
 //   duration are pure style patches too. Negative animation-delays start
 //   each dot mid-cycle — no synchronized flash on load.
@@ -128,7 +128,7 @@ export const DEFAULTS = {
   cursor: "default",
   markerCursor: "pointer",
   interactive: true,
-  // Callbacks (each also fires as a bubbling CustomEvent "worldmap:*")
+  // Callbacks (each also fires as a bubbling CustomEvent "mappo:*")
   onDotClick: null,           // ({ lat, lon, col, row, element })
   onDotEnter: null,
   onCityClick: null,          // ({ name, lat, lon, element })
@@ -168,7 +168,7 @@ const NOISE_AMP_SCALE = 0.31;
 // - performance.mark/measure spans ship ALWAYS (they cost ~nothing and make
 //   any DevTools Performance trace self-documenting: look for "wm:*" blocks
 //   in the flame chart).
-// - console output is opt-in via `WorldMap.debug = true` (the perf harness
+// - console output is opt-in via `Mappo.debug = true` (the perf harness
 //   turns it on) so production consumers get a silent component.
 function span(name, fn) {
   const m0 = `${name}:start`;
@@ -181,10 +181,10 @@ function span(name, fn) {
   return [out, ms];
 }
 function dbg(...args) {
-  if (WorldMap.debug) console.debug("[mappo]", ...args);
+  if (Mappo.debug) console.debug("[mappo]", ...args);
 }
 
-export class WorldMap {
+export class Mappo {
   // Opt-in deep console output ("[mappo] …"). The perf harness sets this.
   static debug = false;
   // @param container [HTMLElement] emptied and rendered into; sizing is the
@@ -325,10 +325,10 @@ _placeOverlays() {
     const renderT0 = performance.now();
     if (!this.svg) {
       this.svg = document.createElementNS(SVG_NS, "svg");
-      this.svg.setAttribute("class", "wm-svg");
+      this.svg.setAttribute("class", "mappo-svg");
       this.svg.setAttribute("role", "img");
       this._tiltWrap = document.createElement("div");
-      this._tiltWrap.className = "wm-tilt";
+      this._tiltWrap.className = "mappo-tilt";
       this._tiltWrap.appendChild(this.svg);
 this.styleEl = document.createElement("style");
 // Same contract as the globe: host DOM carrying data-lat/data-lon is
@@ -340,7 +340,7 @@ this._overlayEls = this.options.overlays === false ? []
   : Array.from(this.container.querySelectorAll("[data-lat][data-lon]"));
 if (this._overlayEls.length) {
   this._overlayLayer = document.createElement("div");
-  this._overlayLayer.className = "wm-overlay";
+  this._overlayLayer.className = "mappo-overlay";
   Object.assign(this._overlayLayer.style, {
     position: "absolute", inset: "0", pointerEvents: "none"
   });
@@ -397,7 +397,7 @@ if (this._overlayLayer) {
   }
 
   #patchMarkers() {
-    const group = this.svg?.querySelector(".wm-markers");
+    const group = this.svg?.querySelector(".mappo-markers");
     if (!group) return;
     group.remove();
     this.svg.insertAdjacentHTML("beforeend", this.#markersMarkup(this.grid, this.options));
@@ -412,9 +412,9 @@ if (this._overlayLayer) {
     // the stylesheet colors it — so oceanColor stays a style-tier knob
     // even at max resolution.
     return `<defs>${
-      this.#shapeMarkup("wm-dot-shape", o.dotShape, o.dotSize)}${
-      this.#shapeMarkup("wm-marker-shape", o.markerShape, o.dotSize * o.markerScale)
-    }<pattern id="wm-ocean-pat" width="${CELL}" height="${CELL}" patternUnits="userSpaceOnUse">${this.#oceanDotMarkup(o)}</pattern></defs>`;
+      this.#shapeMarkup("mappo-dot-shape", o.dotShape, o.dotSize)}${
+      this.#shapeMarkup("mappo-marker-shape", o.markerShape, o.dotSize * o.markerScale)
+    }<pattern id="mappo-ocean-pat" width="${CELL}" height="${CELL}" patternUnits="userSpaceOnUse">${this.#oceanDotMarkup(o)}</pattern></defs>`;
   }
 
   // A DIRECT shape with an inline fill — not <use>: CSS can't reliably
@@ -440,8 +440,8 @@ if (this._overlayLayer) {
   // style. Both sit under the dots and ignore the pointer.
   #backdropMarkup(cols, rows) {
     const w = cols * CELL, h = rows * CELL;
-    return `<rect class="wm-bg" x="0" y="0" width="${w}" height="${h}"/>` +
-           `<rect class="wm-ocean" x="0" y="0" width="${w}" height="${h}" fill="url(#wm-ocean-pat)"/>`;
+    return `<rect class="mappo-bg" x="0" y="0" width="${w}" height="${h}"/>` +
+           `<rect class="mappo-ocean" x="0" y="0" width="${w}" height="${h}" fill="url(#mappo-ocean-pat)"/>`;
   }
 
   // One reusable shape per role, centered on the local origin so inner-
@@ -528,10 +528,10 @@ if (this._overlayLayer) {
     const css = `fill:${escapeAttr(fill)};stroke:${escapeAttr(stroke)};` +
       `stroke-width:${width * (CELL / 10)};stroke-linejoin:round;fill-rule:nonzero`;
     const borders = geom.borders
-      ? `<path class="wm-borders" style="fill:none;stroke:${escapeAttr(o.bordersColor ?? stroke)};` +
+      ? `<path class="mappo-borders" style="fill:none;stroke:${escapeAttr(o.bordersColor ?? stroke)};` +
         `stroke-width:${(o.bordersWidth ?? 0.5) * (CELL / 10)};stroke-linejoin:round;opacity:${o.bordersOpacity ?? 0.55}" d="${geom.borders}"/>`
       : "";
-    return `<g class="wm-land"><path class="wm-land-path" style="${css}" d="${geom.d}"/>` +
+    return `<g class="mappo-land"><path class="mappo-land-path" style="${css}" d="${geom.d}"/>` +
       `${borders}${this.#landHighlightMarkup(grid, o)}</g>`;
   }
 
@@ -550,7 +550,7 @@ if (this._overlayLayer) {
       parts.push(`M${col * CELL} ${row * CELL}h${CELL}v${CELL}h-${CELL}Z`);
     }
     if (!parts.length) return "";
-    return `<path class="wm-land-highlight" style="fill:${escapeAttr(o.highlightColor)}" d="${parts.join("")}"/>`;
+    return `<path class="mappo-land-highlight" style="fill:${escapeAttr(o.highlightColor)}" d="${parts.join("")}"/>`;
   }
 
   #dotsMarkup(grid) {
@@ -560,7 +560,7 @@ if (this._overlayLayer) {
     dbg(`dots cache MISS ${key} — computing`);
 
     let dots = 0;
-    const parts = [`<g class="wm-dots">`];
+    const parts = [`<g class="mappo-dots">`];
     for (let row = 0; row < grid.rows; row++) {
       for (let col = 0; col < grid.cols; col++) {
         const c = cellCenter(col, row, grid);
@@ -579,13 +579,13 @@ if (this._overlayLayer) {
         // Amplitude octave: 0.55–1.0 so every dot moves, none identically.
         const a = (0.55 + 0.45 * ((noise2(col * NOISE_AMP_SCALE + 47, row * NOISE_AMP_SCALE + 47) + 1) / 2)).toFixed(2);
         // Density classes for the animation LOAD GATE: at high resolutions the
-        // stylesheet animates only .wm-h (~1/2) or .wm-t (~1/3) of dots —
+        // stylesheet animates only .mappo-h (~1/2) or .mappo-t (~1/3) of dots —
         // SVG transforms are main-thread, and 8k continuous animators melt
         // frames; a baked checkerboard subset reads identically at density.
-        const density = `${(col + row) % 2 === 0 ? " wm-h" : ""}${(2 * col + 3 * row) % 3 === 0 ? " wm-t" : ""}`;
+        const density = `${(col + row) % 2 === 0 ? " mappo-h" : ""}${(2 * col + 3 * row) % 3 === 0 ? " mappo-t" : ""}`;
         parts.push(
-          `<g class="wm-pos" transform="translate(${col * CELL + CELL / 2} ${row * CELL + CELL / 2})" data-col="${col}" data-row="${row}">` +
-          `<use class="wm-dot${density}" href="#wm-dot-shape" style="--wm-pw:${pw};--wm-pn:${pn};--wm-pr:${pr};--wm-ps:${ps};--wm-pk:${pk};--wm-a:${a}"/></g>`
+          `<g class="mappo-pos" transform="translate(${col * CELL + CELL / 2} ${row * CELL + CELL / 2})" data-col="${col}" data-row="${row}">` +
+          `<use class="mappo-dot${density}" href="#mappo-dot-shape" style="--mappo-pw:${pw};--mappo-pn:${pn};--mappo-pr:${pr};--mappo-ps:${ps};--mappo-pk:${pk};--mappo-a:${a}"/></g>`
         );
       }
     }
@@ -607,7 +607,7 @@ if (this._overlayLayer) {
   }
 
   #markersMarkup(grid, o) {
-    const parts = [`<g class="wm-markers">`];
+    const parts = [`<g class="mappo-markers">`];
     for (const entry of [ ...o.cities, ...(o.markers || []) ]) {
       const city = resolveCity(entry);
       if (!city) {
@@ -621,9 +621,9 @@ if (this._overlayLayer) {
       // the core barely breathes, the ring expands and fades. Scaling one
       // element for "pulse" read as throbbing, not pinging.
       parts.push(
-        `<g class="wm-pos" transform="translate(${col * CELL + CELL / 2} ${row * CELL + CELL / 2})" data-city="${escapeAttr(city.name)}" data-lat="${city.lat}" data-lon="${city.lon}"${focus}>` +
-        (o.markerPulse ? `<use class="wm-marker-ring" href="#wm-marker-shape"${fill}/>` : "") +
-        `<use class="wm-marker" href="#wm-marker-shape"${fill}/></g>`
+        `<g class="mappo-pos" transform="translate(${col * CELL + CELL / 2} ${row * CELL + CELL / 2})" data-city="${escapeAttr(city.name)}" data-lat="${city.lat}" data-lon="${city.lon}"${focus}>` +
+        (o.markerPulse ? `<use class="mappo-marker-ring" href="#mappo-marker-shape"${fill}/>` : "") +
+        `<use class="mappo-marker" href="#mappo-marker-shape"${fill}/></g>`
       );
     }
     parts.push("</g>");
@@ -634,7 +634,7 @@ if (this._overlayLayer) {
 // Write the instance stylesheet, SCOPED TO THIS MAP.
 //
 // The rules are generated per instance but their selectors are generic
-// (.wm-dot, .wm-marker …) and a <style> in the document applies to the whole
+// (.mappo-dot, .mappo-marker …) and a <style> in the document applies to the whole
 // document — so on a page with two maps the LAST one to render silently
 // repainted every other one. Eight maps on the demo page all took the last
 // map`s marker colour; only land escaped, because it carries an inline fill.
@@ -650,14 +650,14 @@ if (this._overlayLayer) {
   const uid = (this._uid ??= ++instanceSeq);
   // Node-safe, like the rest of this class's seams: the update-tier tests
     // drive the renderer with a stub container.
-    this.container.setAttribute?.("data-wm", uid);
+    this.container.setAttribute?.("data-mappo", uid);
   this.styleEl.textContent = css
-    .replace(/@keyframes\s+(wm-[\w-]+)/g, (_m, name) => `@keyframes ${name}-i${uid}`)
-    .replace(/animation:\s*(wm-[\w-]+)/g, (_m, name) => `animation: ${name}-i${uid}`);
+    .replace(/@keyframes\s+(mappo-[\w-]+)/g, (_m, name) => `@keyframes ${name}-i${uid}`)
+    .replace(/animation:\s*(mappo-[\w-]+)/g, (_m, name) => `animation: ${name}-i${uid}`);
 
   const sheet = this.styleEl.sheet;
   if (!sheet) return;                      // not yet in the document; next render scopes it
-  const scope = `[data-wm="${uid}"]`;
+  const scope = `[data-mappo="${uid}"]`;
   const walk = (rules) => {
     for (const rule of rules) {
       if (rule.selectorText) {
@@ -673,15 +673,15 @@ if (this._overlayLayer) {
 
   #css(o) {
     return `
-      .wm-bg { fill: ${o.background === "none" ? "none" : o.background}; pointer-events: none; }
-      .wm-ocean { display: ${o.oceanColor === "none" ? "none" : "inline"}; pointer-events: none; }
-      .wm-tilt { perspective: ${o.perspective}px; }
-      .wm-tilt .wm-svg {
+      .mappo-bg { fill: ${o.background === "none" ? "none" : o.background}; pointer-events: none; }
+      .mappo-ocean { display: ${o.oceanColor === "none" ? "none" : "inline"}; pointer-events: none; }
+      .mappo-tilt { perspective: ${o.perspective}px; }
+      .mappo-tilt .mappo-svg {
         width: 100%; height: auto; display: block;
         transform: rotateX(${o.tilt}deg) rotateZ(${o.rotate}deg);
         transform-style: preserve-3d;
       }
-      .wm-dot {
+      .mappo-dot {
         fill: ${o.dotColor};
         cursor: ${o.cursor};
         /* The hover wake: growing is INSTANT (transition:none below), the
@@ -690,39 +690,39 @@ if (this._overlayLayer) {
         transition: transform .3s ease .2s, fill .3s ease .2s;
       }
       ${o.interactive ? `
-      .wm-pos:hover > .wm-dot {
+      .mappo-pos:hover > .mappo-dot {
         fill: ${o.dotHoverColor ?? hoverShade(o.dotColor)};
         transform: scale(${o.dotHoverScale});
         transition: none;
         animation: none; /* a running animation transform animation would win otherwise */
       }` : ""}
-      .wm-marker {
+      .mappo-marker {
         fill: ${o.markerColor};
         cursor: ${o.markerCursor};
-        ${o.markerPulse ? "animation: wm-breathe 2.8s ease-in-out infinite;" : ""}
+        ${o.markerPulse ? "animation: mappo-breathe 2.8s ease-in-out infinite;" : ""}
         transition: transform .2s ease;
       }
-      .wm-marker-ring {
+      .mappo-marker-ring {
         fill: ${o.markerColor};
         pointer-events: none;
-        animation: wm-ping 2.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+        animation: mappo-ping 2.8s cubic-bezier(0, 0, 0.2, 1) infinite;
       }
       ${o.interactive ? `
-      .wm-pos:hover > .wm-marker, .wm-pos:focus-visible > .wm-marker {
+      .mappo-pos:hover > .mappo-marker, .mappo-pos:focus-visible > .mappo-marker {
         animation: none;
         transform: scale(${o.markerHoverScale});
       }
-      .wm-pos:hover > .wm-marker-ring, .wm-pos:focus-visible > .wm-marker-ring {
+      .mappo-pos:hover > .mappo-marker-ring, .mappo-pos:focus-visible > .mappo-marker-ring {
         animation: none;
         opacity: 0;
       }
-      .wm-markers .wm-pos { outline: none; }` : ""}
-      @keyframes wm-ping {
+      .mappo-markers .mappo-pos { outline: none; }` : ""}
+      @keyframes mappo-ping {
         0%   { transform: scale(1);    opacity: .55; }
         70%  { transform: scale(2.75); opacity: 0; }
         100% { transform: scale(2.75); opacity: 0; }
       }
-      @keyframes wm-breathe {
+      @keyframes mappo-breathe {
         0%, 100% { transform: scale(1); }
         50%      { transform: scale(1.12); }
       }
@@ -734,8 +734,8 @@ if (this._overlayLayer) {
         // a third of the per-frame style cost. Decided per render from the
         // real dot count; logged so nobody wonders why some dots sit still.
         const dots = this._dotCount ?? 0;
-        const sel = dots > 7000 ? ".wm-t" : dots > 4500 ? ".wm-h" : ".wm-dot";
-        if (sel !== ".wm-dot") dbg(`animation load gate: ${dots} dots → animating ${sel} subset`);
+        const sel = dots > 7000 ? ".mappo-t" : dots > 4500 ? ".mappo-h" : ".mappo-dot";
+        if (sel !== ".mappo-dot") dbg(`animation load gate: ${dots} dots → animating ${sel} subset`);
         // Above the top gate, even the third-subset can drop frames on
         // mid-range hardware — SVG animation cost scales with animator
         // count and there is no compositor escape hatch. Say so out loud,
@@ -756,59 +756,59 @@ if (this._overlayLayer) {
         const modes = {
           // A thin rolling crest along the diagonal — event, not texture.
           wave: `
-      .wm-dots ${sel} {
-        animation: wm-swell ${dur}s linear infinite;
-        animation-delay: calc(var(--wm-pw) * ${dur}s * -1);
+      .mappo-dots ${sel} {
+        animation: mappo-swell ${dur}s linear infinite;
+        animation-delay: calc(var(--mappo-pw) * ${dur}s * -1);
       }
-      @keyframes wm-swell {
+      @keyframes mappo-swell {
         0%   { transform: translateY(0) scale(1); }
-        ${wWave.rise}%  { transform: translateY(calc(var(--wm-a, 1) * -${amp}px)) scale(1.22); }
+        ${wWave.rise}%  { transform: translateY(calc(var(--mappo-a, 1) * -${amp}px)) scale(1.22); }
         ${wWave.settle}% { transform: translateY(0) scale(1); }
         100% { transform: translateY(0) scale(1); }
       }`,
           // Organic two-octave breathing — texture, not event.
           noise: `
-      .wm-dots ${sel} {
-        animation: wm-drift ${dur}s ease-in-out infinite;
-        animation-delay: calc(var(--wm-pn) * ${dur}s * -1);
+      .mappo-dots ${sel} {
+        animation: mappo-drift ${dur}s ease-in-out infinite;
+        animation-delay: calc(var(--mappo-pn) * ${dur}s * -1);
       }
-      @keyframes wm-drift {
+      @keyframes mappo-drift {
         0%, 100% { transform: translateY(0) scale(1); }
-        50%      { transform: translateY(calc(var(--wm-a, 1) * -${(amp * 0.75).toFixed(1)}px)) scale(1.1); }
+        50%      { transform: translateY(calc(var(--mappo-a, 1) * -${(amp * 0.75).toFixed(1)}px)) scale(1.1); }
       }`,
           // Concentric rings expanding from the map's center.
           ripple: `
-      .wm-dots ${sel} {
-        animation: wm-ripple ${dur}s linear infinite;
-        animation-delay: calc(var(--wm-pr) * ${dur}s * -1);
+      .mappo-dots ${sel} {
+        animation: mappo-ripple ${dur}s linear infinite;
+        animation-delay: calc(var(--mappo-pr) * ${dur}s * -1);
       }
-      @keyframes wm-ripple {
+      @keyframes mappo-ripple {
         0%   { transform: translateY(0) scale(1); }
-        ${wRipple.rise}%  { transform: translateY(calc(var(--wm-a, 1) * -${(amp * 0.8).toFixed(1)}px)) scale(1.18); }
+        ${wRipple.rise}%  { transform: translateY(calc(var(--mappo-a, 1) * -${(amp * 0.8).toFixed(1)}px)) scale(1.18); }
         ${wRipple.settle}% { transform: translateY(0) scale(1); }
         100% { transform: translateY(0) scale(1); }
       }`,
           // A sonar scanline crossing west→east — the thinnest front.
           sweep: `
-      .wm-dots ${sel} {
-        animation: wm-sweep ${dur}s linear infinite;
-        animation-delay: calc(var(--wm-ps) * ${dur}s * -1);
+      .mappo-dots ${sel} {
+        animation: mappo-sweep ${dur}s linear infinite;
+        animation-delay: calc(var(--mappo-ps) * ${dur}s * -1);
       }
-      @keyframes wm-sweep {
+      @keyframes mappo-sweep {
         0%   { transform: translateY(0) scale(1); }
-        ${wSweep.rise}% { transform: translateY(calc(var(--wm-a, 1) * -${(amp * 0.7).toFixed(1)}px)) scale(1.28); }
+        ${wSweep.rise}% { transform: translateY(calc(var(--mappo-a, 1) * -${(amp * 0.7).toFixed(1)}px)) scale(1.28); }
         ${wSweep.settle}% { transform: translateY(0) scale(1); }
         100% { transform: translateY(0) scale(1); }
       }`,
           // Uncorrelated twinkle — quick scale pops scattered by high-freq noise.
           sparkle: `
-      .wm-dots ${sel} {
-        animation: wm-sparkle ${dur}s linear infinite;
-        animation-delay: calc(var(--wm-pk) * ${dur}s * -1);
+      .mappo-dots ${sel} {
+        animation: mappo-sparkle ${dur}s linear infinite;
+        animation-delay: calc(var(--mappo-pk) * ${dur}s * -1);
       }
-      @keyframes wm-sparkle {
+      @keyframes mappo-sparkle {
         0%   { transform: scale(1); }
-        ${wSparkle.rise}% { transform: scale(calc(1 + var(--wm-a, 1) * 0.45)); }
+        ${wSparkle.rise}% { transform: scale(calc(1 + var(--mappo-a, 1) * 0.45)); }
         ${wSparkle.settle}% { transform: scale(1); }
         100% { transform: scale(1); }
       }`
@@ -816,8 +816,8 @@ if (this._overlayLayer) {
         return modes[o.animation] ?? "";
       })() : ""}
       @media (prefers-reduced-motion: reduce) {
-        .wm-dot, .wm-marker, .wm-marker-ring { animation: none !important; transition: none !important; }
-        .wm-marker-ring { opacity: 0; }
+        .mappo-dot, .mappo-marker, .mappo-marker-ring { animation: none !important; transition: none !important; }
+        .mappo-marker-ring { opacity: 0; }
       }
     `;
   }
@@ -826,7 +826,7 @@ if (this._overlayLayer) {
 
   #bindEvents(svg) {
     const detailFor = (target) => {
-      const pos = target.closest?.(".wm-pos");
+      const pos = target.closest?.(".mappo-pos");
       if (!pos) return null;
       if (pos.dataset.city !== undefined) {
         return { kind: "city", detail: {
@@ -846,7 +846,7 @@ if (this._overlayLayer) {
       const cb = this.options[`on${kind === "city" ? "City" : "Dot"}${phase}`];
       if (cb) cb(detail);
       this.container.dispatchEvent(new CustomEvent(
-        `worldmap:${kind}${phase.toLowerCase()}`,
+        `mappo:${kind}${phase.toLowerCase()}`,
         { detail, bubbles: true }
       ));
     };

@@ -20,7 +20,7 @@
     NOT counter-rotated, so its axial tilt stays fixed in space — which is the
     whole point of an axial tilt. */
  .carrier{position:absolute;left:50%;top:50%;width:210px;height:210px;margin:-105px 0 0 -105px;will-change:transform}
- world-map{display:block;width:100%}
+ mappo-world{display:block;width:100%}
  .hud{position:absolute;left:0;bottom:0;padding:14px 18px;font:12px/1.5 ui-monospace,monospace;color:var(--muted)}
  .hud b{color:var(--ink);font-weight:600}
  nav{padding:0 28px 20px}
@@ -29,7 +29,7 @@
 <body>
 <header>
   <h1>Earth in orbit</h1>
-  <p class="sub">One <code>&lt;world-map mode="globe"&gt;</code> spinning on a fixed 23.44° axis while its
+  <p class="sub">One <code>&lt;mappo-world mode="globe"&gt;</code> spinning on a fixed 23.44° axis while its
   container is translated around the sun. mappo draws the planet; six lines of CSS transform draw the year.
   <a href="./index.html">← all demos</a></p>
 </header>
@@ -38,7 +38,7 @@
   <div class="orbit-path"></div>
   <div class="sun"></div>
   <div class="carrier" id="carrier">
-    <world-map id="earth"
+    <mappo-world id="earth"
       mode="globe"
       cols="150"
       land="solid outline"
@@ -57,7 +57,7 @@
       tilt="23.44"
       roll="0"
       rotate-speed="45"
-      globe-ring="true"></world-map>
+      globe-ring="true"></mappo-world>
   </div>
   <div class="hud">
     <div>axial tilt <b>23.44°</b> — fixed in space, never counter-rotated</div>

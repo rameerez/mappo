@@ -64,7 +64,7 @@
     .hero .lede strong{color:var(--ink);font-weight:600}
     .hero pre{margin:0 0 18px}
     .hero-stage{position:relative;min-width:0}
-    .hero-stage world-map{max-width:470px;margin:0 auto}
+    .hero-stage mappo-world{max-width:470px;margin:0 auto}
 
     /* Pills over the sphere. mappo hands each one a depth from 0 to 1 and hides
        the ones that have turned away; the rest is ordinary CSS. */
@@ -83,7 +83,7 @@
     .worlds{grid-template-columns:repeat(auto-fit,minmax(430px,1fr))}
     .worlds .art{height:262px;display:grid;place-items:center;overflow:hidden;
       padding:0;background:var(--bg);border-bottom:1px solid var(--line)}
-    .worlds .art.round world-map{width:262px}
+    .worlds .art.round mappo-world{width:262px}
     .worlds .card p{min-height:4.4em}
     .worlds .card pre{font-size:11.5px}
 
@@ -92,7 +92,7 @@
       background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
     @media(max-width:940px){.bench{grid-template-columns:1fr}.knobs{border-left:0!important;border-top:1px solid var(--line)}}
     .bench-view{min-width:0;display:flex;flex-direction:column;justify-content:center;padding:20px}
-    .bench-view world-map{max-width:620px;margin:0 auto}
+    .bench-view mappo-world{max-width:620px;margin:0 auto}
     #eventlog{font:12px/1.5 ui-monospace,monospace;color:var(--muted);
       min-height:1.5em;margin:.5rem 0 0;text-align:center}
     .knobs{display:flex;flex-direction:column;gap:16px;margin:0;padding:20px;
@@ -168,13 +168,13 @@
     no network calls — the whole planet ships in the file.</p>
     <pre><code>&lt;script type="module" src="https://unpkg.com/mappo"&gt;&lt;/script&gt;
 
-&lt;world-map mode="globe"
-  land="solid outline" land-source="vector"&gt;&lt;/world-map&gt;</code></pre>
+&lt;mappo-world mode="globe"
+  land="solid outline" land-source="vector"&gt;&lt;/mappo-world&gt;</code></pre>
     <p class="note">That is the entire integration. <strong>69&nbsp;KB gzipped</strong>,
     zero dependencies, MIT.</p>
   </div>
   <div class="hero-stage">
-    <world-map id="hero" mode="globe" cols="170" rotate-speed="5"
+    <mappo-world id="hero" mode="globe" cols="170" rotate-speed="5"
       tilt="18" roll="-14.3"
       land="solid outline" land-source="vector"
       land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="0.75"
@@ -190,7 +190,7 @@
       <a class="pin" data-lat="40.7"  data-lon="-74.0" href="./demo/"><span>New York</span></a>
       <a class="pin" data-lat="1.35"  data-lon="103.8" href="./demo/"><span>Singapore</span></a>
       <a class="pin" data-lat="55.75" data-lon="37.62" href="./demo/"><span>Moscow</span></a>
-    </world-map>
+    </mappo-world>
   </div>
 </section>
 
@@ -200,32 +200,32 @@
 
   <div class="card">
     <div class="art">
-      <world-map cols="130" cities="London, Lagos, Singapore, New York, São Paulo, Sydney"
+      <mappo-world cols="130" cities="London, Lagos, Singapore, New York, Sao Paulo, Sydney"
         dot-color="var(--dot)" marker-color="var(--accent)" marker-scale="1.6"
-        animation="wave" animation-period="7" tilt="34" perspective="900"></world-map>
+        animation="wave" animation-period="7" tilt="34" perspective="900"></mappo-world>
     </div>
     <div class="meta">
       <h3>The dot field, lying down</h3>
       <p>The look mappo is named for: land as dots at whatever resolution you ask for,
       a surface wave that reads as height under tilt, cities by name.</p>
-      <pre><code>&lt;world-map tilt="34" animation="wave"
+      <pre><code>&lt;mappo-world tilt="34" animation="wave"
   cities="London, Lagos, Singapore"&gt;</code></pre>
     </div>
   </div>
 
   <div class="card">
     <div class="art">
-      <world-map cols="300" lat-min="-56" lat-max="78"
+      <mappo-world cols="260" lat-min="-56" lat-max="78"
         land="solid outline" land-source="vector" borders
         land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="0.5"
         borders-color="var(--coast)" borders-width="0.35" borders-opacity="0.4"
-        background="var(--sea)" ocean-color="var(--ocean)"></world-map>
+        background="var(--sea)" ocean-color="var(--ocean)"></mappo-world>
     </div>
     <div class="meta">
       <h3>Real coastlines, and borders</h3>
       <p>The Natural Earth outline instead of the grid — smooth at any size, with
       country borders a raster could never express, over a dotted sea.</p>
-      <pre><code>&lt;world-map land="solid outline"
+      <pre><code>&lt;mappo-world land="solid outline"
   land-source="vector" borders
   ocean-color="#dfe6da"&gt;</code></pre>
     </div>
@@ -233,35 +233,35 @@
 
   <div class="card">
     <div class="art round">
-      <world-map mode="globe" cols="170" rotate-speed="7" tilt="24"
+      <mappo-world mode="globe" cols="170" rotate-speed="7" tilt="24"
         dot-color="var(--dot)" background="var(--ocean)"
         cities="Reykjavik, Cairo, Delhi, Perth, Santiago"
-        marker-color="var(--accent)" marker-scale="1.6"></world-map>
+        marker-color="var(--accent)" marker-scale="1.6"></mappo-world>
     </div>
     <div class="meta">
       <h3>A globe you can grab</h3>
       <p>The same dots on a canvas sphere: drag to spin, flick for momentum,
       release and it keeps its heading. Hover and click still reach every dot.</p>
-      <pre><code>&lt;world-map mode="globe" tilt="24"
+      <pre><code>&lt;mappo-world mode="globe" tilt="24"
   rotate-speed="7" ocean-color="#dfe6da"&gt;</code></pre>
     </div>
   </div>
 
   <div class="card">
     <div class="art round">
-      <world-map mode="globe" cols="230" rotate-speed="0" interactive="false"
+      <mappo-world mode="globe" cols="230" rotate-speed="0" interactive="false"
         focus="46.5,2.35" tilt="26"
         dot-color="var(--dot)" background="var(--ocean)"
         markers="France@48.86,2.35" marker-shape="pin" marker-scale="4"
         marker-color="var(--accent)" marker-pulse="true"
         highlight-color="var(--coast)"
-        highlight-polygon='[[[51.1,2.5],[50.4,1.5],[49.4,-1.1],[48.6,-4.6],[47.3,-2.5],[46.2,-1.2],[43.4,-1.8],[42.5,3.0],[43.5,7.0],[44.3,7.5],[46.4,6.8],[47.6,7.6],[49.0,8.1],[49.5,6.3],[50.4,4.9],[51.1,2.5]]]'></world-map>
+        highlight-polygon='[[[51.1,2.5],[50.4,1.5],[49.4,-1.1],[48.6,-4.6],[47.3,-2.5],[46.2,-1.2],[43.4,-1.8],[42.5,3.0],[43.5,7.0],[44.3,7.5],[46.4,6.8],[47.6,7.6],[49.0,8.1],[49.5,6.3],[50.4,4.9],[51.1,2.5]]]'></mappo-world>
     </div>
     <div class="meta">
       <h3>Pointing at one place</h3>
       <p>A globe that faces a country, drops a real map pin on it and lights up the
       whole territory. You bring the rings; mappo ships no boundary data on purpose.</p>
-      <pre><code>&lt;world-map focus="46.5,2.35" rotate-speed="0"
+      <pre><code>&lt;mappo-world focus="46.5,2.35" rotate-speed="0"
   marker-shape="pin" highlight-polygon="[…]"&gt;</code></pre>
     </div>
   </div>
@@ -300,9 +300,9 @@ import "mappo"</code></pre>
 <h2>Try every knob <span>— this is the build you would install</span></h2>
 <div class="bench">
   <div class="bench-view">
-    <world-map id="map" mode="globe" tilt="30"
+    <mappo-world id="map" mode="globe" tilt="30"
       background="var(--sea)" ocean-color="var(--ocean)" dot-color="#9fb08f"
-      cities="London, Lagos, Singapore, New York, Tokyo, Sao Paulo, Nairobi, Sydney"></world-map>
+      cities="London, Lagos, Singapore, New York, Tokyo, Sao Paulo, Nairobi, Sydney"></mappo-world>
     <p id="eventlog">Hover the dots. Click a city.</p>
   </div>
   <aside class="knobs" aria-label="Live options">
@@ -425,7 +425,7 @@ import "mappo"</code></pre>
     <p>The flat map is light DOM: every dot hoverable, every marker focusable, everything
     restylable from your stylesheet. Colours accept <code>var(--token)</code> and are
     re-resolved on a theme flip, so a dark-mode toggle repaints the map for free. Events
-    bubble as <code>worldmap:cityclick</code> and friends in both modes — the globe
+    bubble as <code>mappo:cityclick</code> and friends in both modes — the globe
     re-earns them with canvas hit-testing.</p>
   </div>
   <div>
@@ -509,7 +509,7 @@ import "mappo"</code></pre>
 </div>
 
 <p class="note" style="margin-top:22px">
-  The full API — the <code>WorldMap</code> class, callbacks, and low-level exports like
+  The full API — the <code>Mappo</code> class, callbacks, and low-level exports like
   <code>isLand(lat, lon)</code>, <code>landShapes()</code> and the city registry — is in the
   <a href="https://github.com/rameerez/mappo#readme">README</a>.
 </p>
@@ -612,9 +612,9 @@ import "mappo"</code></pre>
   landSel.addEventListener("input", syncLand);
   syncLand();
 
-  map.addEventListener("worldmap:cityclick", (e) =>
+  map.addEventListener("mappo:cityclick", (e) =>
     log.textContent = `city click → ${e.detail.name} (${e.detail.lat}, ${e.detail.lon})`);
-  map.addEventListener("worldmap:dotclick", (e) =>
+  map.addEventListener("mappo:dotclick", (e) =>
     log.textContent = `dot click → lat ${e.detail.lat.toFixed(1)}, lon ${e.detail.lon.toFixed(1)}`);
 
   // Live star count. Unauthenticated GitHub API (60 req/h per visitor IP),

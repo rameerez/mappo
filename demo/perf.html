@@ -27,14 +27,14 @@
   </p>
   <button id="run">Run full suite</button>
   <table id="results"><tr><th>scenario</th><th>metric</th><th>value</th><th>budget</th><th></th></tr></table>
-  <div id="stage"><world-map id="map" cities="London, Lagos, Singapore, New York, Tokyo"></world-map></div>
+  <div id="stage"><mappo-world id="map" cities="London, Lagos, Singapore, New York, Tokyo"></mappo-world></div>
 
   <script type="module">
-    import { WorldMap } from "../dist/mappo.js";
+    import { Mappo } from "../dist/mappo.js";
     // Deep console mode: every internal decision logs as "[mappo] …",
-    // every harness metric as "[wm-perf] …" — filter the console by either.
-    WorldMap.debug = true;
-    console.info("[wm-perf] deep console output ON — filter: mappo|wm-perf");
+    // every harness metric as "[mappo-perf] …" — filter the console by either.
+    Mappo.debug = true;
+    console.info("[mappo-perf] deep console output ON — filter: mappo|mappo-perf");
     const map = document.getElementById("map");
     const results = document.getElementById("results");
     const runBtn = document.getElementById("run");
@@ -59,10 +59,10 @@
     // last dump, plus a heap sample — table form, copy-pasteable.
     const dumpDeep = (scenario, tasks) => {
       if (tasks.length) {
-        console.warn(`[wm-perf] ${scenario}: ${tasks.length} long task(s)`);
+        console.warn(`[mappo-perf] ${scenario}: ${tasks.length} long task(s)`);
         console.table(tasks.map((t) => ({ scenario, startMs: +t.startTime.toFixed(0), durationMs: +t.duration.toFixed(1) })));
       } else {
-        console.info(`[wm-perf] ${scenario}: zero long tasks`);
+        console.info(`[mappo-perf] ${scenario}: zero long tasks`);
       }
       const spans = performance.getEntriesByType("measure").filter((m) => m.name.startsWith("wm:"));
       if (spans.length) {
@@ -77,7 +77,7 @@
         performance.clearMeasures();
       }
       if (performance.memory) {
-        console.info(`[wm-perf] ${scenario}: heap ${(performance.memory.usedJSHeapSize / 1048576).toFixed(1)}MB`);
+        console.info(`[mappo-perf] ${scenario}: heap ${(performance.memory.usedJSHeapSize / 1048576).toFixed(1)}MB`);
       }
     };
 
@@ -90,7 +90,7 @@
         await settle(100);
         if (nodeCount() !== prevNodes) { await settle(300); return true; }
       }
-      console.warn("[wm-perf] waitForRebuild timed out — scene unchanged");
+      console.warn("[mappo-perf] waitForRebuild timed out — scene unchanged");
       return false;
     }
 
@@ -218,12 +218,12 @@
       map.setAttribute("rotate-speed", "4");
       map.setAttribute("cols", "120");
       await settle(1500);
-      row("globe → flat swap", "svg restored", document.querySelector("world-map svg") ? "yes" : "NO", "yes", !!document.querySelector("world-map svg"));
+      row("globe → flat swap", "svg restored", document.querySelector("mappo-world svg") ? "yes" : "NO", "yes", !!document.querySelector("mappo-world svg"));
     }
 
     async function hoverStorm() {
       // Synthetic mouseover across 500 random dots — event delegation cost.
-      const dots = [...document.querySelectorAll("#stage .wm-pos")];
+      const dots = [...document.querySelectorAll("#stage .mappo-pos")];
       takeLongTasks();
       const t0 = performance.now();
       for (let i = 0; i < 500; i++) {
@@ -251,7 +251,7 @@
         const [scenario, metric, value, budget, ok] = [...tr.children].map((td) => td.textContent);
         return { scenario, metric, value, budget, ok };
       });
-      console.info("[wm-perf] SUITE COMPLETE — full verdict:");
+      console.info("[mappo-perf] SUITE COMPLETE — full verdict:");
       console.table(verdict);
       runBtn.disabled = false;
     });

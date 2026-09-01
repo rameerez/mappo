@@ -1,14 +1,14 @@
 // mappo — a dotted world map as a zero-dependency web component.
 //
-//   import "mappo";           // side effect: registers <world-map>
-//   <world-map cities="London, Lagos"></world-map>
+//   import "mappo";           // side effect: registers <mappo-world>
+//   <mappo-world cities="London, Lagos"></mappo-world>
 //
 //   // or the programmatic API:
-//   import { WorldMap } from "mappo";
-//   new WorldMap(el, { cities: ["Tokyo"], tilt: 40, animation: "wave" });
+//   import { Mappo } from "mappo";
+//   new Mappo(el, { cities: ["Tokyo"], tilt: 40, animation: "wave" });
 
-export { WorldMap, DEFAULTS, snapToLand } from "./renderer.js";
-export { WorldMapElement, register } from "./element.js";
+export { Mappo, DEFAULTS, snapToLand } from "./renderer.js";
+export { MappoElement, register } from "./element.js";
 export { CITIES, resolveCity } from "./cities.js";
 export { isLand, MASK_W, MASK_H } from "./mask.js";
 export { project, cellCenter, cellCorner, projectNormalized } from "./projection.js";
