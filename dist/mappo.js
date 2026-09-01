@@ -268,7 +268,7 @@ export function registerBody(body) {
   // Anything already on the page that asked for this body by name was drawn
   // as Earth. Redraw it as what it asked to be.
   for (const m of LIVE) {
-    if (String(m.options?.body ?? "").toLowerCase() === id) { m._body = body; m.render(); }
+    if (String(m.options?.body ?? "").toLowerCase() === id) m.adoptBody(body);
   }
   return body;
 }
@@ -1981,11 +1981,26 @@ export class Mappo {
     // Which sphere. Resolved once here and once per update, never per cell.
     this._body = resolveBody(this.options.body);
     // A body knows the band worth drawing — the Moon wants its poles, Earth
-    // does not want its ice. Only when the caller has not said otherwise.
-    if (!("latRange" in options) && !("latMin" in options) && !("latMax" in options) &&
-        this._body.latRange) this.options.latRange = this._body.latRange;
-    this._dotsCache = new Map(); // "cols|latMin|latMax" → dots markup string
+    // does not want its ice. Only when the caller has not said otherwise —
+    // and remembered, because a body that registers LATER has to be allowed
+    // to bring its own band with it.
+    this._bodyOwnsLatRange =
+      !("latRange" in options) && !("latMin" in options) && !("latMax" in options);
+    if (this._bodyOwnsLatRange && this._body.latRange) this.options.latRange = this._body.latRange;
+    this._dotsCache = new Map(); // "body|cols|latMin|latMax" → dots markup string
     trackMap(this);
+    this.render();
+  }
+
+  // Swap the sphere under a map that has already drawn. Two things have to
+  // happen together and used not to: the band the body asked for is
+  // re-applied (the Moon wants its poles), and the geometry is rebuilt from
+  // scratch. Both caches are body-keyed, so "rebuild" really does recompute
+  // rather than replay the Earth that was drawn while the pack was loading.
+  adoptBody(body) {
+    if (body === this._body) return;
+    this._body = body;
+    if (this._bodyOwnsLatRange && body.latRange) this.options.latRange = body.latRange;
     this.render();
   }
 
@@ -2024,8 +2039,14 @@ export class Mappo {
   update(options = {}) {
     const changed = Object.keys(options).filter((k) => !sameOption(options[k], this.options[k]));
     Object.assign(this.options, options);
-    if (changed.includes("body")) this._body = resolveBody(this.options.body);
     if (changed.length === 0) return;
+    // Like mode: a different sphere is different geometry, so it skips the
+    // patch tiers entirely rather than hoping `body` appears in one of them.
+    if (changed.includes("body")) {
+      dbg("update: body →", this.options.body, "→ full rebuild");
+      this.adoptBody(resolveBody(this.options.body));
+      return;
+    }
 
     if (changed.every((k) => CALLBACK_KEYS.has(k))) {
       dbg("update: callbacks only", changed, "→ no work");
@@ -2337,7 +2358,9 @@ if (this._overlayLayer) {
     // path, so leaving it out means turning borders off replays a cached scene
     // that still has them. (Caught by the demo toggles, not by a unit test —
     // cache keys only lie when you change the thing they forgot.)
-    const key = `land|${o.landSource}|${o.borders ? "b" : ""}|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
+    // The body is in the key. Without it a map that drew Earth while its
+    // pack was still loading replays that Earth for ever after.
+    const key = `land|${this._body.id}|${o.landSource}|${o.borders ? "b" : ""}|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
     let geom = this._dotsCache.get(key);
     if (!geom) {
       const { cells, loops } = buildLand(grid, { body: this._body });
@@ -2387,7 +2410,7 @@ if (this._overlayLayer) {
   }
 
   #dotsMarkup(grid) {
-    const key = `${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
+    const key = `${this._body.id}|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
     const cached = this._dotsCache.get(key);
     if (cached) { dbg(`dots cache HIT ${key}`); this._dotCount = cached.dots; return cached.markup; }
     dbg(`dots cache MISS ${key} — computing`);

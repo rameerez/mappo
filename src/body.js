@@ -64,7 +64,7 @@ export function registerBody(body) {
   // Anything already on the page that asked for this body by name was drawn
   // as Earth. Redraw it as what it asked to be.
   for (const m of LIVE) {
-    if (String(m.options?.body ?? "").toLowerCase() === id) { m._body = body; m.render(); }
+    if (String(m.options?.body ?? "").toLowerCase() === id) m.adoptBody(body);
   }
   return body;
 }
