@@ -82,7 +82,8 @@ function saySpan(ms) {
  *   can picture; "1 mo/s" does. Defaults to the multiplier.
  */
 export function createClock({ mount, windowH = 48, speeds = SPEEDS, onScrub, hint = "",
-                              rateLabel = (w) => `${w < 0 ? "−" : ""}${Math.abs(w)}×` } = {}) {
+                              rateLabel = (w) => `${w < 0 ? "−" : ""}${Math.abs(w)}×`,
+                              startSpeed = 1 } = {}) {
   injectCss();
   const windowMs = windowH * 3600000;
   const minutes = Math.round(windowMs / 60000);
@@ -107,7 +108,9 @@ export function createClock({ mount, windowH = 48, speeds = SPEEDS, onScrub, hin
 
   let simTime = Date.now();
   let lastReal = Date.now();
-  let speedIx = speeds.indexOf(1) >= 0 ? speeds.indexOf(1) : Math.floor(speeds.length / 2);
+  const home = speeds.indexOf(1) >= 0 ? speeds.indexOf(1) : Math.floor(speeds.length / 2);
+  // A page whose whole point is motion should not open standing still.
+  let speedIx = speeds.indexOf(startSpeed) >= 0 ? speeds.indexOf(startSpeed) : home;
   let playing = true, scrubbing = false;
 
   const api = {
@@ -169,7 +172,7 @@ export function createClock({ mount, windowH = 48, speeds = SPEEDS, onScrub, hin
   el("reset").onclick = () => {
     api.setTime(Date.now());
     scrub.value = "0";
-    setSpeed(speeds.indexOf(1) >= 0 ? speeds.indexOf(1) : speedIx);
+    setSpeed(speeds.indexOf(startSpeed) >= 0 ? speeds.indexOf(startSpeed) : home);
     onScrub?.();
   };
 

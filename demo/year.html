@@ -110,17 +110,18 @@
       <span id="subpoint">—</span>
     </div>
     <div id="globewrap">
-      <mappo-world id="earth" mode="globe" cols="230" rotate-speed="0" interactive="false"
-        land="solid outline" land-source="vector"
-        land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="0.7"
+      <mappo-world id="earth" mode="globe" cols="100" rotate-speed="0" interactive="false"
+        land="outline" land-source="vector"
+        land-stroke="var(--coast)" land-stroke-width="0.85"
         background="var(--sea)"
         graticule meridians="24" parallels="11"
         graticule-color="var(--grid)" equator-color="var(--coast)"
         graticule-opacity="0.8" equator-opacity="0.5" globe-ring="true"></mappo-world>
       <canvas id="pins"></canvas>
     </div>
-    <p class="enote">The whole disc is daylight: its edge is the terminator, and
-    the pole leaning toward you or away is the season.</p>
+    <p class="enote">The whole disc is daylight: its edge is the terminator.
+    The dashed line is the rotation axis — how far the pole sits from the middle
+    is the 23.4° tilt, seen from the Sun, and it is the whole of the seasons.</p>
     <div id="clocks"></div>
   </div>
 </div>
@@ -159,6 +160,7 @@ const clock = createClock({
   mount: $("tc"),
   windowH: 24 * 400,
   speeds: SPEEDS,
+  startSpeed: 3600,          // an hour a second: the world visibly turns
   rateLabel: (w) => (w < 0 ? "−" : "") + (RATE[Math.abs(w)] ?? `${Math.abs(w)}×`),
   hint: "drag to move a year either way",
   onScrub: () => { paint(); }
@@ -364,12 +366,13 @@ function drawOrbit(s) {
 // hemisphere and its edge IS the terminator — no shading to get wrong.
 let aimedAt = null;
 function aimEarth(s) {
-  // Re-aiming is cheap now, but not free: skip it until the world has actually
-  // turned enough to see, which is a fifth of a degree.
-  if (aimedAt && Math.abs(aimedAt.lon - s.subLon) < 0.2 && Math.abs(aimedAt.dec - s.dec) < 0.05) return;
+  // One update, not two attributes. Every setAttribute is a whole update
+  // cycle, and two of them at 230 cols with a filled landmass cost 24 ms a
+  // frame — a third of the budget to turn a globe that was already drawn.
+  // Outline land at 100 cols through the JS API is 2.2 ms.
+  if (aimedAt && Math.abs(aimedAt.lon - s.subLon) < 0.15 && Math.abs(aimedAt.dec - s.dec) < 0.02) return;
   aimedAt = { lon: s.subLon, dec: s.dec };
-  earth.setAttribute("focus", `${s.dec.toFixed(3)},${s.subLon.toFixed(3)}`);
-  earth.setAttribute("tilt", s.dec.toFixed(3));
+  earth.map?.update({ focus: { lat: s.dec, lon: s.subLon }, tilt: s.dec });
 }
 
 function drawPins(s) {
@@ -378,6 +381,33 @@ function drawPins(s) {
   pctx.clearRect(0, 0, pins.width, pins.height);
   pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (!map?.locate) return;
+
+  // The axis, pole to pole. In a sun's-eye view the 23.4° is not a lean you
+  // add — it is already here, as the distance the pole sits from the middle of
+  // the disc. At an equinox the axis runs edge to edge through the centre; at
+  // a solstice the near pole has swung 23.4° toward you and the far one has
+  // gone behind the limb. Drawing the line is just making that legible.
+  const np = map.locate(90, 0), sp = map.locate(-90, 0);
+  if (np && sp) {
+    const dx = np.x - sp.x, dy = np.y - sp.y;
+    const n = Math.hypot(dx, dy) || 1;
+    const pad = 13;
+    pctx.strokeStyle = "#8fb4d6"; pctx.lineWidth = 1;
+    pctx.globalAlpha = 0.4;
+    pctx.setLineDash([ 3, 3 ]);
+    pctx.beginPath();
+    pctx.moveTo(sp.x - dx / n * pad, sp.y - dy / n * pad);
+    pctx.lineTo(np.x + dx / n * pad, np.y + dy / n * pad);
+    pctx.stroke();
+    pctx.setLineDash([]);
+    pctx.globalAlpha = 0.9;
+    pctx.fillStyle = "#a9c8e4";
+    pctx.font = "600 9px ui-monospace, SFMono-Regular, Menlo, monospace";
+    pctx.textAlign = "center"; pctx.textBaseline = "middle";
+    pctx.fillText("N", np.x + dx / n * (pad + 6), np.y + dy / n * (pad + 6));
+    pctx.globalAlpha = 1;
+  }
+
   for (const c of CITIES) {
     const q = map.locate(c.lat, c.lon);
     if (!q || !q.front) continue;
@@ -423,6 +453,10 @@ function readouts(s) {
     [ "sun overhead at", `${s.dec >= 0 ? "N" : "S"}${Math.abs(s.dec).toFixed(2)} ` +
                          `${s.subLon >= 0 ? "E" : "W"}${Math.abs(s.subLon).toFixed(2)}` ],
     [ "axial tilt", `${s.obliquity.toFixed(3)}°` ],
+    // The angle between the rotation axis and the direction to the Sun. It is
+    // exactly 90° − declination, so it swings between 66.56° and 113.44° and
+    // passes through a right angle at each equinox — the tilt, as one number.
+    [ "axis to Sun", `<b>${(90 - s.dec).toFixed(2)}</b>°` ],
     [ "sundial − clock", `${s.eot >= 0 ? "+" : "−"}${Math.abs(s.eot).toFixed(1)} min` ],
     [ ev ? `to ${ev.label.split(" ")[0]} ${ev.label.split(" ")[1]}` : "", ev ? `${days.toFixed(1)} d` : "" ]
   ];
