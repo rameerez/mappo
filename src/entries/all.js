@@ -1,5 +1,5 @@
 // mappo/all — everything in one file: the core, the globe, every projection,
-// vector outlines with Earth's rings. For the page that wants one URL and does
+// vector outlines with Earth's rings, links. For the page that wants one URL and does
 // not mind the bytes:
 //
 //   <script type="module" src="https://unpkg.com/mappo/dist/all.js"></script>
@@ -16,4 +16,5 @@ export {
 } from "./globe.js";
 export { BUILTIN_PROJECTIONS, adaptProjection, adaptCustom, adaptD3 } from "./projections.js";
 export { stitchRings, projectRings } from "./vector.js";
+export { links, Links, arcPoints, toXYZ, toLatLon } from "../links.js";
 import "../bodies/earth-vector.js";

@@ -220,7 +220,9 @@ const CALLBACK_KEYS = new Set([ "onDotClick", "onDotEnter", "onPlaceClick", "onP
 // drawn the moment its module registers — the doctrine of a body pack that
 // arrives after the page's maps did, applied to renderers. A renderer is a
 // class constructed as (container, options, body, overlays) with update(changed,
-// body), destroy(), locate(lat, lon, radius) and an `element`.
+// body), destroy(), locate(lat, lon, radius) and an `element`. One that draws
+// frames of its own calls `this.onDraw()` after each (Mappo sets it) and may
+// implement redrawLayers() to repaint the layers without a whole frame.
 const RENDERERS = new Map();
 export function registerRenderer(mode, Renderer) {
   if (typeof mode !== "string" || !mode.trim() || mode === "flat") throw new TypeError('registerRenderer needs a mode name other than "flat"');
@@ -355,9 +357,11 @@ export class Mappo {
   // anything on the globe: a flat map has no third dimension to leave.
   // Returns null before the first frame, null for a point the flat map's
   // projection has no place for, and { front: false } for a point the globe
-  // is currently hiding. On the flat map `front` is always true, and the
-  // answer ignores tilt/rotate/perspective — those are a CSS transform on top
-  // of the box this reports in.
+  // is currently hiding. The globe also reports `depth` (facing, 0…1), `z`,
+  // `fade` (the alpha it draws at that depth) and `scale` (pixels per radius
+  // at that point, for widths that should grow toward a camera). On the flat
+  // map `front` is always true, and the answer ignores tilt/rotate/perspective
+  // — those are a CSS transform on top of the box this reports in.
   locate(lat, lon, radius = 1) {
     if (this._renderer) return this._renderer.locate(lat, lon, radius);
     // The LAYOUT box, computed rather than measured: the svg fills the
@@ -369,6 +373,74 @@ export class Mappo {
     if (!p) return null;
     const h = w * this.grid.rows / this.grid.cols;
     return { x: p.x * w, y: p.y * h, depth: 1, front: true };
+  }
+
+  // Your own drawing over the map, on a canvas the map keeps over itself and
+  // redraws with every frame it draws — so a layer built on locate() can never
+  // lag the sphere by a frame, and never has to watch for one:
+  //
+  //   const layer = map.addLayer((ctx, view) => {
+  //     const p = view.map.locate(51.5, -0.1);
+  //     if (p?.front) { ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.fill(); }
+  //   });
+  //   layer.redraw();   // when what YOU draw changed and the map did not move
+  //   layer.remove();
+  //
+  // `draw(ctx, view)` runs in CSS pixels of the map's box ({ width, height,
+  // dpr, map }), on a cleared canvas, inside save/restore. The canvas ignores
+  // the pointer, sits over the map and under the DOM overlays, and is the
+  // map's size: it scales with the box and gets its pixels back at the next
+  // draw (the globe draws on resize; ask the flat map with redraw()).
+  // mappo/links is built on exactly this.
+  addLayer(draw) {
+    if (typeof draw !== "function") throw new TypeError("addLayer needs a draw function");
+    const layer = {
+      draw,
+      redraw: () => this.#redrawLayers(),
+      remove: () => {
+        this._layers.splice(this._layers.indexOf(layer), 1);
+        if (this._layers.length) this.#redrawLayers();
+        else { this._layerCanvas.remove(); this._layerCanvas = null; }
+      }
+    };
+    (this._layers ??= []).push(layer);
+    this.#mountLayers();
+    this.#redrawLayers();
+    return layer;
+  }
+
+  // The one canvas every layer draws on, kept between the renderer's element
+  // and the overlay DOM through renderer swaps.
+  #mountLayers() {
+    if (!this._layers?.length || typeof document === "undefined") return;
+    const c = this._layerCanvas ??= Object.assign(document.createElement("canvas"), { className: "mappo-layer" });
+    c.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none";
+    if (getComputedStyle(this.container).position === "static") this.container.style.position = "relative";
+    const overlay = this._overlayLayer ?? this._renderer?._overlayLayer ?? null;
+    if (c.parentNode !== this.container || c.nextSibling !== overlay) this.container.insertBefore(c, overlay);
+    if (this._renderer) this._renderer.onDraw = () => this.#drawLayers();
+  }
+
+  // A renderer with frames of its own repaints the layers in its next one;
+  // the flat map, which has none, borrows an animation frame.
+  #redrawLayers() {
+    if (this._renderer?.redrawLayers) this._renderer.redrawLayers();
+    else if (!globalThis.requestAnimationFrame) this.#drawLayers();
+    else this._layerRaf ??= requestAnimationFrame(() => { this._layerRaf = null; this.#drawLayers(); });
+  }
+
+  #drawLayers() {
+    const c = this._layerCanvas, w = c?.clientWidth, h = c?.clientHeight;
+    if (!c?.isConnected || !w || !h) return;
+    const dpr = Math.min(globalThis.devicePixelRatio || 1, this.options.maxDpr ?? 2);
+    const W = Math.round(w * dpr), H = Math.round(h * dpr);
+    if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const view = { width: w, height: h, dpr, map: this };
+    for (const layer of this._layers) { ctx.save(); layer.draw(ctx, view); ctx.restore(); }
   }
 
   // Differential update — see the header. Public contract: call with any
@@ -489,6 +561,9 @@ export class Mappo {
   destroy() {
     untrackMap(this);
     clearTimeout(this._rebuildTimer);
+    if (this._layerRaf != null) cancelAnimationFrame(this._layerRaf);
+    this._layerCanvas?.remove();
+    this._layers = this._layerCanvas = this._layerRaf = null;
     this._renderer?.destroy();
     this._renderer = null;
     this.svg = null;
@@ -591,6 +666,10 @@ export class Mappo {
       else this._renderer = new Renderer(this.container, this.options, this._body, this._overlays);
       this._renderer.element?.setAttribute("role", "img");
       this._renderer.element?.setAttribute("aria-label", this.#ariaLabel());
+      // A new renderer replaced the container's children: put the layers back
+      // over it and have them drawn with its next frame.
+      this.#mountLayers();
+      this.#redrawLayers();
       return;
     }
     if (this._renderer) { this._renderer.destroy(); this._renderer = null; }
@@ -675,6 +754,8 @@ export class Mappo {
     dbg(`render: cols=${cols} rows=${rows} · ${projection.id} · build ${buildMs.toFixed(1)}ms · parse ${parseMs.toFixed(1)}ms · total ${this._lastRenderMs.toFixed(1)}ms · ${svg.querySelectorAll("*").length} nodes`);
     if (this._overlayLayer) this._overlayLayer.hidden = o.overlays === false;
     this.#placeOverlays();
+    this.#mountLayers();
+    this.#drawLayers();
   }
 
   // Draw nothing, on purpose, until what the map waits for registers; warn once

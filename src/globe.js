@@ -740,6 +740,8 @@ export class GlobeRenderer {
         if (this._omega !== 0) this.angle = (this.angle + (this._omega * dt) / 1000 + 360) % 360;
       }
       if (this.angle !== this._drawnAngle || animating || this._dirty) this._draw();
+      // Only the layers changed: redraw them over the frame that is already there.
+      else if (this._layersDirty) { this._layersDirty = false; this.onDraw?.(); }
       this._loop();
     });
   }
@@ -1168,18 +1170,32 @@ export class GlobeRenderer {
   // in radii (1 facing you, 0 on the limb plane, −1 the antipode) and `fade`
   // the alpha the globe itself draws at that depth — under fog, the fog's.
   locate(lat, lon, radius = 1) {
-    if (!this._T) return null;
-    const p = this.#project(lat, lon, this._T, radius);
+    const T = this._T;
+    if (!T) return null;
+    const p = this.#project(lat, lon, T, radius);
     return {
       x: p.sx, y: p.sy,
       // The facing, camera included — the same number the overlays get as
       // --mappo-depth, so a layer of your own fades exactly as the pins do.
-      depth: Math.max(0, Math.min(1, this.#facing(p.z / radius, this._T))),
+      depth: Math.max(0, Math.min(1, this.#facing(p.z / radius, T))),
       front: p.front,
       z: p.z / radius,
       fade: p.fade,
-      cx: this._T.cx, cy: this._T.cy, r: this._T.R
+      // Pixels per radius AT THIS POINT: r at the centre plane, more for what
+      // a camera sees nearer, less for what it sees farther — the factor a
+      // line width or a marker drawn there should carry.
+      scale: T.persp ? T.F / (T.D - p.z) : T.R,
+      cx: T.cx, cy: T.cy, r: T.R
     };
+  }
+
+  // Layers (Mappo#addLayer) are drawn by onDraw after every frame. Asking for
+  // them again when nothing else moved costs one layer pass, not a globe: the
+  // loop redraws the layers alone when only this flag is set. Without a loop
+  // (reduced motion, nothing animates) they are drawn at once.
+  redrawLayers() {
+    if (this._static) this.onDraw?.();
+    else this._layersDirty = true;
   }
 
   // Position host-supplied DOM against the sphere.
@@ -1564,5 +1580,8 @@ export class GlobeRenderer {
     // DOM last: the overlay reads the same transform the frame just drew,
     // so labels can never lag the sphere by a frame.
     this.#placeOverlays(T);
+    // And whoever draws over the map (Mappo#addLayer) draws over THIS frame.
+    this._layersDirty = false;
+    this.onDraw?.();
   }
 }

@@ -7,7 +7,8 @@
 //   dist/globe.js                opt-in modules. Each imports the core by the
 //   dist/projections.js          RELATIVE path ./mappo.js and registers itself,
 //   dist/vector.js               so they work from a CDN, a vendored dist/ or a
-//   dist/bodies/earth-vector.js  bundler alike, and the core is never duplicated.
+//   dist/links.js                bundler alike, and the core is never duplicated.
+//   dist/bodies/earth-vector.js
 //   dist/bodies/moon.js          body packs: standalone, import nothing.
 //   dist/bodies/mars.js
 //   dist/all.js                  everything in one file, for the one-URL page.

@@ -172,10 +172,10 @@
 
 &lt;mappo-world mode="globe"
   figure="solid outline" figure-source="vector"&gt;&lt;/mappo-world&gt;</code></pre>
-    <p class="note">That is the entire integration. The core is <strong>21.5&nbsp;KB gzipped</strong>
+    <p class="note">That is the entire integration. The core is <strong>22.0&nbsp;KB gzipped</strong>
     with the whole Earth inside, zero dependencies, MIT. The globe, real coastlines, the other
     projections and other worlds are opt-in modules — or take everything at once in
-    <code>all.js</code>, 56&nbsp;KB. Any world you can describe as a function is a body too.</p>
+    <code>all.js</code>, 60&nbsp;KB. Any world you can describe as a function is a body too.</p>
   </div>
   <div class="hero-stage">
     <mappo-world id="hero" mode="globe" cols="170" rotate-speed="5"
@@ -317,7 +317,7 @@ and an Earth in orbit — in the <a href="./demo/">demo gallery</a>.</p>
 <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
   <div class="card"><div class="meta">
     <h3>A script tag</h3>
-    <p>The 21.5&nbsp;KB core; the element registers itself. For the globe, real coastlines and the
+    <p>The 22.0&nbsp;KB core; the element registers itself. For the globe, real coastlines and the
     other projections, load <code>all.js</code> instead.</p>
     <pre><code>&lt;script type="module"
   src="https://unpkg.com/mappo"&gt;&lt;/script&gt;
@@ -341,7 +341,7 @@ and an Earth in orbit — in the <a href="./demo/">demo gallery</a>.</p>
     <p>Though the point is that you don't need a bundler. Import only what the page uses.</p>
     <pre><code>npm install mappo
 
-import "mappo";              // 21.5 KB: the flat map, the whole Earth
+import "mappo";              // 22.0 KB: the flat map, the whole Earth
 import "mappo/globe";        // + the globe
 import "mappo/projections";  // + Equal Earth, the poles, d3-geo</code></pre>
   </div></div>

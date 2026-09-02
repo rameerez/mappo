@@ -6,7 +6,7 @@
 
 **Maps of any world as a zero-dependency web component.** A dot field or
 vector outlines, flat SVG or a rotating canvas globe, places by name, your own
-HTML positioned on the sphere. The core is **21.5 KB gzipped with the whole
+HTML positioned on the sphere. The core is **22.0 KB gzipped with the whole
 Earth inside**; the globe, the other projections, real coastlines and other
 worlds are opt-in modules that register themselves. No build step, no
 dependencies, MIT.
@@ -70,13 +70,14 @@ registers itself, so order does not matter and nothing is downloaded twice.
 
 | import | adds | gzipped | brotli |
 |---|---|---|---|
-| `mappo` | the core, with the whole Earth inside | **21.5 KB** | 18.5 KB |
-| `mappo/globe` | `mode="globe"` | 8.8 KB | 7.8 KB |
+| `mappo` | the core, with the whole Earth inside | **22.0 KB** | 19.1 KB |
+| `mappo/globe` | `mode="globe"` | 10.2 KB | 9.1 KB |
 | `mappo/projections` | `projection="equal-earth"`, the polar pair, your own or d3-geo projections | 3.7 KB | 3.3 KB |
 | `mappo/vector` | `figure-source="vector"` and `borders` for bodies that carry rings (the Moon and Mars packs do) | 1.8 KB | 1.6 KB |
+| `mappo/links` | `links(map)`: arcs between places and spikes at them, over the globe or the flat map | 2.9 KB | 2.6 KB |
 | `mappo/bodies/earth-vector` | Earth's coastline and border rings; implies `mappo/vector` | 22.0 KB | 19.3 KB |
 | `mappo/bodies/moon`, `mappo/bodies/mars` | other worlds, as packs you register | 9.5 KB, 6.9 KB | 8.3 KB, 6.0 KB |
-| `mappo/all` | everything above except the Moon and Mars, in one self-contained file | 55.8 KB | 48.0 KB |
+| `mappo/all` | everything above except the Moon and Mars, in one self-contained file | 59.8 KB | 51.5 KB |
 
 A map that asks for something whose module has not loaded **waits**: it draws
 nothing (grid contours, for the vector features), warns once after two seconds
@@ -454,7 +455,7 @@ and [docs/performance.md](https://github.com/rameerez/mappo/blob/main/docs/perfo
 ## Globe mode
 
 The same world, wrapped on a sphere and spinning. The globe is the
-`mappo/globe` module (8.8 KB gzipped); a page without it never pays for it:
+`mappo/globe` module (10.2 KB gzipped); a page without it never pays for it:
 
 ```html
 <script type="module">import "mappo"; import "mappo/globe";</script>
@@ -709,7 +710,9 @@ const s = map.locate(lat, lon, 1 + altitudeKm / map.body.radiusKm);
 ```
 
 `depth` runs 0 at the limb to 1 facing you, the same fade the dots wear, so a
-point can be dimmed with the geometry rather than against it. On the flat map
+point can be dimmed with the geometry rather than against it; `scale` is the
+pixels per radius *at that point* — more toward a perspective camera — so a
+width or a marker drawn there can grow the way the dots do. On the flat map
 `front` is always true, the answer follows the map's projection and central
 meridian, it is `null` for a point the projection has no place for, and the
 box is the untransformed layout box — `tilt`/`rotate`/`perspective` are a CSS
@@ -717,6 +720,64 @@ transform applied on top of it.
 
 [The Starlink demo](https://rameerez.github.io/mappo/demo/satellites.html) is
 ten thousand of these calls a frame.
+
+### `addLayer()` — a canvas over the map, redrawn with it
+
+Rather than keep a canvas of your own in step with a turning globe, ask the
+map for one:
+
+```js
+const layer = map.addLayer((ctx, view) => {
+  const p = view.map.locate(51.5, -0.1);
+  if (p?.front) { ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.fill(); }
+});
+layer.redraw();   // when what YOU draw changed and the map did not move
+layer.remove();
+```
+
+`draw(ctx, view)` runs after every frame the map draws, in CSS pixels of the
+map's box (`view` is `{ width, height, dpr, map }`), on a cleared canvas that
+ignores the pointer and sits under the DOM overlays. A parked globe asked to
+`redraw()` repaints the layers alone, not its dots. `mappo/links` is built on
+exactly this and nothing else.
+
+## Links: arcs and spikes — `mappo/links`
+
+Every hero globe draws lines between places — an arc from where a thing began
+to where it landed, a spike where something is happening now. `mappo/links`
+draws them on a layer over the map, from the same `locate()` the overlays
+use, so they register to the pixel on the globe and on the flat map alike:
+
+```js
+import "mappo/globe";
+import { links } from "mappo/links";
+
+const layer = links(document.querySelector("mappo-world").map, { color: "#f46bbe", width: 1.5 });
+const arc = layer.add({ from: "London", to: "Tokyo" });        // a great-circle arc, lifted off the surface
+const pin = layer.add({ at: "Lagos", height: 0.1, tip: 2 });   // a spike 0.1 radii tall, a 2 px dot on top
+arc.range = [ 0, 0.4 ];                                         // the first 40% — animate this for a reveal
+layer.redraw();                                                 // when the map itself did not move
+layer.at(event);                                                // the link under the pointer, or null
+```
+
+A link is a plain object you keep and mutate. `from`, `to` and `at` take a
+gazetteer name, `[lat, lon]` or `{ lat, lon }`. `height` is radii above the
+surface: an arc's peak (0.3 of its half-chord unless set, so hops hug the
+ground and long hauls arc) or a spike's length. `points` replaces the curve
+with your own `[lat, lon, r]` samples. Per link, or as the layer's defaults:
+`color` (the map's marker colour unless set; CSS variables resolve), `width`
+in CSS pixels, `opacity`, `blend: "lighter"` for the additive glow WebGL
+globes have, `fade: true` to fade with the globe's own depth (under fog, with
+the fog), `range` as `[a, b]` fractions of the length, `tip` (a radius, or
+`{ radius, color }`) for a dot at the far end, and `data` for whatever the
+link means to you.
+
+On the globe the far side is cut where the body is in the way, widths grow
+toward a perspective camera, and every vertex is one `locate()`: a link costs
+what it looks like. On the flat map the same points go through the projection
+and are cut at its seam. The module is 2.9 KB gzipped and registers nothing;
+[the GitHub globe demo](https://rameerez.github.io/mappo/demo/github-globe.html)
+is a few hundred of these, opening and merging.
 
 ## The JS API
 
@@ -751,6 +812,8 @@ const map = new Mappo(document.querySelector("#hero-map"), {
 });
 
 map.update({ markerColor: "#ff3b30" }); // re-render with new options, as cheaply as possible
+map.locate(51.5, -0.1);                 // where London is on screen right now
+map.addLayer((ctx, view) => { /* … */ }); // your own canvas over the map, redrawn with it
 map.body;                               // the resolved body object
 map.destroy();
 ```
@@ -778,7 +841,10 @@ The opt-in modules are built on five registrations, and so can yours:
 | `extendBody(id, { outlines, borders, places, … })` | more data for a registered body; live maps redraw | `mappo/bodies/earth-vector` |
 
 Every registration redraws the live maps that were waiting for it, so a module
-can load in any order relative to the page's markup. A module imports what it
+can load in any order relative to the page's markup. Not everything is a
+registration: `mappo/links` draws over the map through `map.addLayer()` and
+`locate()` alone, which is the shape a heat layer or a flight tracker of your
+own would take. A module imports what it
 needs from the core — `resolvePlaces`, `cellCenter`, `buildFigure`,
 `figureOutlines`, `vectorFeature`, `projectPolyline`, `wrapLon` and the
 rest of the names `src/index.js` exports — and the build refuses a module that

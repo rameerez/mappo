@@ -10,7 +10,7 @@ with a body parameter bolted on. Earth is now one body among others, the
 vocabulary is body-neutral, and every body is produced by one pipeline from
 pinned public data.
 
-### The core is 21.5 KB gzipped, with the whole Earth inside
+### The core is 22.0 KB gzipped, with the whole Earth inside
 
 The bare import is now the **core**: the flat map, Earth's land mask and
 gazetteer, the equirectangular projection. Everything else is an opt-in module
@@ -18,13 +18,14 @@ that imports the core by relative path and registers itself:
 
 | import | adds | gzipped |
 |---|---|---|
-| `mappo` | the core | 21.5 KB (18.5 KB brotli) |
-| `mappo/globe` | `mode="globe"` | 8.8 KB |
+| `mappo` | the core | 22.0 KB (19.1 KB brotli) |
+| `mappo/globe` | `mode="globe"` | 10.2 KB |
 | `mappo/projections` | Equal Earth, polar stereographic, custom and d3-geo projections | 3.7 KB |
 | `mappo/vector` | `figure-source="vector"` and `borders`, for bodies that carry rings | 1.8 KB |
+| `mappo/links` | `links(map)`: arcs between places and spikes at them | 2.9 KB |
 | `mappo/bodies/earth-vector` | Earth's coastline and border rings; implies `mappo/vector` | 22.0 KB |
 | `mappo/bodies/moon`, `mappo/bodies/mars` | as before | 9.5 KB, 6.9 KB |
-| `mappo/all` | everything but the Moon and Mars, one self-contained file | 55.8 KB |
+| `mappo/all` | everything but the Moon and Mars, one self-contained file | 59.8 KB |
 
 - **Breaking:** a page that uses `mode="globe"`, a projection other than
   equirectangular, `figure-source="vector"` or `borders` imports the module
@@ -69,6 +70,31 @@ that imports the core by relative path and registers itself:
   demo lost its own facing formula, hysteresis and speed estimate to these.
 - `resolveProjection` with a name nobody has registered still throws; the
   renderer asks `hasProjection()` first and waits instead.
+
+### Layers, and `mappo/links`
+
+- `map.addLayer(draw)`: a canvas over the map that the map redraws with every
+  frame it draws — `draw(ctx, view)` in CSS pixels of the map's box, under the
+  DOM overlays, ignoring the pointer. `layer.redraw()` repaints the layers
+  alone when the map did not move; `layer.remove()` takes it off. A renderer
+  calls `onDraw()` after each frame and may implement `redrawLayers()`.
+- `locate()` reports `scale`, the pixels per radius at the point (more toward
+  a perspective camera), for widths and markers that should grow the way the
+  dots do.
+- **New module `mappo/links`** (2.9 KB gzipped): `links(map, defaults)` gives
+  a layer of arcs and spikes. `add({ from, to, height })` is a great-circle arc
+  lifted by height·sin(πt); `add({ at, height, tip })` a spike with a dot on
+  top; `points` your own `[lat, lon, r]` curve. Per link: `color`, `width`,
+  `opacity`, `blend: "lighter"`, `fade`, `range: [a, b]` for reveal and erase
+  animations, `tip`, `data`. `layer.at(event)` hit-tests. On the globe the far
+  side is cut where the body is in the way and widths follow the camera; on the
+  flat map the curve is cut at the projection's seam. `arcPoints()` is exported
+  for hosts doing their own curves.
+- The GitHub globe demo (`demo/github-globe.html`) rebuilds github.com/globe
+  on it: the dotted sphere with its lighting, the pink arcs of merged pull
+  requests drawing in, holding and erasing, the blue spikes of open ones rising
+  and sinking with the data window, the hover card, the pause toggle and the
+  timezone-dependent opening view, from the original's own constants.
 
 ### Breaking: the vocabulary is figure and ground
 

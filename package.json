@@ -10,6 +10,7 @@
     "./globe": "./dist/globe.js",
     "./projections": "./dist/projections.js",
     "./vector": "./dist/vector.js",
+    "./links": "./dist/links.js",
     "./bodies/earth-vector": "./dist/bodies/earth-vector.js",
     "./bodies/moon": "./dist/bodies/moon.js",
     "./bodies/mars": "./dist/bodies/mars.js"

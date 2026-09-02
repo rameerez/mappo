@@ -17,6 +17,7 @@ test("package exposes the core, the opt-in modules and the body packs, and nothi
     "./globe": "./dist/globe.js",
     "./projections": "./dist/projections.js",
     "./vector": "./dist/vector.js",
+    "./links": "./dist/links.js",
     "./bodies/earth-vector": "./dist/bodies/earth-vector.js",
     "./bodies/moon": "./dist/bodies/moon.js",
     "./bodies/mars": "./dist/bodies/mars.js"
@@ -52,7 +53,7 @@ test("the core's export surface is explicit: the public API, and the seam the mo
   assert.deepEqual(Object.keys(root).sort(), expected);
   for (const internal of [
     // the modules' own surfaces do not leak into the core
-    "GlobeRenderer", "buildGlobeFlags", "buildGlobePhases", "buildGlobePoints", "buildGlobeTiles", "latLonToXYZ",
+    "GlobeRenderer", "buildGlobeFlags", "buildGlobePhases", "buildGlobePoints", "buildGlobeTiles", "latLonToXYZ", "links", "arcPoints",
     "stitchRings", "projectRings", "adaptD3", "adaptCustom", "adaptProjection", "BUILTIN_PROJECTIONS", "EQUAL_EARTH",
     // engine internals
     "trackMap", "untrackMap", "validateBody", "traceCells",
@@ -68,7 +69,7 @@ test("the core's export surface is explicit: the public API, and the seam the mo
 const importsOf = (code) => [ ...code.matchAll(/(?:^|[;}\n])\s*import\s*(?:\{[^}]*\}|\*\s+as\s+[\w$]+|[\w$]+)?\s*(?:from\s*)?"([^"]+)"/g) ].map((m) => m[1]);
 
 test("modules import the core by relative path and nothing else; packs import nothing; all.js stands alone", async () => {
-  for (const [ file, from ] of [ [ "globe.js", "./mappo.js" ], [ "projections.js", "./mappo.js" ], [ "vector.js", "./mappo.js" ], [ "bodies/earth-vector.js", "../mappo.js" ] ]) {
+  for (const [ file, from ] of [ [ "globe.js", "./mappo.js" ], [ "projections.js", "./mappo.js" ], [ "vector.js", "./mappo.js" ], [ "links.js", "./mappo.js" ], [ "bodies/earth-vector.js", "../mappo.js" ] ]) {
     assert.deepEqual([ ...new Set(importsOf(await dist(file))) ], [ from ], `${file} imports only the core, relatively`);
   }
   for (const file of [ "bodies/moon.js", "bodies/mars.js", "all.js", "mappo.js" ]) {
