@@ -96,14 +96,33 @@ export function createNearScene({ canvas, textureEl }) {
   scene.add(vehicles);
 
   // Trails, rebuilt when the path changes rather than every frame.
-  const mkLine = (color, width) => {
-    const l = new THREE.Line(new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95, linewidth: width }));
+  // WebGL ignores linewidth, so a trail is one pixel however it is asked for.
+  // That is enough IF it is not also fighting the planet for the same depth:
+  // points at altitude zero are coplanar with the sphere and simply vanish.
+  // Drawn without depth test and after everything else, so a flown path stays
+  // legible against the ground it was flown over.
+  // A trail is a fixed buffer with a draw range, NOT setFromPoints.
+  //
+  // setFromPoints reuses whatever position attribute the geometry already has
+  // and cannot grow it. The first frame of this page is a pre-launch one, where
+  // the trail is a single point, so the buffer gets allocated at capacity one
+  // and every later call is silently clamped to it — a trail that is always
+  // exactly one point long, drawing nothing, with no error anywhere.
+  const TRAIL_MAX = 2048;
+  const mkLine = (color) => {
+    const geo = new THREE.BufferGeometry();
+    const attr = new THREE.BufferAttribute(new Float32Array(TRAIL_MAX * 3), 3);
+    attr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute("position", attr);
+    geo.setDrawRange(0, 0);
+    const l = new THREE.Line(geo, new THREE.LineBasicMaterial({
+      color, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false }));
     l.frustumCulled = false;
+    l.renderOrder = 10;
     scene.add(l);
     return l;
   };
-  const shipTrail = mkLine(0xffd479, 2), boostTrail = mkLine(0x8fb7e8, 2);
+  const shipTrail = mkLine(0xffd479), boostTrail = mkLine(0x8fb7e8);
 
   if (textureEl) {
     // background, because a mappo map is land on nothing — the ocean is the
@@ -121,12 +140,20 @@ export function createNearScene({ canvas, textureEl }) {
       return standOn(THREE, object, { lat, lon, radius: R_EARTH, altitude: altKm, lean, spin: heading });
     },
     setTrail(line, points) {
-      line.geometry.setFromPoints(points);
-      line.geometry.computeBoundingSphere();
+      const attr = line.geometry.getAttribute("position");
+      const n = Math.min(points.length, attr.count);
+      for (let i = 0; i < n; i++) attr.setXYZ(i, points[i].x, points[i].y, points[i].z);
+      attr.needsUpdate = true;
+      line.geometry.setDrawRange(0, n);
     },
     // Look at a place from a given height and distance, tipped toward the
     // horizon — this is the shot the whole module exists for.
-    lookAtSurface(lat, lon, { altKm = 3, backKm = 12, targetAltKm = 0.5, heading = 93 } = {}) {
+    // `heading` is where the vehicle is going; `bearing` is where the CAMERA
+    // stands, and they are not the same wish. Standing downrange puts the
+    // trajectory end-on and foreshortens it to nothing; standing to the side
+    // shows it as the arc it is.
+    lookAtSurface(lat, lon, { altKm = 3, backKm = 12, targetAltKm = 0.5, heading = 93, bearing = null } = {}) {
+      const b = (bearing ?? heading) * RAD;
       const at = latLonToVec(lat, lon, R_EARTH + targetAltKm);
       const up = latLonToVec(lat, lon, 1).normalize();
       const north = new THREE.Vector3(0, 1, 0).sub(up.clone().multiplyScalar(up.y)).normalize();
@@ -135,8 +162,8 @@ export function createNearScene({ canvas, textureEl }) {
       // Launching east from Starbase means the view out is open Gulf; the view
       // back has the Texas coast, the Yucatán and the whole of Mexico behind
       // the vehicle — which is both more legible and the map doing the work.
-      const back = north.clone().multiplyScalar(Math.cos(heading * RAD))
-        .add(east.clone().multiplyScalar(Math.sin(heading * RAD)));
+      const back = north.clone().multiplyScalar(Math.cos(b))
+        .add(east.clone().multiplyScalar(Math.sin(b)));
       camera.position.copy(at)
         .add(back.multiplyScalar(backKm))
         .add(up.clone().multiplyScalar(altKm));

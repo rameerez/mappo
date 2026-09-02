@@ -103,8 +103,8 @@
 <div id="texsrc" aria-hidden="true">
   <mappo-world id="earthFlat" mode="flat" cols="360" lat-min="-90" lat-max="90"
     figure="solid outline" figure-source="vector"
-    figure-color="#1d4a2e" figure-stroke="#6fbf8a" figure-stroke-width="0.3"
-    borders borders-color="#4a7f5e" borders-opacity="0.55"
+    figure-color="#24603a" figure-stroke="#9ae8b6" figure-stroke-width="0.5"
+    borders borders-color="#63a884" borders-opacity="0.7"
     ground-color="#123a5c" background="#123a5c" interactive="false"></mappo-world>
 </div>
 <div class="globe" id="earthWrap">
@@ -491,6 +491,9 @@ function nearScene() {
     for (const o of [ N.stackObj, N.shipObj, N.boostObj ]) N.vehicles.add(o);
     meshesReady = true;
   }
+  // A handle for the console: this is a demo, and being able to poke the
+  // scene from devtools is worth one global.
+  window.mission = { scene: N, THREE };
   return N;
 }
 // A 121 m stack on a 6,371 km planet is a tenth of a pixel from any distance
@@ -525,7 +528,7 @@ function sceneNearEarth(t, w, h) {
 
   if (meshesReady) {
     // Solve the scale for the distance the camera is about to be at.
-    const distKm = STACK_KM * 3.4 + g.alt * 1.5;
+    const distKm = t <= SECO_T ? 430 : STACK_KM * 3.4 + g.alt * 1.6;
     const e = exaggerationFor(distKm) * 0.001;
     for (const o of [ n.stackObj, n.shipObj, n.boostObj ]) o.scale.setScalar(e);
     // Pitch over as the climb proceeds: vertical off the pad, downrange by MECO.
@@ -543,16 +546,19 @@ function sceneNearEarth(t, w, h) {
   }
 
   // Trails, in world space — they are 3D curves now, not screen polylines.
+  // Lifted a couple of kilometres so the early path is not buried in the
+  // surface it starts on — the first hundred seconds are all at altitude zero.
+  const LIFT = 2;
   const ship = [], boost = [];
   for (let x = 0; x <= Math.max(1, t); x += Math.max(1.2, t / 260)) {
     const q = shipGround(x);
-    ship.push(N3.latLonToVec(q.lat, q.lon, N3.R_EARTH + q.alt));
+    ship.push(N3.latLonToVec(q.lat, q.lon, N3.R_EARTH + q.alt + LIFT));
   }
   if (staged) {
     for (let x = 153; x <= Math.min(t, 416); x += 2) {
       const [ ba, bd ] = lerpTable(BOOSTER, x);
       const [ bla, blo ] = downrangeTo(PAD.lat, PAD.lon, 93, bd);
-      boost.push(N3.latLonToVec(bla, blo, N3.R_EARTH + ba));
+      boost.push(N3.latLonToVec(bla, blo, N3.R_EARTH + ba + LIFT));
     }
   }
   n.setTrail(n.shipTrail, ship);
@@ -568,15 +574,24 @@ function sceneNearEarth(t, w, h) {
   // Framed off the vehicle's own size, so the shot holds as the exaggeration
   // is tuned: stand back three-and-a-half vehicle lengths, lift by one, and
   // aim at its middle. Then pull out with the climb.
-  // Distance follows the vehicle's altitude, and the exaggeration above follows
-  // the distance — so the shot holds from the pad to the parking orbit.
-  const dist = STACK_KM * 3.4 + watch.alt * 1.5;
-  n.lookAtSurface(watch.lat, watch.lon, {
-    altKm: dist * 0.30,
-    backKm: dist,
-    targetAltKm: watch.alt + dist * 0.06,
-    heading: 93
-  });
+  // Until SECO the camera does not move. Everything worth watching — liftoff,
+  // max q, staging, the boostback, the entry burn, the catch — happens within
+  // about two hundred kilometres of the pad, so one wide shot from the south
+  // holds all of it and the two paths draw themselves across the Gulf instead
+  // of being chased. After SECO there is nothing left to hold on to, and the
+  // camera follows the ship.
+  if (t <= SECO_T) {
+    n.lookAtSurface(PAD.lat, PAD.lon, {
+      altKm: 165, backKm: 430, targetAltKm: 55,
+      bearing: 183                     // due south of the pad, looking north
+    });
+  } else {
+    const dist = STACK_KM * 3.4 + watch.alt * 1.6;
+    n.lookAtSurface(watch.lat, watch.lon, {
+      altKm: dist * 0.32, backKm: dist,
+      targetAltKm: watch.alt + dist * 0.06, heading: 93
+    });
+  }
   n.render();
   const [ , dr, speed ] = lerpTable(ASCENT, Math.max(0, t));
   return { alt: g.alt, dr, speed };
