@@ -175,6 +175,7 @@
             figure="dots" figure-color="var(--color-dark-accent)"
             distance="2.366" fog="-0.669 1.014"
             rotate-speed="0" interactive="false" background="none"
+            overlay-horizon="0.12 0.02" overlay-still="172"
             graticule meridians="24" parallels="23" graticule-color="var(--graticule)" equator-color="var(--graticule)"
             graticule-opacity="0.04" equator-opacity="0.04" graticule-width="0.5"></mappo-world>
           <!-- The original draws twelve extra great circles through the poles
@@ -324,7 +325,7 @@ const isMobile = () => mobileQuery.matches;
 // ── pins and captions: DOM children the element will position ────────────────
 // Built before mappo loads, so they are there when the element upgrades and
 // harvests its data-lat/data-lon children.
-const pinEls = new Map(), capEls = new Map(), capTextEls = new Map(), capRootEls = new Map();
+const pinEls = new Map(), pinRootEls = new Map(), capEls = new Map(), capTextEls = new Map(), capRootEls = new Map();
 for (const p of POIS) {
   const root = document.createElement("div");
   root.className = "poi-root"; root.dataset.lat = p.lat; root.dataset.lon = p.lon;
@@ -335,6 +336,7 @@ for (const p of POIS) {
   root.appendChild(pin);
   globeEl.appendChild(root);
   pinEls.set(p.id, pin);
+  pinRootEls.set(p.id, root);
   if (!p.caption) continue;
   const croot = document.createElement("div");
   croot.className = "cap-root"; croot.dataset.lat = p.lat; croot.dataset.lon = p.lon;
@@ -427,7 +429,7 @@ const params = new URLSearchParams(location.search);
 const startLon = Number(params.get("lon"));
 let alpha = Number.isFinite(startLon) ? -(startLon + 90) * RAD : 0;   // at α = 0 it is 90°W that faces the viewer
 const still = params.has("still");
-let lastT = null, speed = 0, dragging = false, dragX = 0;
+let lastT = null, dragging = false, dragX = 0;
 const visible = new Set();               // pin ids currently shown
 const arcs = buildArcs();
 const arcState = new Map();
@@ -440,7 +442,6 @@ function paint(force = false) {
   const dt = lastT == null ? 1 / 60 : Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
   const t = (now - t0) / 1000;
-  const before = alpha;
   // The camera turns the way OrbitControls turns it with enableDamping: input
   // (the pointer, and the auto-rotation when nobody is dragging) accumulates in
   // a pending angle, and each frame applies dampingFactor of it — 5% at 60 fps,
@@ -451,26 +452,23 @@ function paint(force = false) {
   alpha += applied;
   pending -= applied;
   if (Math.abs(pending) < 1e-6) pending = 0;
-  // The camera "moves fast" when the smoothed per-frame turn exceeds 0.05 rad;
-  // pins and captions hide while it does.
-  speed = speed * 0.7 + Math.abs(alpha - before) * 0.3;
-  const fast = speed > 0.05;
 
   const o = orientation(alpha, geom.cam.tilt);
   map.update(o);
   lattice.update(o);
 
-  // Visibility with hysteresis: appear above 0.12 facing, stay down to 0.02.
-  const D = geom.cam.distance;
-  const facingOf = (z) => (D * z - 1) / Math.sqrt(D * D - 2 * D * z + 1);
+  // Visibility is the library's call: overlay-horizon="0.12 0.02" marks a pin
+  // behind with hysteresis at the limb (appear above 0.12 facing, stay down to
+  // 0.02), overlay-still="172" marks every overlay moving while the camera
+  // turns faster than 172°/s — the original's 0.05 rad per frame. The page
+  // only reads the attributes mappo wrote this frame.
   const located = new Map();
   for (const p of POIS) {
     const q = map.locate(p.lat, p.lon);
-    if (!q) continue;
-    located.set(p.id, q);
-    const f = facingOf(q.z);
-    const shown = (visible.has(p.id) ? f > 0.02 : f > 0.12) && !fast;
-    if (shown) visible.add(p.id); else visible.delete(p.id);
+    if (q) located.set(p.id, q);
+    const root = pinRootEls.get(p.id);
+    if (root.hasAttribute("data-mappo-behind") || root.hasAttribute("data-mappo-moving")) visible.delete(p.id);
+    else visible.add(p.id);
   }
   const groupsLit = new Set();
   for (const p of POIS) if (p.group && p.icon === "user2" && visible.has(p.id)) groupsLit.add(p.group);

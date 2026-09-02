@@ -6,7 +6,7 @@
 
 **Maps of any world as a zero-dependency web component.** A dot field or
 vector outlines, flat SVG or a rotating canvas globe, places by name, your own
-HTML positioned on the sphere. The core is **21.4 KB gzipped with the whole
+HTML positioned on the sphere. The core is **21.5 KB gzipped with the whole
 Earth inside**; the globe, the other projections, real coastlines and other
 worlds are opt-in modules that register themselves. No build step, no
 dependencies, MIT.
@@ -70,7 +70,7 @@ registers itself, so order does not matter and nothing is downloaded twice.
 
 | import | adds | gzipped | brotli |
 |---|---|---|---|
-| `mappo` | the core, with the whole Earth inside | **21.4 KB** | 18.5 KB |
+| `mappo` | the core, with the whole Earth inside | **21.5 KB** | 18.5 KB |
 | `mappo/globe` | `mode="globe"` | 8.8 KB | 7.8 KB |
 | `mappo/projections` | `projection="equal-earth"`, the polar pair, your own or d3-geo projections | 3.7 KB | 3.3 KB |
 | `mappo/vector` | `figure-source="vector"` and `borders` for bodies that carry rings (the Moon and Mars packs do) | 1.8 KB | 1.6 KB |
@@ -625,7 +625,8 @@ and publishes two hooks:
 | Hook | Meaning |
 |---|---|
 | `--mappo-depth` | `1` facing the viewer → `0` at the limb (always `1` on a flat map) |
-| `data-mappo-behind` | present while the point is on the far hemisphere |
+| `data-mappo-behind` | present while the point is on the far hemisphere — or, with `overlay-horizon`, past the facing you chose |
+| `data-mappo-moving` | present while the globe turns faster than `overlay-still` degrees per second (only when that option is set) |
 
 ```css
 .pin > span {
@@ -634,6 +635,21 @@ and publishes two hooks:
 }
 .pin[data-mappo-behind] { visibility: hidden; }
 ```
+
+Two decisions are better made by the renderer than by a stylesheet, because
+they need the previous frame. `overlay-horizon="0.12 0.02"` marks an element
+behind once its facing drops under 0.02 and unmarks it only once it climbs
+back over 0.12, so a pin near the limb never flickers between shown and
+hidden. `overlay-still="172"` marks every overlay `data-mappo-moving` while
+the globe's smoothed spin exceeds 172° per second, so labels can hide during a
+flick and come back as it settles:
+
+```css
+.pin[data-mappo-moving] > span { opacity: 0; }
+```
+
+Both are globe options; the flat map has no limb and does not turn.
+`locate().depth` reports the same facing the overlays get, camera included.
 
 **Use a wrapper plus an inner element**, as above. mappo rewrites the
 wrapper's `transform` every frame on the globe; if that same element also

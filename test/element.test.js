@@ -810,3 +810,51 @@ test("globe: a drag is drawn while the pointer moves, not only on release", asyn
     if (saved.caf === undefined) delete globalThis.cancelAnimationFrame;
   }
 });
+
+test("overlays: locate().depth is the facing the overlays get, and overlay-horizon hides with hysteresis", () => {
+  // A pin 60° east of the focus under a camera 2.5 radii away: facing 0.115,
+  // under the appear threshold of 0.5 — behind, although it is on the near side.
+  const element = mount("mappo-world", { mode: "globe", cols: 24, "rotate-speed": 0, focus: "0,0", distance: "2.5", "overlay-horizon": "0.5 0.2" },
+    `<a class="pin" data-lat="0" data-lon="60">A</a>`);
+  const pin = element.querySelector(".pin");
+  const D = 2.5;
+  const facingAt = (dLon) => { const z = Math.cos(dLon * Math.PI / 180); return (D * z - 1) / Math.sqrt(D * D - 2 * D * z + 1); };
+  const located = element.map.locate(0, 60);
+  assert.ok(located.front, "on the near side");
+  assert.ok(Math.abs(located.depth - Math.max(0, facingAt(60))) < 1e-9, "depth is the camera's facing, not the raw depth");
+  assert.equal(pin.style.getPropertyValue("--mappo-depth"), facingAt(60).toFixed(3), "the same number the overlay carries");
+  assert.equal(pin.hasAttribute("data-mappo-behind"), true, "under the appear threshold: behind");
+  element.setAttribute("focus", "0,60");
+  assert.equal(pin.hasAttribute("data-mappo-behind"), false, "facing the camera: shown");
+  element.setAttribute("focus", "0,15");   // 45° off: facing 0.467, between vanish and appear
+  assert.ok(facingAt(45) > 0.2 && facingAt(45) < 0.5);
+  assert.equal(pin.hasAttribute("data-mappo-behind"), false, "hysteresis: still shown between the thresholds");
+  element.setAttribute("focus", "0,-10");  // 70° off: past the camera's horizon
+  assert.equal(pin.hasAttribute("data-mappo-behind"), true);
+  element.setAttribute("focus", "0,15");   // 45° again: below appear, so it stays hidden
+  assert.equal(pin.hasAttribute("data-mappo-behind"), true, "hysteresis: hidden until the appear threshold");
+  element.setAttribute("focus", "0,60");
+  assert.equal(pin.hasAttribute("data-mappo-behind"), false);
+  // Without the option the attribute means the far side, as before.
+  element.removeAttribute("overlay-horizon");
+  element.setAttribute("focus", "0,15");
+  assert.equal(pin.hasAttribute("data-mappo-behind"), false, "default horizon: near side is shown whatever the facing");
+  element.setAttribute("focus", "0,-10");
+  assert.equal(pin.hasAttribute("data-mappo-behind"), true);
+  unmount(element);
+});
+
+test("overlays: data-mappo-moving while the globe turns faster than overlay-still", () => {
+  const element = mount("mappo-world", { mode: "globe", cols: 24, "rotate-speed": 0, focus: "0,0", "overlay-still": "30" },
+    `<a class="pin" data-lat="0" data-lon="0">A</a>`);
+  const pin = element.querySelector(".pin");
+  assert.equal(pin.hasAttribute("data-mappo-moving"), false, "a still globe is not moving");
+  element.setAttribute("focus", "0,120");   // 120° in a few milliseconds
+  assert.equal(pin.hasAttribute("data-mappo-moving"), true, "a fast turn marks every overlay moving");
+  for (let i = 0; i < 80; i++) element.map.update({ figureColor: i % 2 ? "#111" : "#222" });   // frames without a turn: the speed decays
+  assert.equal(pin.hasAttribute("data-mappo-moving"), false, "and it settles");
+  element.removeAttribute("overlay-still");
+  element.setAttribute("focus", "0,-120");
+  assert.equal(pin.hasAttribute("data-mappo-moving"), false, "off unless the option is set");
+  unmount(element);
+});

@@ -19,7 +19,7 @@ and [`CHANGELOG.md`](../CHANGELOG.md) (what changed and what to write instead).
 | R3 | Publish 0.7.0: `npm publish` runs `prepublishOnly` (build + tests); tag `v0.7.0`; deploy the landing page. | S | open |
 | R4 | Migrate soupfestivals from the vendored 0.5: `<world-map>` → `<mappo-world>`, `dot-color` → `figure-color`, bump the vendored bundle and the import-map pin. Two edits plus the bundle. | S | open |
 | R5 | Fold the benchmark scenarios into `demo/perf.html` as budgets: per-globe frame cost by style, the many-globes budget, the flat colour-change cost, so the numbers in [performance.md](performance.md) are re-measured rather than remembered. | M | open |
-| R6 | **Packaging**: a 21.4 KB gzipped core with the whole Earth inside, and opt-in modules (`mappo/globe`, `mappo/projections`, `mappo/vector`, `mappo/bodies/earth-vector`, `mappo/all`) that register themselves; esbuild, minified, source maps; the mask as run lengths. Measured in [weight.md](weight.md), held by the test suite. | M | done |
+| R6 | **Packaging**: a 21.5 KB gzipped core with the whole Earth inside, and opt-in modules (`mappo/globe`, `mappo/projections`, `mappo/vector`, `mappo/bodies/earth-vector`, `mappo/all`) that register themselves; esbuild, minified, source maps; the mask as run lengths. Measured in [weight.md](weight.md), held by the test suite. | M | done |
 | R7 | **Lazy chunks for the bare import**: let the core `import()` the globe, the projections and Earth's rings the first time a page asks for them, so a single CDN URL stays 21 KB up front and needs no second import. The registries make it a few lines, and it also removes the one trap of hand-loaded modules — a core reached through a short or redirecting URL is a different module URL from the `./mappo.js` a module resolves, so two cores run (README, Install) — because the core would resolve the chunks relative to its own URL. The open question is chunk URLs behind import maps and asset digests. | S | open |
 | R8 | **Borders on a shared-arc topology**, the data change [weight.md §3](weight.md) measured: 24% of border segments are second copies of a shared boundary and 43% repeat the coastline; regions (choropleths) become an arc index instead of another 23 KB of rings. | M | open |
 
@@ -97,11 +97,12 @@ a map projection, and the rotation is the point.
 | F4 | **Interaction surface**: `mappo:placeleave` / `mappo:dotleave`, and `onAnimationCycle`. | asked for since v0.3 (`TODO`) | one `mouseout` listener with the same same-group guard; one `animationiteration` listener on a sentinel dot | S |
 | F5 | **Accessibility pass**: `aria-label` on every marker is done; add `role="img"` descriptions per body, and keyboard focus order for overlays. | | audit with an assistive-technology checklist | S |
 | F6 | **Retire or fold the historical demos** (`v05.html`, `v05b.html`) into the gallery. | demo sprawl noted in the handoff | keep what the gallery does not already show | S |
+| F7 | **`mappo/links`: arcs between places.** Great-circle arcs with a height, colour, width and a `progress` for reveal animations, from gazetteer names or coordinates; drawn by the globe with the graticule's depth fade and perspective width, and by the flat map through the seam-aware polyline code that exists. | every hero globe draws them (Cloudflare, Stripe, GitHub); the Region: Earth and Starlink demos each hand-roll 100+ lines of exactly this from `locate()` | an opt-in module registering a `links` option: build each curve once (chord samples lifted by the height, resampled by arc length), project per frame like the graticule, cut at the seam on flat maps; the demo's curve is the reference | M |
 
 ## 6. Packaging track: one package, and the `@mappo` organisation
 
 **Decided 2026-09-02.** mappo is one npm package, `mappo`, with subpath
-exports: the core (21.4 KB gzipped, the whole Earth inside) and the opt-in
+exports: the core (21.5 KB gzipped, the whole Earth inside) and the opt-in
 modules `mappo/globe`, `mappo/projections`, `mappo/vector`,
 `mappo/bodies/earth-vector`, `mappo/bodies/moon`, `mappo/bodies/mars` and
 `mappo/all`. Each module imports the core by the relative path `./mappo.js`,
@@ -115,7 +116,7 @@ in [weight.md §5](weight.md); the short version of why not a package per module
 - the modules import about twenty seam helpers from the core, so their versions
   could never move independently — eight packages published in lockstep on
   every release is ceremony, not modularity;
-- `npm install mappo` must remain the 21.4 KB core, or the headline is a
+- `npm install mappo` must remain the 21.5 KB core, or the headline is a
   footnote.
 
 The **`@mappo` organisation on npm is registered and deliberately empty.** It

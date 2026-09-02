@@ -86,6 +86,14 @@ const ATTR_MAP = {
   "equator-opacity":    [ "equatorOpacity", Number ],
   "graticule-width":    [ "graticuleWidth", Number ],
   "overlays":           [ "overlays", flag ],
+  // Globe-only: "appear vanish" facings with hysteresis for data-mappo-behind
+  // (one number means both), and the spin in °/s above which overlays are
+  // data-mappo-moving.
+  "overlay-horizon":    [ "overlayHorizon", (v) => {
+                          const m = v.trim().split(/[\s,]+/).map(Number);
+                          return m.every(Number.isFinite) && (m.length === 1 || m.length === 2) ? (m.length === 1 ? [ m[0], m[0] ] : m) : null;
+                        } ],
+  "overlay-still":      [ "overlayStill", Number ],
   "max-dpr":            [ "maxDpr", Number ],
   // The globe's camera and atmosphere (the flat map ignores both): the camera's
   // distance in body radii, and fog as "near far" in radii from the centre plane.

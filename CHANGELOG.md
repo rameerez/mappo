@@ -10,7 +10,7 @@ with a body parameter bolted on. Earth is now one body among others, the
 vocabulary is body-neutral, and every body is produced by one pipeline from
 pinned public data.
 
-### The core is 21.4 KB gzipped, with the whole Earth inside
+### The core is 21.5 KB gzipped, with the whole Earth inside
 
 The bare import is now the **core**: the flat map, Earth's land mask and
 gazetteer, the equirectangular projection. Everything else is an opt-in module
@@ -18,7 +18,7 @@ that imports the core by relative path and registers itself:
 
 | import | adds | gzipped |
 |---|---|---|
-| `mappo` | the core | 21.4 KB (18.5 KB brotli) |
+| `mappo` | the core | 21.5 KB (18.5 KB brotli) |
 | `mappo/globe` | `mode="globe"` | 8.8 KB |
 | `mappo/projections` | Equal Earth, polar stereographic, custom and d3-geo projections | 3.7 KB |
 | `mappo/vector` | `figure-source="vector"` and `borders`, for bodies that carry rings | 1.8 KB |
@@ -53,6 +53,20 @@ that imports the core by relative path and registers itself:
   redirecting URL would be a second core with its own registries. Rails import
   maps pin one file, since asset digests break a module's relative import; the
   body packs import nothing and pin on their own.
+
+### Overlays: the visibility decisions
+
+- `overlay-horizon="appear vanish"`: the globe marks an overlay
+  `data-mappo-behind` once its facing falls under `vanish` and unmarks it only
+  above `appear`, so a pin near the limb cannot flicker. The default, `0 0`,
+  is the horizon itself, as before.
+- `overlay-still="<deg/s>"`: while the globe's smoothed spin exceeds it, every
+  overlay carries `data-mappo-moving`, so labels can hide during a flick and
+  return as it settles. Off unless set. Both options are paint-tier on the
+  globe and ignored by the flat map.
+- `locate().depth` is the facing under a perspective camera — the number
+  `--mappo-depth` publishes — where it was the raw depth. The Region: Earth
+  demo lost its own facing formula, hysteresis and speed estimate to these.
 - `resolveProjection` with a name nobody has registered still throws; the
   renderer asks `hasProjection()` first and waits instead.
 

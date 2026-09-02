@@ -199,6 +199,18 @@ function xyzRings(rings) {
   return out;
 }
 
+// overlay-horizon as [appear, vanish] facings in 0…1, appear ≥ vanish; null,
+// a bare number or nonsense collapse to the horizon itself.
+function horizonOf(value) {
+  const pair = Array.isArray(value) ? value : [ value, value ];
+  let appear = Number(pair[0]), vanish = Number(pair[1]);
+  if (!Number.isFinite(appear)) appear = 0;
+  if (!Number.isFinite(vanish)) vanish = appear;
+  appear = Math.max(0, Math.min(1, appear));
+  vanish = Math.max(0, Math.min(appear, vanish));
+  return [ appear, vanish ];
+}
+
 // Alpha is quantised into this many bands for the batched fills and strokes;
 // fine enough that a fog gradient reads as continuous.
 const BANDS = 24;
@@ -322,6 +334,8 @@ export class GlobeRenderer {
     "markerColor", "markerScale", "markerHoverScale", "highlightColor", "overlays",
     // The camera and the fog change the frame's arithmetic, not its geometry.
     "distance", "fog",
+    // The overlay pass reads these every frame.
+    "overlayHorizon", "overlayStill",
     // Flat-map concerns the globe ignores entirely.
     "projection", "centerLon"
   ]);
@@ -1158,7 +1172,9 @@ export class GlobeRenderer {
     const p = this.#project(lat, lon, this._T, radius);
     return {
       x: p.sx, y: p.sy,
-      depth: Math.max(0, Math.min(1, p.z / radius)),
+      // The facing, camera included — the same number the overlays get as
+      // --mappo-depth, so a layer of your own fades exactly as the pins do.
+      depth: Math.max(0, Math.min(1, this.#facing(p.z / radius, this._T))),
       front: p.front,
       z: p.z / radius,
       fade: p.fade,
@@ -1175,22 +1191,39 @@ export class GlobeRenderer {
   // every frame must not also carry an eased transform, or the two fight.
   // The documented pattern is therefore a positioned root with a freely
   // styled child inside it.
+  //
+  // Two decisions need the previous frame, which a stylesheet cannot see, so
+  // the renderer makes them and publishes the result as attributes:
+  //   overlay-horizon="appear vanish"  an element is marked behind once its
+  //       facing falls under `vanish` and unmarked only above `appear`, so a
+  //       pin near the limb cannot flicker between shown and hidden. The
+  //       default, 0 0, is the horizon itself: behind means the far side.
+  //   overlay-still="<deg/s>"  while the globe's smoothed spin exceeds it,
+  //       every overlay carries data-mappo-moving, so labels can hide during a
+  //       flick and return as it settles. Off unless set.
   #placeOverlays(T) {
     if (!this._overlayLayer) return;
     this._overlayLayer.hidden = this.o.overlays === false;
     if (this.o.overlays === false) return;
+    const [ appear, vanish ] = horizonOf(this.o.overlayHorizon);
+    const moving = this.o.overlayStill != null && Number.isFinite(this.o.overlayStill) && (this._speed ?? 0) > this.o.overlayStill;
     for (const el of this._overlayEls) {
       const lat = Number(el.dataset.lat);
       const lon = Number(el.dataset.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
       const p = this.#project(lat, lon, T);
       // Park far offscreen rather than hiding: no reflow, no flash at the
-      // origin before the first projection lands.
+      // origin before the first projection lands. An element behind only by
+      // the horizon threshold keeps its position: the attribute is the call,
+      // the stylesheet decides what to do with it.
       el.style.transform = p.front
         ? `translate3d(${p.sx.toFixed(2)}px, ${p.sy.toFixed(2)}px, 0)`
         : "translate3d(-9999px, -9999px, 0)";
-      el.style.setProperty("--mappo-depth", p.front ? Math.max(0, this.#facing(p.z, T)).toFixed(3) : "0");
-      el.toggleAttribute("data-mappo-behind", !p.front);
+      const facing = p.front ? Math.max(0, this.#facing(p.z, T)) : 0;
+      el.style.setProperty("--mappo-depth", facing.toFixed(3));
+      const behind = !p.front || facing < (el.hasAttribute("data-mappo-behind") ? appear : vanish);
+      el.toggleAttribute("data-mappo-behind", behind);
+      el.toggleAttribute("data-mappo-moving", moving);
     }
   }
 
@@ -1420,6 +1453,15 @@ export class GlobeRenderer {
     if (!ctx || !side) return;
     const o = this.o;
     this._dirty = false;
+    // The spin's speed, smoothed over the last few frames (deg/s): what
+    // overlay-still compares against. Measured on the angle actually drawn, so
+    // a drag, a flick, the base spin and a page re-aiming with `focus` all count.
+    const now = performance.now();
+    if (this._drawnAt != null && now > this._drawnAt) {
+      const turned = Math.abs(((this.angle - this._drawnAngle + 540) % 360) - 180);
+      this._speed = 0.7 * (this._speed ?? 0) + 0.3 * (turned / ((now - this._drawnAt) / 1000));
+    }
+    this._drawnAt = now;
     this._drawnAngle = this.angle;
     ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0);
     ctx.clearRect(0, 0, side, side);

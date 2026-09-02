@@ -148,6 +148,11 @@ export const DEFAULTS = {
   graticuleWidth: 1,          // line width: CSS px on the globe; a multiplier of the flat map's hairline
   // Position host DOM carrying data-lat/data-lon over the map.
   overlays: true,
+  // Globe-only visibility decisions for overlays (see globe.js #placeOverlays):
+  // [appear, vanish] facings with hysteresis for data-mappo-behind, and the
+  // spin speed in °/s above which every overlay is data-mappo-moving.
+  overlayHorizon: null,
+  overlayStill: null,
   // Cap the canvas backing store. 3× devices buy no visible detail on a dot
   // field and pay full fill-rate for it.
   maxDpr: 2,
@@ -204,7 +209,7 @@ const STYLE_KEYS = new Set([
   // pattern-filled ground always exist; only their fills change.
   "background", "globeRing",
   // Globe-only camera knobs: the flat map ignores them, so there is nothing to rebuild.
-  "distance", "fog", "fogColor"
+  "distance", "fog", "fogColor", "overlayHorizon", "overlayStill"
 ]);
 const DEF_KEYS = new Set([ "dotShape", "dotSize", "markerShape", "markerScale", "groundColor" ]);
 const MARKER_KEYS = new Set([ "places", "markerPulse", "interactive" ]);
