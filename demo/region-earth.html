@@ -225,7 +225,9 @@
   <p>The pins and captions are ordinary DOM inside the element, positioned by mappo; the arcs are drawn on a
   canvas from <code>locate()</code>. The spin is the original's: the camera orbits the screen's vertical while
   the globe leans 14.3°, so the pole slowly wanders — that motion is decomposed each frame into mappo's
-  <code>focus</code>, <code>tilt</code> and <code>roll</code>. Drag the globe. <a href="./">More demos</a>.</p>
+  <code>focus</code>, <code>tilt</code> and <code>roll</code>. Drag the globe: the pointer feeds the same damped rotation OrbitControls uses
+  (a twentieth of what is pending, each frame), so the globe eases after the hand and glides to a stop.
+  <a href="./">More demos</a>.</p>
 </div>
 
 <!-- The icon shapes as the section uses them. -->
@@ -439,7 +441,16 @@ function paint(force = false) {
   lastT = now;
   const t = (now - t0) / 1000;
   const before = alpha;
-  if (!dragging && !reduceMotion.matches && !still) alpha += SPIN * dt;
+  // The camera turns the way OrbitControls turns it with enableDamping: input
+  // (the pointer, and the auto-rotation when nobody is dragging) accumulates in
+  // a pending angle, and each frame applies dampingFactor of it — 5% at 60 fps,
+  // scaled to the real frame time — so the globe eases after the pointer and
+  // keeps turning for a moment after release, then settles into the spin.
+  if (!dragging && !reduceMotion.matches && !still) pending += SPIN * dt;
+  const applied = pending * (1 - Math.pow(1 - DAMPING, dt * 60));
+  alpha += applied;
+  pending -= applied;
+  if (Math.abs(pending) < 1e-6) pending = 0;
   // The camera "moves fast" when the smoothed per-frame turn exceeds 0.05 rad;
   // pins and captions hide while it does.
   speed = speed * 0.7 + Math.abs(alpha - before) * 0.3;
@@ -634,10 +645,15 @@ function drawArcs(dt, located, pinShown) {
 }
 
 // ── drag: the camera walks round the equator, a full turn per canvas height ──
+// The pointer does not set the angle; it adds to the pending rotation paint()
+// damps (OrbitControls' dampingFactor, 0.05), which is where the elasticity of
+// the original comes from: a lag behind the pointer, a glide after release.
+const DAMPING = 0.05;
+let pending = 0;
 stage.addEventListener("pointerdown", (e) => { dragging = true; dragX = e.clientX; stage.setPointerCapture?.(e.pointerId); });
 stage.addEventListener("pointermove", (e) => {
   if (!dragging) return;
-  alpha += (2 * Math.PI * (e.clientX - dragX)) / geom.H;
+  pending += (2 * Math.PI * (e.clientX - dragX)) / geom.H;
   dragX = e.clientX;
 });
 const release = () => { dragging = false; };
