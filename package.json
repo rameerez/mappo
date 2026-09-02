@@ -28,7 +28,8 @@
     "generate:moon": "node scripts/generate-moon.js",
     "generate:mars": "node scripts/generate-mars.js",
     "prepublishOnly": "npm run build && npm test",
-    "weight": "node scripts/weight.mjs"
+    "weight": "node scripts/weight.mjs",
+    "serve": "node scripts/serve.mjs"
   },
   "keywords": [
     "mappo",

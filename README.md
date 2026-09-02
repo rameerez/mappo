@@ -958,6 +958,9 @@ npm ci                          # reproducible development dependencies (esbuild
 npm run build                   # esbuild: dist/mappo.js (the core), the modules, dist/all.js, dist/bodies/*
 npm test                        # pure, DOM, packaging, weight-budget and generator tests, against dist/
 npm run weight                  # where the bytes are, per module and per Earth literal (docs/weight.md)
+npm run serve                   # the repo on http://localhost:8099 — the demos, and what the two harnesses below drive
+node scripts/review-pages.mjs http://localhost:8099 /tmp/review index.html demo/worlds.html   # real-time review: errors, per-map frame cost, screenshots
+node scripts/drag-harness.mjs http://localhost:8099/demo/worlds.html 'mappo-moon[mode="globe"]' # a real pointer drag on a globe, sampled to rest
 
 npm run generate                # regenerate every body pack from the pinned sources
 npm run generate:earth          # or one at a time; sources are cached in .cache/
