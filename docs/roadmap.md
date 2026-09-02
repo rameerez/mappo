@@ -1,6 +1,6 @@
 # Roadmap
 
-What comes after 0.7.0, in five tracks, each item with why, the evidence it
+What comes after 0.7.0, in six tracks, each item with why, the evidence it
 rests on, its first concrete step and a size. Sizes: **S** an afternoon, **M**
 a few days, **L** a release of its own. Items are ordered by leverage within
 each track. Nothing here changes the body seam except where it says so.
@@ -97,6 +97,49 @@ a map projection, and the rotation is the point.
 | F4 | **Interaction surface**: `mappo:placeleave` / `mappo:dotleave`, and `onAnimationCycle`. | asked for since v0.3 (`TODO`) | one `mouseout` listener with the same same-group guard; one `animationiteration` listener on a sentinel dot | S |
 | F5 | **Accessibility pass**: `aria-label` on every marker is done; add `role="img"` descriptions per body, and keyboard focus order for overlays. | | audit with an assistive-technology checklist | S |
 | F6 | **Retire or fold the historical demos** (`v05.html`, `v05b.html`) into the gallery. | demo sprawl noted in the handoff | keep what the gallery does not already show | S |
+
+## 6. Packaging track: one package, and the `@mappo` organisation
+
+**Decided 2026-09-02.** mappo is one npm package, `mappo`, with subpath
+exports: the core (21.4 KB gzipped, the whole Earth inside) and the opt-in
+modules `mappo/globe`, `mappo/projections`, `mappo/vector`,
+`mappo/bodies/earth-vector`, `mappo/bodies/moon`, `mappo/bodies/mars` and
+`mappo/all`. Each module imports the core by the relative path `./mappo.js`,
+which is what lets a page load one from any static host or CDN URL with no
+import map and no build step. The measurements and the comparison of shapes are
+in [weight.md §5](weight.md); the short version of why not a package per module:
+
+- a module in its own package can only reach the core through a bare specifier
+  (`import … from "@mappo/core"`), which browsers reject without an import map
+  or a rewriting CDN, so the one-URL story would be lost for every module;
+- the modules import about twenty seam helpers from the core, so their versions
+  could never move independently — eight packages published in lockstep on
+  every release is ceremony, not modularity;
+- `npm install mappo` must remain the 21.4 KB core, or the headline is a
+  footnote.
+
+The **`@mappo` organisation on npm is registered and deliberately empty.** It
+is for things with an owner, a licence or a release cadence of their own —
+never for pieces of the library, which stay subpaths of `mappo`. Every
+`@mappo/*` package depends on `mappo` and builds on the seam the README
+documents under "Extending" (`registerRenderer`, `registerProjection`,
+`registerProjectionAdapter`, `registerVector`, `extendBody` and the
+exported helpers); a scoped package that needs a new seam export gets it added
+to the core first, inside the size budget. Candidates, each with the trigger
+that would justify publishing it:
+
+| package | what it is | publish when | size |
+|---|---|---|---|
+| `@mappo/react`, `@mappo/vue`, `@mappo/svelte` | wrappers: props ↔ attributes, events ↔ callbacks, typed options, SSR-safe registration | the custom element already works in all three; a wrapper is warranted when typing or server rendering needs more than `<mappo-world>` gives | S each |
+| `@mappo/regions` | named regions — countries, states — on the shared-arc topology of R8, each with an anchor point, for choropleths and `highlight-polygon` by name | when R8 lands; the analytics demo's `countries.js` (23.5 KB gzipped as rings) is the prototype | M, after R8 |
+| `@mappo/earth-50m` | Natural Earth 50m coastline and borders for maps that zoom; four times the vertices of the 110m rings | when a consumer needs more than 110m; it has its own data cadence and is too large to sit beside the core | S, the generator exists |
+| `@mappo/cities` | a gazetteer of thousands of places, with population and country, for autocomplete and dense marker maps | when 160 cities stop being enough; a large dataset with its own source and licence | S |
+| `@mappo/cli` | `npx @mappo/cli body …`: generate a body pack from a raster or GeoJSON, with the checks the Moon and Mars generators run; carries pngjs and jpeg-js, which the runtime must never | when a third party asks how to make a world; today the answer is "copy `scripts/`" | M |
+| `@mappo/body-<world>` | bodies maintained under the organisation beyond Earth, the Moon and Mars — Venus (Magellan), Mercury (MESSENGER), Titan (Cassini), the Galilean moons; community bodies publish unscoped as `mappo-body-<world>` | when the generator has produced one that passes the anchors | S each, once the CLI exists |
+
+What would reopen the question: import maps becoming universal enough that a
+bare specifier is as portable as a relative path, or a module gaining a release
+cadence of its own. Neither is in sight; until then, simplicity wins.
 
 ## Superseded
 

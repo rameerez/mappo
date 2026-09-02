@@ -163,6 +163,8 @@ a dashboard or a mission planner. Three ways to get there:
 | what it costs to build | a devDependency | a devDependency and two small registries (section 6) | the same plus a monorepo |
 
 **Recommendation: B, with the `@mappo` scope reserved now and left empty.**
+*Taken, 2026-09-02: B shipped (section 0), the scope is registered, and the
+policy for what may ever be published under it is [roadmap §6](roadmap.md).*
 
 The size win is entirely in the entry points and the minifier; separate npm
 packages add release mechanics and a version matrix without shaving a byte.

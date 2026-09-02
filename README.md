@@ -91,6 +91,11 @@ From a CDN, import the modules by their file paths; on unpkg the bare
 is everything. Do not load `all.js` alongside the core or the other modules:
 two copies of the core would keep two registries.
 
+All of this is one npm package. The `@mappo` organisation on npm is reserved
+for things with a life of their own — framework wrappers, large datasets, a
+pack-generating CLI — never for pieces of the library; the policy is in
+[docs/roadmap.md §6](https://github.com/rameerez/mappo/blob/main/docs/roadmap.md).
+
 Rails with importmaps, vendoring `dist/`:
 
 ```ruby
@@ -926,7 +931,8 @@ seam small enough to survive the next body.
 
 What comes next — the performance work with its measured gains, the precision
 work toward research-grade data, more projections and seam handling for custom
-ones, regions with identities, and more bodies — is in
+ones, regions with identities, more bodies, and what the `@mappo` organisation
+is for — is in
 [docs/roadmap.md](https://github.com/rameerez/mappo/blob/main/docs/roadmap.md),
 each item with its evidence and sources.
 
