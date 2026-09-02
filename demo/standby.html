@@ -1,0 +1,247 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Standby — mappo</title>
+<link rel="icon" href="../favicon/favicon-32x32.png">
+<style>
+  /* Apple's landscape standby clock, rebuilt on mappo. Measured from a
+     screenshot rather than eyeballed: the dot grid is an 18 px square pitch
+     with dots at 0.53 of a cell, and the palette below is sampled from the
+     original — the clock is pure red, the daylit dots sit well under it, and
+     night is the same hue at about a fifth of the brightness. */
+  :root{
+    --red:#ff0000;          /* the clock, and only the clock, is full red */
+    --day:#d40000;          /* sampled: lit dots never reach the clock's red */
+    --night:#260000;        /* and night is that hue at ~13% */
+    /* The terminator fades as it falls, and not linearly — sampled down the
+       original it reads 160 at the arc, 90 by mid-frame, 25 by three quarters
+       down and 20 under the map, so the ramp is steepest in its last third. */
+    --line-0:#c00000; --line-16:#a00000; --line-50:#5a0000;
+    --line-72:#1a0000; --line-100:#140000;
+    --pitch:18.5;           /* px between dot centres at the reference size */
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:#000;overflow:hidden;
+    font-family:-apple-system,"SF Pro Display","SF Pro Text","Helvetica Neue",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .stage{position:relative;width:100vw;height:100vh;overflow:hidden}
+
+  /* Both dot layers share one box so they register cell for cell. */
+  /* Two constraints, and in the original they land on the same number: the map
+     is 95% of the frame wide AND 82% of it tall. 360 degrees over the 142 the
+     latitude band spans makes the box 2.535 wide for 1 tall, so 82% of height
+     is 2.32 x the height in width — take whichever runs out first and the
+     proportions survive any aspect the frame happens to be. */
+  .maps{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:min(95vw, 232vh)}
+  .maps mappo-world{display:block;width:100%}
+  /* The night map is the SAME map in the night palette, revealed through the
+     terminator — not a grey film over one map, which would dim the geography
+     as well as the light. */
+  .night{position:absolute;inset:0;clip-path:url(#nightclip)}
+  .defs{position:absolute;width:0;height:0}
+
+  /* City dots ride the map as overlay children: mappo puts them on their
+     coordinates, so they cannot drift from the grid under them. */
+  .city-dot{position:absolute;border-radius:50%;background:var(--day);
+    transform:translate(-50%,-50%);pointer-events:none}
+  .city-dot.here{background:var(--red)}
+
+  /* The terminator covers the whole stage, not the map box: the curve runs off
+     the bottom of the frame and that overshoot is part of the picture. */
+  .term{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+
+  .status{position:absolute;left:5.9%;top:7.6%;display:flex;align-items:center;gap:.28em;
+    color:var(--red);opacity:.72;font-size:5.6vh;font-weight:590;letter-spacing:-.01em;
+    font-variant-numeric:tabular-nums}
+  .status svg{width:.72em;height:.72em;fill:currentColor;transform:translateY(-.02em)}
+
+  .place{position:absolute;left:5.9%;bottom:10.5%;color:var(--red);line-height:1}
+  .place .city{font-size:5.8vh;font-weight:590;letter-spacing:-.015em;margin-bottom:.34em}
+  .place .clock{font-size:20.5vh;font-weight:700;letter-spacing:-.045em;
+    font-variant-numeric:tabular-nums}
+
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="stage" role="img" aria-label="A dotted world map in red, with the daylight boundary drawn across it and the local time.">
+  <div class="maps" id="maps">
+    <mappo-world id="daymap"
+      cols="66" lat-min="-58" lat-max="84"
+      figure="dots" dot-shape="circle" dot-size="0.53"
+      figure-color="var(--day)" ground-color="none" background="none"
+      graticule="false" interactive="false"></mappo-world>
+
+    <div class="night" aria-hidden="true">
+      <mappo-world id="nightmap"
+        cols="66" lat-min="-58" lat-max="84"
+        figure="dots" dot-shape="circle" dot-size="0.53"
+        figure-color="var(--night)" ground-color="none" background="none"
+        graticule="false" interactive="false" overlays="false"></mappo-world>
+    </div>
+  </div>
+
+  <svg class="defs" aria-hidden="true">
+    <defs><clipPath id="nightclip" clipPathUnits="objectBoundingBox">
+      <path id="nightpath" d="M0 0"/>
+    </clipPath></defs>
+  </svg>
+
+  <svg class="term" id="term" aria-hidden="true" preserveAspectRatio="none">
+    <defs>
+      <linearGradient id="linefade" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0"   stop-color="var(--line-0)"/>
+        <stop offset=".16" stop-color="var(--line-16)"/>
+        <stop offset=".50" stop-color="var(--line-50)"/>
+        <stop offset=".72" stop-color="var(--line-72)"/>
+        <stop offset="1"   stop-color="var(--line-100)"/>
+      </linearGradient>
+    </defs>
+    <g id="termglow" fill="none" stroke="url(#linefade)" opacity=".22"></g>
+    <g id="termline" fill="none" stroke="url(#linefade)" stroke-linecap="round"></g>
+  </svg>
+
+  <div class="status">
+    <!-- The location-services arrow iOS shows while a widget is using it. -->
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M15.6.4 1.1 6.2c-.9.4-.8 1.7.2 1.9l5.6 1.4 1.4 5.6c.2 1 1.5 1.1 1.9.2L15.6.4z"/></svg>
+    <span id="statusclock">--:--</span>
+  </div>
+
+  <div class="place">
+    <div class="city" id="cityname">&nbsp;</div>
+    <div class="clock" id="bigclock">--:--</div>
+  </div>
+</div>
+
+<script type="module">
+import "../dist/mappo.js";
+import { earthAt } from "./astro.js";
+import { nightRings, terminatorCurves, solarElevation } from "./terminator.js";
+import { CLOCK_CITIES } from "./clocks.js";
+
+const LAT_RANGE = [ -58, 84 ];
+
+// ?at=2026-09-02T00:24Z freezes the clock. The terminator is the one thing on
+// this page that cannot be checked by looking — it has to be checked against a
+// known moment — so pinning one is worth an attribute.
+const pinned = new URLSearchParams(location.search).get("at");
+const AT = pinned ? new Date(pinned) : null;
+const nowish = () => AT ?? new Date();
+const dayMap = document.getElementById("daymap");
+const maps   = document.getElementById("maps");
+
+// ── where are we ────────────────────────────────────────────────────────────
+// The time zone, not geolocation: it needs no permission prompt, it is right
+// the moment the page paints, and it is what Apple is showing anyway — the
+// city you set, not a GPS fix. Geolocation would buy a few hundred metres of
+// precision on a dot that is nine pixels wide.
+const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+const known = CLOCK_CITIES.find((c) => c.tz === tz);
+const here = known ?? {
+  name: (tz.split("/").pop() || "Here").replace(/_/g, " "),
+  // No gazetteer hit: put the dot on the zone's own meridian, at a latitude
+  // that at least lands on the right side of the equator.
+  lon: -(new Date().getTimezoneOffset() / 4),
+  lat: 25, tz
+};
+
+document.getElementById("cityname").textContent = here.name;
+
+// "1:24", not "1:24 AM": the face shows the period nowhere, so the parts get
+// assembled by hand rather than trusting a locale to leave it out.
+const parts = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", timeZone: tz });
+const hhmm = { format: (d) => parts.formatToParts(d)
+  .filter((p) => p.type === "hour" || p.type === "literal" || p.type === "minute")
+  .map((p) => (p.type === "literal" ? ":" : p.value)).join("").replace(/:+$/, "") };
+const bigclock = document.getElementById("bigclock");
+const statusclock = document.getElementById("statusclock");
+
+// ── city dots ───────────────────────────────────────────────────────────────
+// Overlay children, so mappo owns their placement.
+// NOT mappo overlay children: those are harvested once, at upgrade, and these
+// are born after it. They ride the same stage projection the terminator uses,
+// which is the stronger guarantee anyway — one function places every mark.
+const stage = document.querySelector(".stage");
+const dots = [ ...CLOCK_CITIES.filter((c) => c.tz !== here.tz), here ].map((c) => {
+  const el = document.createElement("i");
+  el.className = "city-dot" + (c.tz === here.tz ? " here" : "");
+  stage.appendChild(el);
+  return { el, c };
+});
+
+// ── projection ──────────────────────────────────────────────────────────────
+// One source of truth: the map's own box. Latitudes outside latRange
+// extrapolate, which is what lets the curve run off the bottom of the frame.
+const box = () => {
+  const w = maps.clientWidth, h = maps.clientHeight;
+  const r = maps.getBoundingClientRect(), s = document.querySelector(".stage").getBoundingClientRect();
+  return { w, h, ox: r.left - s.left, oy: r.top - s.top };
+};
+const sx = (lon, b) => b.ox + ((lon + 180) / 360) * b.w;
+const sy = (lat, b) => b.oy + ((LAT_RANGE[1] - lat) / (LAT_RANGE[1] - LAT_RANGE[0])) * b.h;
+// The clip path wants the map's own 0…1 box.
+const fx = (lon) => (lon + 180) / 360;
+const fy = (lat) => (LAT_RANGE[1] - lat) / (LAT_RANGE[1] - LAT_RANGE[0]);
+
+const term = document.getElementById("term");
+const line = document.getElementById("termline");
+const glow = document.getElementById("termglow");
+const nightpath = document.getElementById("nightpath");
+
+function placeDots(b) {
+  const pitch = maps.clientWidth / 66;
+  for (const { el, c } of dots) {
+    // Measured off the original: a city mark is about twice a grid dot, which
+    // at a 0.53 fill means a shade over one whole cell.
+    const d = pitch * (c.tz === here.tz ? 1.24 : 1.06);
+    el.style.width = el.style.height = `${d}px`;
+    el.style.left = `${sx(c.lon, b).toFixed(1)}px`;
+    el.style.top  = `${sy(c.lat, b).toFixed(1)}px`;
+  }
+}
+
+function paint(now = nowish()) {
+  const { dec, subLon } = earthAt(now);
+  const b = box();
+  term.setAttribute("viewBox", `0 0 ${term.clientWidth} ${term.clientHeight}`);
+
+  // Night, in the map's own units, for the clip.
+  nightpath.setAttribute("d", nightRings(dec, subLon, 0, LAT_RANGE)
+    .map((r) => "M" + r.map(([ lon, lat ]) =>
+      `${fx(lon).toFixed(5)} ${fy(lat).toFixed(5)}`).join("L") + "Z").join(""));
+
+  // The lit edge, in stage pixels, free to leave the map box.
+  const d = terminatorCurves(dec, subLon, 0, LAT_RANGE)
+    .map((c) => "M" + c.map(([ lon, lat ]) =>
+      `${sx(lon, b).toFixed(1)} ${sy(lat, b).toFixed(1)}`).join("L")).join("");
+  // 6 px of the reference frame 1280 wide, and the glow a little over twice it.
+  const sw = term.clientWidth * 0.0047;
+  line.setAttribute("stroke-width", sw.toFixed(2));
+  // The arc measures 13 px across where its core is 6, so the halo is narrow
+  // and faint — the line has to stay DIMMER than the daylit dots, which is the
+  // relationship that reads as "a line drawn on the map" rather than a light.
+  glow.setAttribute("stroke-width", (sw * 2.2).toFixed(2));
+  glow.style.filter = `blur(${(sw * 0.5).toFixed(1)}px)`;
+  line.innerHTML = glow.innerHTML = `<path d="${d}"/>`;
+
+  placeDots(b);
+
+  const t = hhmm.format(now);
+  bigclock.textContent = t;
+  statusclock.textContent = t;
+}
+
+// The clock changes every second and costs nothing; the terminator costs a
+// few hundred points of trigonometry and moves a quarter of a degree a minute.
+// So they tick apart: the digits every second, the sky every half minute.
+function clockOnly() {
+  const t = hhmm.format(nowish());
+  bigclock.textContent = t;
+  statusclock.textContent = t;
+}
+addEventListener("resize", () => paint());
+customElements.whenDefined("mappo-world").then(() => requestAnimationFrame(() => paint()));
+paint();
+if (!AT) { setInterval(clockOnly, 1000); setInterval(paint, 30000); }
+</script>
