@@ -12,7 +12,7 @@ import { regions, region } from "../demo/countries.js";
 
 test("regions: every country has a valid code, a name, closed in-range rings and an in-range anchor", () => {
   const all = regions();
-  assert.ok(all.length >= 200, `${all.length} countries`);
+  assert.ok(all.length >= 220, `${all.length} countries`);
   assert.equal(regions(), all, "decoded once");
   assert.ok(Object.isFrozen(all));
   assert.equal(new Set(all.map((r) => r.id)).size, all.length, "codes are unique");
@@ -46,7 +46,7 @@ test("regions: the codes a dashboard actually sends resolve, including the ones 
 });
 
 test("regions: a country too small for a polygon at 110m still has an anchor", () => {
-  for (const id of [ "SG", "MT", "BH", "BB", "MV" ]) {
+  for (const id of [ "SG", "MT", "BH", "BB", "MV", "HK", "MO", "LI" ]) {
     const r = region(id);
     assert.ok(r, `${id} exists`);
     assert.deepEqual(r.rings, [], `${id} has no shape at this resolution`);

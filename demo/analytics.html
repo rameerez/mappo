@@ -4,33 +4,32 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Geographic distribution — mappo</title>
-<meta name="description" content="The Geographic Distribution panel of a real SaaS analytics dashboard, ported to mappo: a country choropleth with the ranked table beside it.">
+<meta name="description" content="The geographic-distribution card of an analytics dashboard, drawn by mappo: a country choropleth with the ranked table beside it, as a flat map or a globe, solid or dotted, in any of mappo's projections.">
 <link rel="icon" href="../favicon/favicon-32x32.png">
 <style>
-  /* A port of the Geographic Distribution panel from LicenseSeat's product
-     analytics (app/views/product_analytics/_overview_content.html.erb and the
-     shared/distribution_row partial). The tokens are that dashboard's Tailwind
-     palette by name, so the light theme is the original to the hex; the dark
-     theme is the same names one step across the slate scale, and follows the
-     site's toggle rather than the OS, like every other page here. The map
-     colours are jsvectormap's as the original configures them: slate-200 for a
-     country nobody came from, and a linear blend from slate-300 to slate-800
-     across the range of the data for the rest. */
+  /* The geographic-distribution card an analytics dashboard has, in Tailwind's
+     gray and slate palettes by name. The dark theme is the same names one step
+     across the slate scale, and follows the site's toggle rather than the OS,
+     like every other page here. The map colours: slate-200 for a country
+     nobody came from, and a linear blend from slate-300 to slate-800 across
+     the range of the data for the rest. */
   :root{
     --page:#f9fafb; --card:#ffffff; --border:#e5e7eb;
     --shadow:0 1px 2px 0 rgb(0 0 0 / .05);
     --ink:#111827; --muted:#6b7280; --faint:#9ca3af; --fainter:#d1d5db; --count:#4b5563;
-    --nodata:#e2e8f0; --ramp-lo:#cbd5e1; --ramp-hi:#1e293b; --seam:#ffffff;
+    --nodata:#e2e8f0; --ramp-lo:#cbd5e1; --ramp-hi:#1e293b; --seam:#ffffff; --sea:#f1f5f9;
     --track:#f3f4f6; --bar:#64748b; --row:#f3f4f6;
     --tip-bg:#1e293b; --tip-ink:#f1f5f9; --lit:#0f172a;
+    --seg-on:#334155; --seg-on-ink:#ffffff;
   }
   :root[data-theme="dark"]{
     --page:#0b1220; --card:#0f172a; --border:#1e293b;
     --shadow:0 1px 2px 0 rgb(0 0 0 / .4);
     --ink:#f1f5f9; --muted:#94a3b8; --faint:#64748b; --fainter:#475569; --count:#cbd5e1;
-    --nodata:#1e293b; --ramp-lo:#334155; --ramp-hi:#e2e8f0; --seam:#0f172a;
+    --nodata:#1e293b; --ramp-lo:#334155; --ramp-hi:#e2e8f0; --seam:#0f172a; --sea:#111a2b;
     --track:#1e293b; --bar:#94a3b8; --row:#162032;
     --tip-bg:#f1f5f9; --tip-ink:#0f172a; --lit:#f8fafc;
+    --seg-on:#e2e8f0; --seg-on-ink:#0f172a;
   }
 
   *{box-sizing:border-box}
@@ -45,46 +44,59 @@
     padding:5px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer}
   .theme:hover{color:var(--ink)}
 
-  /* bg-white rounded-xl shadow-sm border border-gray-200 p-6 */
   .card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:24px}
-  .card h2{margin:0 0 4px;font-size:18px;line-height:28px;font-weight:600;color:var(--ink)}
-  .card .sub{margin:0 0 16px;font-size:14px;line-height:20px;color:var(--muted)}
+  .head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px 24px;flex-wrap:wrap;margin-bottom:16px}
+  .head h2{margin:0 0 4px;font-size:18px;line-height:28px;font-weight:600;color:var(--ink)}
+  .head .sub{margin:0;font-size:14px;line-height:20px;color:var(--muted)}
 
-  /* grid grid-cols-1 lg:grid-cols-5 gap-6 — the map takes three columns, the table two */
+  /* The controls: two segmented switches and a menu, in the dashboard's own idiom. */
+  .controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--card)}
+  .seg button{font:inherit;font-size:12px;font-weight:500;line-height:1;padding:8px 11px;border:0;background:none;color:var(--muted);cursor:pointer}
+  .seg button+button{border-left:1px solid var(--border)}
+  .seg button:hover{color:var(--ink)}
+  .seg button[aria-checked="true"]{background:var(--seg-on);color:var(--seg-on-ink)}
+  .controls select{font:inherit;font-size:12px;font-weight:500;line-height:1;padding:7px 8px;border:1px solid var(--border);
+    border-radius:8px;background:var(--card);color:var(--muted);cursor:pointer}
+  .controls select:disabled{opacity:.45;cursor:default}
+
   .split{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:24px;align-items:start}
   .table-col{padding:0 8px 0 16px;min-width:0}
-  /* The original gives the map a 340px box and lets the projection sit in it.
-     An equirectangular frame is squatter than the Miller one, so it sits in
-     the same box with more air above and below. */
-  .map-box{min-height:340px;display:grid;align-items:center;min-width:0}
+  /* A 340px box for the map, whatever its shape: a wide frame fills the column
+     and sits with air above and below; a square frame (a polar disc, the globe)
+     is held to the box's height and centred. */
+  .map-box{min-height:340px;display:grid;align-items:center;justify-items:center;min-width:0}
+  .map{position:relative;container-type:inline-size;width:min(100%,calc(340px * var(--aspect,2.571)));margin:0;user-select:none;-webkit-user-select:none}
   @media (max-width:1023px){
     .split{grid-template-columns:minmax(0,1fr)}
     .table-col{padding:0}
     .map-box{min-height:0}
+    .map{width:min(100%,calc(420px * var(--aspect,2.571)))}
   }
 
-  .map{position:relative;width:100%;margin:0;user-select:none;-webkit-user-select:none}
   .map mappo-world{display:block;width:100%}
-  /* Three layers on one frame: mappo's land, the fills, mappo's borders on
-     top — all drawn against the same latitude band through the same
-     projection, so they register without anyone measuring anything. The
-     hover outline gets a fourth layer, above the borders, or the seams would
-     cut it into dashes wherever the two lines coincide, which is everywhere. */
-  .fills,.seams,.hilite,.marks{position:absolute;inset:0}
-  .fills,.hilite{width:100%;height:100%;overflow:hidden}
-  .seams,.hilite,.marks{pointer-events:none}
-  .fills path{fill:transparent;transition:fill-opacity .12s ease}
+  /* Layers on one frame: mappo's land, the fills, mappo's borders on top — all
+     drawn against the same latitude band through the same projection, so they
+     register without anyone measuring anything. The hover outline gets a layer
+     above the borders, or the seams would cut it into dashes wherever the two
+     lines coincide, which is everywhere. On the globe one canvas above mappo's
+     does all of it through locate(). */
+  .fills,.dots,.seams,.hilite,.gl,.marks{position:absolute;inset:0}
+  .fills,.dots,.hilite,.gl{width:100%;height:100%;overflow:hidden}
+  .seams,.hilite,.gl,.marks{pointer-events:none}
+  .fills path,.dots circle{fill:transparent;transition:fill-opacity .12s ease}
+  .fills path.has,.dots circle.has{fill:var(--c)}
   .fills path.lit{fill-opacity:.8}
   .fills path.lit:not(.has){fill:color-mix(in srgb,var(--nodata) 88%,var(--ink));fill-opacity:1}
+  .dots circle.lit{fill:var(--lit)}
   .hilite path{fill:none;stroke:var(--lit);stroke-width:1px}
   /* A country with no shape at this resolution is a dot on its anchor,
      ringed in the seam colour so it stands off the land the way a border would. */
-  .mark{position:absolute;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;
+  .mark{position:absolute;width:1.1cqw;height:1.1cqw;margin:-.55cqw 0 0 -.55cqw;border-radius:50%;background:var(--c);
     box-shadow:0 0 0 1.5px var(--seam);pointer-events:auto;transition:transform .12s ease}
   .mark.lit{transform:scale(1.35)}
-  @media (prefers-reduced-motion:reduce){.fills path,.mark,.row{transition:none}}
+  @media (prefers-reduced-motion:reduce){.fills path,.dots circle,.mark,.row{transition:none}}
 
-  /* The tooltip jsvectormap shows, as the product restyles it. */
   .tip{position:absolute;z-index:3;pointer-events:none;white-space:nowrap;
     background:var(--tip-bg);color:var(--tip-ink);font-size:12px;line-height:16px;padding:4px 8px;border-radius:6px;
     box-shadow:0 4px 6px -1px rgb(0 0 0 / .1),0 2px 4px -2px rgb(0 0 0 / .1);
@@ -93,7 +105,7 @@
   .tip b{font-weight:600}
   .tip span{opacity:.75;margin-left:6px}
 
-  /* shared/distribution_row: flex items-center gap-3, rows spaced by space-y-2.5 */
+  /* One row: code | name | share | bar | count, ten pixels between rows. */
   .rows{display:flex;flex-direction:column;gap:10px;font-size:14px;line-height:20px}
   .row{display:flex;align-items:center;gap:12px;padding:0 6px;margin:0 -6px;border-radius:4px;transition:background .12s ease}
   .row.lit{background:var(--row)}
@@ -120,30 +132,47 @@
 
 <main class="page">
   <section class="card" aria-labelledby="title">
-    <h2 id="title">Geographic Distribution</h2>
-    <p class="sub">Where your users are located</p>
+    <div class="head">
+      <div>
+        <h2 id="title">Geographic Distribution</h2>
+        <p class="sub">Where your users are located</p>
+      </div>
+      <div class="controls">
+        <div class="seg" role="radiogroup" aria-label="Map shape">
+          <button type="button" role="radio" data-set="mode" data-value="flat" aria-checked="true">Flat</button>
+          <button type="button" role="radio" data-set="mode" data-value="globe" aria-checked="false">Globe</button>
+        </div>
+        <div class="seg" role="radiogroup" aria-label="Map style">
+          <button type="button" role="radio" data-set="style" data-value="solid" aria-checked="true">Solid</button>
+          <button type="button" role="radio" data-set="style" data-value="dots" aria-checked="false">Dots</button>
+        </div>
+        <select id="projection" aria-label="Projection"></select>
+      </div>
+    </div>
 
     <div class="split" id="split">
       <div class="map-box">
         <figure class="map" id="map" aria-label="World map shaded by users per country; the table beside it lists the same numbers.">
-          <!-- 1. the land, in the colour of "nobody came from here" -->
+          <!-- 1. the world, in the colour of "nobody came from here" -->
           <mappo-world id="land" mode="flat" cols="240" lat-min="-56" lat-max="84"
             figure="solid" figure-source="vector" figure-color="var(--nodata)"
             ground-color="none" background="none" interactive="false" overlays="false"></mappo-world>
 
-          <!-- 2. the fills, one path per country, keyed by ISO -->
+          <!-- 2. the fills: one path per country on a solid map, one circle per cell on a dotted one -->
           <svg class="fills" id="fills" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <svg class="dots" id="dots" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true" style="display:none"></svg>
 
           <!-- 3. the borders, on top, so every country keeps its edge -->
-          <div class="seams" aria-hidden="true">
+          <div class="seams" id="seamsWrap" aria-hidden="true">
             <mappo-world id="seams" mode="flat" cols="240" lat-min="-56" lat-max="84"
               figure="solid" figure-color="transparent" figure-source="vector"
               borders borders-color="var(--seam)" borders-width="2" borders-opacity="1"
               ground-color="none" background="none" interactive="false" overlays="false"></mappo-world>
           </div>
 
-          <!-- the outline of whatever is pointed at, and the dots for countries with users but no shape -->
+          <!-- the outline of whatever is pointed at; the globe's own layer; the dots for countries with no shape -->
           <svg class="hilite" id="hilite" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <canvas class="gl" id="gl" aria-hidden="true" style="display:none"></canvas>
           <div class="marks" id="marks" aria-hidden="true"></div>
           <div class="tip" id="tip" role="tooltip" hidden></div>
         </figure>
@@ -162,132 +191,439 @@
   </section>
 
   <div class="note">
-    <p>A port of the Geographic Distribution panel from LicenseSeat's product analytics.
-    mappo draws the land and the country borders and hands out the projection; the fills
-    between them come from <code>demo/countries.js</code>: 205 countries keyed by ISO code,
-    23&nbsp;KB gzipped, cut from the same pinned Natural Earth data as mappo's borders with
-    the same simplifier, so they register with them vertex for vertex. The library does not
-    ship that yet. It has country borders as one flat list of anonymous rings, which is
+    <p>The geographic-distribution card an analytics dashboard has, drawn by mappo. mappo
+    draws the land, the borders and the sphere and hands out the projection; the per-country
+    fills come from <code>demo/countries.js</code>: 228 countries keyed by ISO code,
+    24&nbsp;KB gzipped, cut from the same pinned Natural Earth data as mappo's borders with the
+    same simplifier, so they register with them vertex for vertex. The library does not ship
+    keyed regions yet. It has country borders as one flat list of anonymous rings, which is
     enough to draw Brazil's edge and not enough to fill it in.</p>
-    <p>Hover a country for its number, or hover <em>Other</em> to see where the long tail
-    is. A country too small to have a shape at this scale is a dot on Natural Earth's
-    anchor for it. The original is a Miller projection; this is equirectangular, so the same
-    geography sits a little squatter in the same box. <a href="./">More demos</a>.</p>
+    <p>Hover a country for its number, or hover <em>Other</em> to see where the long tail is.
+    A country too small to have a shape at this scale is a dot on its anchor. The controls
+    redraw the same data as a globe, as a dot field, or in any of mappo's flat projections:
+    on the flat map the fills are SVG over mappo's frame, and on the globe they are drawn
+    through <code>locate()</code> cell by cell, the way mappo fills its own globe, with
+    mappo's borders stroked over them the same way. <a href="./">More demos</a>.</p>
   </div>
 </main>
 
 <script type="module">
-import { projectNormalized } from "../dist/mappo.js";
+import * as mappo from "../dist/mappo.js";
 import { bindThemeToggle } from "../assets/theme.js";
 import { regions, region } from "./countries.js";
 
+const { EARTH, cellCenter, cellCorner } = mappo;
 bindThemeToggle(document.getElementById("theme"));
 
-// The numbers behind the picture: ISO 3166-1 alpha-2 → users, which is exactly
-// what LicenseSeat's controller hands its map (@country_map_data). The table is
-// the top ten of that plus the rest as "Other", rounded the way its
-// country_share_table rounds. The top ten are the reference's. The tail was
-// read back off the reference's own render: each fill inverts through the
-// ramp (jsvectormap's default, a linear blend from slate-300 at the smallest
-// count to slate-800 at the largest) to within a count, and 40 of the 42 in
-// "Other" resolve that way. The last two are in places the original map cannot
-// draw at all. They are put in Singapore, which the product's own demo seeder
-// lists as a market, and which is exactly the case the anchor fallback exists for.
+// ── the data ──────────────────────────────────────────────────────────────
+// ISO 3166-1 alpha-2 → users, the shape a dashboard's query hands its map. A
+// plausible month for a developer tool: a third in the United States, then the
+// English-speaking and Western European markets, a long tail across the rest
+// of the world, and the city-states a real feed always contains and a world
+// map usually swallows. Synthetic, like every number on this page.
 const USERS = {
-  US: 80, AU: 7, GB: 7, CA: 6, BR: 5, FR: 4, MX: 4, IL: 3, CH: 3, PT: 3,
-  TW: 3, MW: 2, NO: 2, KR: 2, IN: 2, SE: 2, RO: 2, DE: 2, NL: 2, ES: 2, IS: 2, PH: 2, JP: 2,
-  AM: 1, TZ: 1, ID: 1, RU: 1, DZ: 1, VN: 1, GR: 1, BE: 1, IE: 1, NZ: 1, IT: 1, FI: 1, CZ: 1,
-  SG: 2
+  US: 638, GB: 121, DE: 104, CA: 96, IN: 84, FR: 63, AU: 61, NL: 47, BR: 44, ES: 39,
+  JP: 33, SE: 29, PL: 27, IT: 25, CH: 22, KR: 21, MX: 19, SG: 18, IL: 17, DK: 15,
+  NO: 14, IE: 14, BE: 13, AT: 12, FI: 11, PT: 11, CZ: 10, NZ: 10, UA: 9, RO: 9, TR: 9,
+  AR: 8, ZA: 8, HK: 8, ID: 8, PH: 7, TW: 7, RU: 7, VN: 6, CL: 6, CO: 6, HU: 6,
+  GR: 5, TH: 5, MY: 5, NG: 5, PK: 5, AE: 5,
+  EG: 4, BG: 4, HR: 4, SK: 4, LT: 4, RS: 4, CN: 4, SA: 4, KE: 4,
+  PE: 3, BD: 3, MA: 3, EE: 3, LV: 3, SI: 3, LU: 3,
+  CY: 2, IS: 2, GE: 2, AM: 2, KZ: 2, LK: 2, NP: 2, TN: 2, GH: 2, UY: 2, EC: 2, CR: 2, DO: 2, GT: 2, PA: 2, MT: 2,
+  BY: 1, MD: 1, AZ: 1, UZ: 1, MN: 1, KH: 1, MM: 1, ET: 1, TZ: 1, UG: 1, RW: 1, ZW: 1, ZM: 1, MZ: 1, AO: 1,
+  CM: 1, CI: 1, SN: 1, DZ: 1, JO: 1, LB: 1, QA: 1, KW: 1, BH: 1, OM: 1, BO: 1, PY: 1, VE: 1, HN: 1, SV: 1,
+  NI: 1, JM: 1, TT: 1, CU: 1, BS: 1, FJ: 1, PG: 1, MU: 1, MV: 1, BN: 1, MO: 1, LI: 1, AL: 1, MK: 1, BA: 1,
+  ME: 1, XK: 1, IQ: 1, LA: 1, MG: 1, NA: 1, BW: 1, SR: 1, GY: 1, BZ: 1
 };
 const LIMIT = 10;
 
-// country_share_table, in JavaScript: rank, take the top `limit`, collapse the
-// rest into one muted "Other" row, round every share to a whole percent.
+// Rank, take the top `limit`, collapse the rest into one muted "Other" row,
+// round every share to a whole percent.
 const ranked = Object.entries(USERS).filter(([ , n ]) => n > 0).sort((a, b) => b[1] - a[1]);
 const total = ranked.reduce((n, [ , v ]) => n + v, 0);
 const pct = (n) => Math.round((n / total) * 100);
 const head = ranked.slice(0, LIMIT), tail = ranked.slice(LIMIT);
-const rest = tail.reduce((n, [ , v ]) => n + v, 0);
+const rest_ = tail.reduce((n, [ , v ]) => n + v, 0);
 const nameOf = (id) => region(id)?.name ?? id;
 const rows = head.map(([ id, n ]) => ({ id, name: nameOf(id), count: n, pct: pct(n) }));
-if (rest > 0) rows.push({ id: null, name: "Other", count: rest, pct: pct(rest) });
+if (rest_ > 0) rows.push({ id: null, name: "Other", count: rest_, pct: pct(rest_) });
 
-// The ramp, as jsvectormap's numeric scale computes it: linear between the two
-// scale colours, from the smallest value in the data to the largest — so with
-// a long tail of ones, a one is exactly slate-300. The mixing is left to CSS,
-// deliberately: a colour computed in JavaScript would have to be recomputed
-// whenever the theme changes, and color-mix keeps every fill a live expression
-// of the tokens instead. `in srgb` because that is the space jsvectormap
-// interpolates in.
+// ── colours ───────────────────────────────────────────────────────────────
+// Linear from the smallest count to the largest, the convention choropleth
+// libraries default to: with a long tail of ones, a one is exactly the low end
+// of the ramp, one step above the no-data tone. The SVG layers mix in CSS so a
+// theme change repaints them for free; a canvas cannot, so it reads the same
+// tokens, mixes them itself, and is redrawn on the flip.
 const values = ranked.map(([ , n ]) => n);
 const lo = Math.min(...values), hi = Math.max(...values);
 const t = (n) => (hi === lo ? 1 : (n - lo) / (hi - lo));
 const shade = (n) => `color-mix(in srgb, var(--ramp-hi) ${(t(n) * 100).toFixed(2)}%, var(--ramp-lo))`;
+let palette = null;
+function tokens() {
+  const css = getComputedStyle(document.documentElement);
+  const hex = (name) => css.getPropertyValue(name).trim();
+  const rgb = (h) => [ 1, 3, 5 ].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const a = rgb(hex("--ramp-lo")), b = rgb(hex("--ramp-hi"));
+  return {
+    seam: hex("--seam"), lit: hex("--lit"),
+    mix: (k) => `rgb(${a.map((c, i) => Math.round(c + (b[i] - c) * k)).join(" ")})`
+  };
+}
+const shadeCanvas = (n) => (palette ??= tokens()).mix(t(n));
+new MutationObserver(() => { palette = null; redraw(); })
+  .observe(document.documentElement, { attributes: true, attributeFilter: [ "data-theme", "class", "style" ] });
 
 const $ = (id) => document.getElementById(id);
-const map = $("map"), fills = $("fills"), hilite = $("hilite"), marks = $("marks"), tip = $("tip"), list = $("rows");
+const map = $("map"), land = $("land"), seams = $("seams"), seamsWrap = $("seamsWrap");
+const fills = $("fills"), dots = $("dots"), hilite = $("hilite"), gl = $("gl"), marks = $("marks"), tip = $("tip"), list = $("rows");
+const SVG = "http://www.w3.org/2000/svg";
+const fmt = new Intl.NumberFormat("en-US");
 
 if (!total) {
   $("split").hidden = true;
   $("empty").hidden = false;
 }
 
-// ── the map ───────────────────────────────────────────────────────────────
-// One source of truth for the framing: the map's own. The fills are projected
-// through mappo's projectNormalized against the latitude band the land was
-// drawn at, into a 0…1000 box stretched over the same element, so a fill can
-// only ever land where the land is. A vertex past the band is clamped to its
-// edge: the ring stays closed, and the part of Chile below the frame becomes a
-// flat run along the bottom that draws nothing.
-const latRange = $("land").map.options.latRange;
-const [ latMin, latMax ] = latRange;
-const inBand = (lat) => lat >= latMin && lat <= latMax;
-const VB = 1000;
-const at = (lat, lon) => {
-  const p = projectNormalized(Math.max(latMin, Math.min(latMax, lat)), lon, { latRange });
-  return `${(p.x * VB).toFixed(1)} ${(p.y * VB).toFixed(1)}`;
-};
-// fill-rule evenodd rather than nonzero: Natural Earth promises no winding
-// direction, and evenodd punches holes — Lesotho out of South Africa — without
-// anyone having to trust the ring order.
-const SVG = "http://www.w3.org/2000/svg";
-const paths = new Map();
-for (const r of regions()) {
-  // Antarctica lies wholly below the frame: no path, and nothing to hover.
-  if (!r.rings.some((ring) => ring.some(([ lat ]) => inBand(lat)))) continue;
-  const el = document.createElementNS(SVG, "path");
-  el.setAttribute("d", r.rings.map((ring) => "M" + ring.map(([ lat, lon ]) => at(lat, lon)).join("L") + "Z").join(""));
-  el.setAttribute("fill-rule", "evenodd");
-  el.dataset.id = r.id;
-  const n = USERS[r.id];
-  if (n > 0) { el.style.fill = shade(n); el.classList.add("has"); }
-  fills.append(el);
-  paths.set(r.id, el);
+// ── which country a point is in ───────────────────────────────────────────
+// A ray cast over the country's rings, even-odd, so Lesotho's ring inside
+// South Africa's takes the point away from South Africa. A bounding box per
+// country keeps it to a handful of candidates per cell.
+const SHAPES = regions().filter((r) => r.rings.length).map((r) => {
+  let s = 90, n = -90, w = 180, e = -180;
+  for (const ring of r.rings) for (const [ lat, lon ] of ring) {
+    if (lat < s) s = lat; if (lat > n) n = lat; if (lon < w) w = lon; if (lon > e) e = lon;
+  }
+  return { id: r.id, rings: r.rings, s, n, w, e };
+});
+function inside(lat, lon, rings) {
+  let odd = false;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [ ai, bi ] = ring[i], [ aj, bj ] = ring[j];
+      if ((ai > lat) !== (aj > lat) && lon < ((bj - bi) * (lat - ai)) / (aj - ai) + bi) odd = !odd;
+    }
+  }
+  return odd;
+}
+function countryAt(lat, lon) {
+  for (const c of SHAPES) {
+    if (lat >= c.s && lat <= c.n && lon >= c.w && lon <= c.e && inside(lat, lon, c.rings)) return c.id;
+  }
+  return null;
+}
+// The cells of a grid, each with its centre and its country: the same sampling
+// mappo draws its dot field with, so a coloured dot lands on mappo's dot.
+const CELLS = new Map();
+function cellsFor(key, cols, rows, toLatLon) {
+  let out = CELLS.get(key);
+  if (out) return out;
+  out = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const p = toLatLon(col, row);
+      if (!p || !EARTH.figure(p.lat, p.lon)) continue;
+      out.push({ col, row, lat: p.lat, lon: p.lon, id: countryAt(p.lat, p.lon) });
+    }
+  }
+  CELLS.set(key, out);
+  return out;
+}
+// A code with no shape and no anchor at this scale stays in the table and is
+// said so once, rather than silently dropped.
+const unplaced = ranked.filter(([ id ]) => !region(id)).map(([ id ]) => id);
+if (unplaced.length) console.info(`[analytics] no shape or anchor at this resolution for ${unplaced.join(", ")}: counted in the table, absent from the map`);
+
+// ── the controls ──────────────────────────────────────────────────────────
+// Flat or globe; solid or dotted; and, on the flat map, whichever projections
+// the bundle knows. The state lives in the URL so a view can be linked.
+const known = new Set(mappo.knownProjections?.() ?? [ "equirectangular" ]);
+const PROJECTIONS = [
+  { id: "equirectangular", label: "Equirectangular", band: [ -56, 84 ] },
+  { id: "equal-earth", label: "Equal Earth", band: [ -90, 90 ] },
+  { id: "stereographic-north", label: "North polar", band: [ 30, 90 ] },
+  { id: "stereographic-south", label: "South polar", band: [ -90, -30 ] }
+].filter((p) => known.has(p.id));
+const state = { mode: "flat", style: "solid", projection: "equirectangular" };
+const params = new URLSearchParams(location.search);
+if ([ "flat", "globe" ].includes(params.get("mode"))) state.mode = params.get("mode");
+if ([ "solid", "dots" ].includes(params.get("style"))) state.style = params.get("style");
+if (PROJECTIONS.some((p) => p.id === params.get("projection"))) state.projection = params.get("projection");
+
+const select = $("projection");
+for (const p of PROJECTIONS) select.append(new Option(p.label, p.id));
+select.hidden = PROJECTIONS.length < 2;
+select.addEventListener("change", () => set("projection", select.value));
+for (const b of document.querySelectorAll(".seg button")) b.addEventListener("click", () => set(b.dataset.set, b.dataset.value));
+function set(key, value) { if (state[key] !== value) { state[key] = value; apply(); } }
+function reflect() {
+  for (const b of document.querySelectorAll(".seg button")) b.setAttribute("aria-checked", String(state[b.dataset.set] === b.dataset.value));
+  select.value = state.projection;
+  select.disabled = state.mode !== "flat";
+  const q = new URLSearchParams();
+  if (state.mode !== "flat") q.set("mode", state.mode);
+  if (state.style !== "solid") q.set("style", state.style);
+  if (state.projection !== "equirectangular") q.set("projection", state.projection);
+  history.replaceState(null, "", location.pathname + (q.size ? `?${q}` : ""));
 }
 
-// A country with users and no shape is marked on its anchor. A code with
-// neither — Natural Earth has no point for Hong Kong or Macao at this scale —
-// stays in the table and is said so once, rather than silently dropped.
-const unplaced = [];
-for (const [ id, n ] of ranked) {
-  const r = region(id);
-  if (!r || (!r.rings.length && !inBand(r.anchor[0]))) { unplaced.push(id); continue; }
-  if (r.rings.length) continue;
-  const p = projectNormalized(r.anchor[0], r.anchor[1], { latRange });
-  const el = document.createElement("span");
-  el.className = "mark";
-  el.dataset.id = id;
-  el.style.left = `${(p.x * 100).toFixed(3)}%`;
-  el.style.top = `${(p.y * 100).toFixed(3)}%`;
-  el.style.background = shade(n);
-  marks.append(el);
+const setAttrs = (el, attrs) => { for (const [ k, v ] of Object.entries(attrs)) { if (v == null) el.removeAttribute(k); else el.setAttribute(k, String(v)); } };
+const show = (el, on) => { el.style.display = on ? "" : "none"; };
+const GLOBE = { cols: 170, latRange: [ -90, 90 ] };
+GLOBE.rows = Math.round((GLOBE.cols / 360) * 180);
+let flat = null;   // the flat frame being shown: { proj, band, cols, rows }
+
+function apply() {
+  reflect();
+  rest();
+  const dotted = state.style === "dots";
+  const base = { "figure-color": "var(--nodata)", "ground-color": "none", overlays: "false", "dot-size": ".55" };
+  if (state.mode === "flat") {
+    const p = PROJECTIONS.find((x) => x.id === state.projection) ?? PROJECTIONS[0];
+    const proj = mappo.resolveProjection(p.id, { latRange: p.band, centerLon: 0 });
+    // Dots want a denser grid than a fill needs, and a square frame gets fewer
+    // columns for the same count of cells.
+    const cols = dotted ? (proj.aspect >= 2 ? 140 : 100) : 240;
+    flat = { proj, band: p.band, cols, rows: Math.max(1, Math.round(cols / proj.aspect)) };
+    setAttrs(land, { ...base, mode: "flat", projection: p.id, "lat-min": p.band[0], "lat-max": p.band[1], cols,
+      figure: dotted ? "dots" : "solid", "figure-source": "vector", interactive: "false", background: "none",
+      "rotate-speed": null, tilt: null, "globe-ring": null, "dot-hover-color": null, "dot-hover-scale": null });
+    setAttrs(seams, { mode: "flat", projection: p.id, "lat-min": p.band[0], "lat-max": p.band[1], cols: 240 });
+    map.style.setProperty("--aspect", proj.aspect.toFixed(4));
+    stopGlobe();
+    buildFlat();
+  } else {
+    flat = null;
+    setAttrs(land, { ...base, mode: "globe", projection: null, "lat-min": GLOBE.latRange[0], "lat-max": GLOBE.latRange[1], cols: GLOBE.cols,
+      figure: dotted ? "dots" : "solid", "figure-source": "grid", interactive: "true", background: "var(--sea)",
+      "globe-ring": "true", "rotate-speed": "3", tilt: "14", "dot-hover-color": "var(--nodata)", "dot-hover-scale": "1" });
+    map.style.setProperty("--aspect", "1");
+    clearFlat();
+    startGlobe();
+  }
+  show(fills, state.mode === "flat" && !dotted);
+  show(dots, state.mode === "flat" && dotted);
+  show(seamsWrap, state.mode === "flat" && !dotted);
+  show(hilite, state.mode === "flat");
+  show(marks, state.mode === "flat");
+  show(gl, state.mode === "globe");
 }
-if (unplaced.length) {
-  console.info(`[analytics] no shape or anchor at this resolution for ${unplaced.join(", ")}: counted in the table, absent from the map`);
+
+// ── the flat map ──────────────────────────────────────────────────────────
+// The fills are projected through the same projection instance mappo draws
+// with, into a unit box stretched over the same element, so a fill can only
+// ever land where the land is. A vertex past the latitude band is clamped to
+// its edge: the ring stays closed, and the part of Chile below the frame
+// becomes a run along the frame's edge that draws nothing.
+const byId = new Map();   // id → the elements that show it on the flat layers
+function clearFlat() { fills.replaceChildren(); dots.replaceChildren(); hilite.replaceChildren(); marks.replaceChildren(); byId.clear(); }
+const remember = (id, el) => { if (!byId.has(id)) byId.set(id, []); byId.get(id).push(el); };
+function buildFlat() {
+  clearFlat();
+  const { proj, band, cols, rows } = flat;
+  const [ latMin, latMax ] = band;
+  const inBand = (lat) => lat >= latMin && lat <= latMax;
+  if (state.style === "solid") {
+    const at = (lat, lon) => {
+      const p = proj.forward(Math.max(latMin, Math.min(latMax, lat)), lon);
+      return p ? `${(p.x * 1000).toFixed(1)} ${(p.y * 1000).toFixed(1)}` : null;
+    };
+    for (const r of regions()) {
+      if (!r.rings.some((ring) => ring.some(([ lat ]) => inBand(lat)))) continue;   // Antarctica, on most maps
+      const d = r.rings.map((ring) => {
+        const pts = ring.map(([ lat, lon ]) => at(lat, lon)).filter(Boolean);
+        return pts.length > 2 ? `M${pts.join("L")}Z` : "";
+      }).join("");
+      if (!d) continue;
+      const el = document.createElementNS(SVG, "path");
+      el.setAttribute("d", d);
+      // evenodd rather than nonzero: Natural Earth promises no winding
+      // direction, and evenodd punches holes without anyone trusting the order.
+      el.setAttribute("fill-rule", "evenodd");
+      el.dataset.id = r.id;
+      const n = USERS[r.id];
+      if (n > 0) { el.style.setProperty("--c", shade(n)); el.classList.add("has"); }
+      fills.append(el);
+      remember(r.id, el);
+    }
+  } else {
+    // One circle per figure cell of mappo's own grid: cells are square on
+    // screen and their centres are the inverse projection of the screen point,
+    // which is how mappo lays its dots, so these sit exactly on them.
+    dots.setAttribute("viewBox", `0 0 ${cols} ${rows}`);
+    const list = cellsFor(`flat|${proj.key}|${cols}`, cols, rows, (col, row) => proj.inverse((col + 0.5) / cols, (row + 0.5) / rows));
+    for (const c of list) {
+      const el = document.createElementNS(SVG, "circle");
+      el.setAttribute("cx", c.col + 0.5);
+      el.setAttribute("cy", c.row + 0.5);
+      el.setAttribute("r", 0.275);
+      el.setAttribute("vector-effect", "non-scaling-stroke");
+      if (c.id) el.dataset.id = c.id;
+      const n = c.id ? USERS[c.id] : 0;
+      if (n > 0) { el.style.setProperty("--c", shade(n)); el.classList.add("has"); }
+      dots.append(el);
+      if (c.id) remember(c.id, el);
+    }
+  }
+  // Countries with users and no shape: a dot on the anchor.
+  for (const [ id, n ] of ranked) {
+    const r = region(id);
+    if (!r || r.rings.length || !inBand(r.anchor[0])) continue;
+    const p = proj.forward(r.anchor[0], r.anchor[1]);
+    if (!p) continue;
+    const el = document.createElement("span");
+    el.className = "mark";
+    el.dataset.id = id;
+    el.style.left = `${(p.x * 100).toFixed(3)}%`;
+    el.style.top = `${(p.y * 100).toFixed(3)}%`;
+    el.style.setProperty("--c", shade(n));
+    marks.append(el);
+    remember(id, el);
+  }
+}
+
+// ── the globe ─────────────────────────────────────────────────────────────
+// mappo draws the sphere, the no-data land and turns the globe; this canvas
+// draws the data over it through locate(), the projection mappo drew with a
+// moment ago. Solid: a quad per figure cell whose four corners face us, the
+// way mappo fills its own globe, then mappo's borders on top. Dotted: a disc
+// per cell, sized and faded as mappo sizes its own. A frame that has not
+// moved is not redrawn; a parked globe costs nothing.
+let raf = null, lastKey = null;
+const hits = { x: new Float32Array(0), y: new Float32Array(0), id: [], n: 0, r: 8 };
+function startGlobe() { lastKey = null; if (!raf) loop(); }
+function stopGlobe() { if (raf) cancelAnimationFrame(raf); raf = null; hits.n = 0; }
+function loop() { raf = requestAnimationFrame(loop); drawGlobe(); }
+function redraw() { lastKey = null; }
+new ResizeObserver(redraw).observe(map);
+
+function drawGlobe() {
+  const m = land.map;
+  if (!m || state.mode !== "globe") return;
+  const a = m.locate(0, 0), b = m.locate(90, 0);
+  if (!a || !b) return;                         // before the globe's first frame
+  const box = map.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
+  const key = [ a.x, a.y, a.r, b.x, b.y, box.width, box.height, dpr, state.style, [ ...lit ].join() ].join("|");
+  if (key === lastKey) return;
+  lastKey = key;
+  const W = Math.round(box.width * dpr), H = Math.round(box.height * dpr);
+  if (gl.width !== W || gl.height !== H) { gl.width = W; gl.height = H; }
+  const ctx = gl.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const pal = palette ??= tokens();
+  const list = cellsFor(`globe|${GLOBE.cols}`, GLOBE.cols, GLOBE.rows, (col, row) => cellCenter(col, row, GLOBE));
+  if (hits.x.length < list.length + 64) {
+    hits.x = new Float32Array(list.length + 64);
+    hits.y = new Float32Array(list.length + 64);
+    hits.id = new Array(list.length + 64);
+  }
+  let n = 0;
+  const R = a.r;
+  const paths = new Map();
+  const bucket = (colour, band) => { const k = `${colour}|${band}`; let p = paths.get(k); if (!p) paths.set(k, p = new Path2D()); return p; };
+  if (state.style === "dots") {
+    const base = Math.max(0.75, (4 * R) / GLOBE.cols) * 0.55 * 1.6;
+    hits.r = Math.max(7, base);
+    const litPath = new Path2D();
+    let anyLit = false;
+    for (const c of list) {
+      const q = m.locate(c.lat, c.lon);
+      if (!q.front) continue;
+      hits.x[n] = q.x; hits.y[n] = q.y; hits.id[n++] = c.id;
+      const users = c.id ? USERS[c.id] : 0;
+      if (!users) continue;
+      const s = base * (0.45 + 0.55 * q.depth);
+      // A lit dot is the same dot in the outline colour: the tail as a dark field.
+      if (lit.has(c.id)) { litPath.moveTo(q.x + s / 2, q.y); litPath.arc(q.x, q.y, s / 2, 0, 6.2832); anyLit = true; continue; }
+      const p = bucket(shadeCanvas(users), Math.min(2, Math.floor(q.depth * 3)));
+      p.moveTo(q.x + s / 2, q.y);
+      p.arc(q.x, q.y, s / 2, 0, 6.2832);
+    }
+    for (const [ k, p ] of paths) {
+      const i = k.lastIndexOf("|");
+      ctx.fillStyle = k.slice(0, i);
+      ctx.globalAlpha = 0.25 + 0.75 * ((+k.slice(i + 1) + 0.5) / 3);
+      ctx.fill(p);
+    }
+    ctx.globalAlpha = 1;
+    if (anyLit) { ctx.fillStyle = pal.lit; ctx.fill(litPath); }
+  } else {
+    hits.r = Math.max(7, ((2 * R) / GLOBE.cols) * 1.2);
+    // Corners are shared by the four cells around them: project each once.
+    const corners = new Map();
+    const corner = (col, row) => {
+      const k = row * (GLOBE.cols + 1) + col;
+      let q = corners.get(k);
+      if (!q) { const g = cellCorner(col, row, GLOBE); corners.set(k, q = m.locate(g.lat, g.lon)); }
+      return q;
+    };
+    for (const c of list) {
+      const q = m.locate(c.lat, c.lon);
+      if (!q.front) continue;
+      hits.x[n] = q.x; hits.y[n] = q.y; hits.id[n++] = c.id;
+      const users = c.id ? USERS[c.id] : 0;
+      if (!users) continue;
+      const A = corner(c.col, c.row), B = corner(c.col + 1, c.row), C = corner(c.col + 1, c.row + 1), D = corner(c.col, c.row + 1);
+      if (!(A.front && B.front && C.front && D.front)) continue;
+      const p = bucket(shadeCanvas(users), Math.min(5, Math.floor(A.depth * 6)));
+      p.moveTo(A.x, A.y); p.lineTo(B.x, B.y); p.lineTo(C.x, C.y); p.lineTo(D.x, D.y); p.closePath();
+    }
+    for (const [ k, p ] of paths) {
+      const i = k.lastIndexOf("|");
+      ctx.fillStyle = k.slice(0, i);
+      ctx.globalAlpha = 0.35 + 0.65 * ((+k.slice(i + 1) + 0.5) / 6);   // the fade mappo's own fill wears
+      ctx.fill(p);
+    }
+    ctx.globalAlpha = 1;
+    strokeRings(ctx, m, EARTH.borders(), pal.seam, 0.75, 0.9);
+    for (const id of lit) { const r = region(id); if (r?.rings.length) strokeRings(ctx, m, r.rings, pal.lit, 1.25, 1); }
+  }
+  // Countries with users and no shape: a dot on the anchor, a shade larger than a cell.
+  for (const [ id, users ] of ranked) {
+    const r = region(id);
+    if (!r || r.rings.length) continue;
+    const q = m.locate(r.anchor[0], r.anchor[1]);
+    if (!q.front) continue;
+    hits.x[n] = q.x; hits.y[n] = q.y; hits.id[n++] = id;
+    const s = Math.max(3.5, (2.4 * R) / GLOBE.cols) * (lit.has(id) ? 1.35 : 1);
+    ctx.beginPath();
+    ctx.arc(q.x, q.y, s, 0, 6.2832);
+    ctx.fillStyle = shadeCanvas(users);
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = pal.seam;
+    ctx.stroke();
+  }
+  hits.n = n;
+}
+// Polylines through locate(), the pen lifted at the limb.
+function strokeRings(ctx, m, rings, colour, width, alpha) {
+  ctx.strokeStyle = colour; ctx.lineWidth = width; ctx.globalAlpha = alpha; ctx.lineJoin = "round"; ctx.lineCap = "round";
+  ctx.beginPath();
+  for (const ring of rings) {
+    let pen = false;
+    for (const [ lat, lon ] of ring) {
+      const q = m.locate(lat, lon);
+      if (!q.front) { pen = false; continue; }
+      if (pen) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y);
+      pen = true;
+    }
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+// The nearest cell drawn this frame, within a cell's reach.
+function hitAt(x, y) {
+  let best = -1, bd = hits.r * hits.r;
+  for (let i = 0; i < hits.n; i++) {
+    const dx = hits.x[i] - x, dy = hits.y[i] - y, d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best < 0 ? null : { id: hits.id[best] };
 }
 
 // ── the table ─────────────────────────────────────────────────────────────
-const fmt = new Intl.NumberFormat("en-US");
 for (const row of rows) {
   const el = document.createElement("div");
   el.className = "row" + (row.id ? "" : " other");
@@ -307,29 +643,31 @@ const rowFor = (id) => list.querySelector(`.row[data-id="${id}"]`) ?? (tail.some
 // ── hover, both ways ──────────────────────────────────────────────────────
 // Point at a country and its row lights; rest on a row and its country
 // lights. "Other" lights the whole tail, which is the only way to see where
-// the long tail actually is. The outline is a copy of the country's path on
-// the layer above the seams, stroked and not filled, one pixel wide whatever
-// the stretch of the box.
+// the long tail actually is. On the solid flat map the outline is a copy of
+// the country's path on the layer above the seams; on the globe the next
+// frame draws it.
 const lit = new Set();
 function light(id, on) {
-  const path = paths.get(id);
-  path?.classList.toggle("lit", on);
-  if (path && on && !hilite.querySelector(`[data-id="${id}"]`)) {
-    const outline = document.createElementNS(SVG, "path");
-    outline.setAttribute("d", path.getAttribute("d"));
-    outline.setAttribute("vector-effect", "non-scaling-stroke");
-    outline.dataset.id = id;
-    hilite.append(outline);
-  } else if (!on) {
-    hilite.querySelector(`[data-id="${id}"]`)?.remove();
+  for (const el of byId.get(id) ?? []) el.classList.toggle("lit", on);
+  if (state.mode === "flat" && state.style === "solid") {
+    const path = byId.get(id)?.[0];
+    if (on && path?.tagName === "path" && !hilite.querySelector(`[data-id="${id}"]`)) {
+      const outline = document.createElementNS(SVG, "path");
+      outline.setAttribute("d", path.getAttribute("d"));
+      outline.setAttribute("vector-effect", "non-scaling-stroke");
+      outline.dataset.id = id;
+      hilite.append(outline);
+    } else if (!on) {
+      hilite.querySelector(`[data-id="${id}"]`)?.remove();
+    }
   }
-  marks.querySelector(`[data-id="${id}"]`)?.classList.toggle("lit", on);
   rowFor(id)?.classList.toggle("lit", on);
   on ? lit.add(id) : lit.delete(id);
+  redraw();
 }
 function clear() { for (const id of [ ...lit ]) light(id, false); }
 
-let hovered = null;
+let hovered = null, down = null, dragging = false;
 function showTip(id, x, y) {
   const r = region(id), n = USERS[id] ?? 0;
   tip.innerHTML = `<b>${r.name}</b>` + (n ? `<span>${fmt.format(n)} ${n === 1 ? "user" : "users"} · ${pct(n)}%</span>` : "");
@@ -340,24 +678,32 @@ function showTip(id, x, y) {
   tip.style.top = `${y.toFixed(1)}px`;
 }
 function point(e) {
-  const id = e.target.closest?.("[data-id]")?.dataset.id ?? null;
+  if (dragging) { tip.hidden = true; return; }     // the pointer is turning the globe
+  const box = map.getBoundingClientRect(), x = e.clientX - box.left, y = e.clientY - box.top;
+  const id = state.mode === "globe"
+    ? (hitAt(x, y)?.id ?? null)
+    : (e.target.closest?.("[data-id]")?.dataset.id || null);
   if (id !== hovered) { clear(); hovered = id; if (id) light(id, true); }
   if (!id) { tip.hidden = true; return; }
-  const box = map.getBoundingClientRect();
-  showTip(id, e.clientX - box.left, e.clientY - box.top);
+  showTip(id, x, y);
 }
-const rest_ = () => { clear(); hovered = null; tip.hidden = true; };
-map.addEventListener("pointermove", point);
-map.addEventListener("pointerdown", point);
-map.addEventListener("pointerleave", rest_);
+function rest() { clear(); hovered = null; tip.hidden = true; }
+const up = () => { down = null; dragging = false; };
+map.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY }; dragging = false; point(e); });
+map.addEventListener("pointermove", (e) => { if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) dragging = true; point(e); });
+map.addEventListener("pointerup", up);
+map.addEventListener("pointercancel", up);
+map.addEventListener("pointerleave", () => { up(); rest(); });
 // A tap has no leave: touching anything else puts the map to rest.
-document.addEventListener("pointerdown", (e) => { if (!map.contains(e.target)) rest_(); });
+document.addEventListener("pointerdown", (e) => { if (!map.contains(e.target)) rest(); });
 
 for (const el of list.querySelectorAll(".row")) {
   const ids = el.dataset.id ? [ el.dataset.id ] : el.dataset.ids.split(" ").filter(Boolean);
   el.addEventListener("pointerenter", () => { for (const id of ids) light(id, true); el.classList.add("lit"); });
   el.addEventListener("pointerleave", () => { for (const id of ids) light(id, false); el.classList.remove("lit"); });
 }
+
+apply();
 </script>
 </body>
 </html>
