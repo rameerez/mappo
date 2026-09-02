@@ -478,6 +478,7 @@ export class GlobeRenderer {
         this._drag.moved += Math.abs(dx);
         this._drag.lastX = e.clientX;
         this._drag.lastT = e.timeStamp;
+        this._dirty = true;   // the loop draws it next frame (see _loop); reduced motion has no loop
         if (this._static) this._draw();
       } else {
         this.#hover(e);
@@ -696,13 +697,18 @@ export class GlobeRenderer {
   // pointer, no option change) costs nothing per frame, which is what lets a
   // dashboard hold a dozen of them. Anything that changes the picture without
   // moving the angle sets _dirty; _draw clears it.
+  //
+  // "Something moved" is judged against the frame actually DRAWN, not against
+  // the start of this callback: a drag changes the angle in pointermove events
+  // between frames, and comparing the angle at the top of the callback with
+  // the angle at the bottom saw no change there — the globe froze under the
+  // pointer and jumped on release, when momentum moved it inside a frame.
   _loop() {
     this._raf = requestAnimationFrame((t) => {
       this._raf = null;
       if (!this._visible) return; // the IntersectionObserver restarts us
       const dt = this._t == null ? 16 : Math.min(100, t - this._t);
       this._t = t;
-      const before = this.angle;
       const animating = !!(this.o.animation && this.o.animation !== "none" && this.phases);
       if (animating) this._time = (this._time || 0) + dt / 1000;
       if (this._drag?.active) {
@@ -712,10 +718,14 @@ export class GlobeRenderer {
         // Momentum relaxes back to the base spin — exponential, ~0.8s to
         // settle, so the handoff from a flick to auto-rotation is seamless.
         this._omega += (this.o.rotateSpeed - this._omega) * (1 - Math.exp(-dt / 800));
-        if (Math.abs(this._omega) < 1e-4) this._omega = this.o.rotateSpeed;
+        // Within 0.05°/s of the base spin the flick is over: what the exponential
+        // still owes integrates to 0.04°, a third of a pixel on a 400 px globe.
+        // Snapping there lets a still globe stop drawing seconds sooner than a
+        // 1e-4 threshold would, which was twelve seconds of invisible frames.
+        if (Math.abs(this._omega - this.o.rotateSpeed) < 0.05) this._omega = this.o.rotateSpeed;
         if (this._omega !== 0) this.angle = (this.angle + (this._omega * dt) / 1000 + 360) % 360;
       }
-      if (this.angle !== before || animating || this._dirty) this._draw();
+      if (this.angle !== this._drawnAngle || animating || this._dirty) this._draw();
       this._loop();
     });
   }
@@ -1410,6 +1420,7 @@ export class GlobeRenderer {
     if (!ctx || !side) return;
     const o = this.o;
     this._dirty = false;
+    this._drawnAngle = this.angle;
     ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0);
     ctx.clearRect(0, 0, side, side);
 

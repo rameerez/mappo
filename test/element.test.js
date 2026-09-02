@@ -753,3 +753,60 @@ test("extendBody: rings arriving after the map drew are drawn at once, and the f
   assert.throws(() => api.extendBody(id, { figure: () => true }), /not something a body can be given later/);
   unmount(element);
 });
+
+test("globe: a drag is drawn while the pointer moves, not only on release", async () => {
+  // Every other test here runs its globes under prefers-reduced-motion (the
+  // matchMedia stub above), which is exactly the mode WITHOUT a frame loop.
+  // This one needs the loop: give it jsdom's requestAnimationFrame and a
+  // motion-allowing matchMedia for its lifetime, then put both back.
+  const saved = { matchMedia: globalThis.matchMedia, raf: globalThis.requestAnimationFrame, caf: globalThis.cancelAnimationFrame };
+  globalThis.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  globalThis.requestAnimationFrame = window.requestAnimationFrame.bind(window);
+  globalThis.cancelAnimationFrame = window.cancelAnimationFrame.bind(window);
+  try {
+    const element = mount("mappo-world", { mode: "globe", cols: 24, "rotate-speed": 0 });
+    const renderer = element.map._renderer;
+    assert.equal(renderer._static, false, "this globe has a frame loop");
+    const canvas = element.querySelector("canvas");
+    let draws = 0;
+    const draw = renderer._draw.bind(renderer);
+    renderer._draw = () => { draws++; draw(); };
+    renderer.side = 400;   // jsdom has no layout; the drag maths divides by the canvas side
+    await settle(100);
+    const idle = draws;
+    await settle(100);
+    assert.equal(draws, idle, "a parked globe draws no frames before anything moves");
+    const angle0 = renderer.angle;
+    canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, clientY: 200, bubbles: true }));
+    canvas.dispatchEvent(new MouseEvent("pointermove", { clientX: 160, clientY: 200, bubbles: true }));
+    assert.notEqual(renderer.angle, angle0, "the pointer owns the angle");
+    await settle(120);   // a few animation frames, pointer still down
+    assert.ok(draws > idle, "a moved angle is drawn on the next frame — the globe follows the pointer");
+    const drawsWhileDown = draws;
+    // An angle changed by anyone between frames is drawn too: the loop judges
+    // against the frame it last drew, not against its own start.
+    renderer.angle = (renderer.angle + 15) % 360;
+    await settle(120);
+    assert.ok(draws > drawsWhileDown, "an external angle change is drawn");
+    // Release without a flick: a parked globe draws no frames at all.
+    renderer._drag.v = 0;
+    canvas.dispatchEvent(new MouseEvent("pointerup", { clientX: 160, clientY: 200, bubbles: true }));
+    await settle(150);
+    const parked = draws;
+    await settle(200);
+    assert.equal(draws, parked, "a parked globe costs no frames");
+    // A flick carries momentum past release, and momentum is drawn.
+    canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, clientY: 200, bubbles: true }));
+    canvas.dispatchEvent(new MouseEvent("pointermove", { clientX: 220, clientY: 200, bubbles: true }));
+    canvas.dispatchEvent(new MouseEvent("pointerup", { clientX: 220, clientY: 200, bubbles: true }));
+    const released = renderer.angle;
+    await settle(150);
+    assert.notEqual(renderer.angle, released, "momentum keeps the globe turning after release");
+    assert.ok(draws > parked, "and the turning is drawn");
+    unmount(element);
+  } finally {
+    Object.assign(globalThis, { matchMedia: saved.matchMedia, requestAnimationFrame: saved.raf, cancelAnimationFrame: saved.caf });
+    if (saved.raf === undefined) delete globalThis.requestAnimationFrame;
+    if (saved.caf === undefined) delete globalThis.cancelAnimationFrame;
+  }
+});
