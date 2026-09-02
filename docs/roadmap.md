@@ -102,7 +102,7 @@ a map projection, and the rotation is the point.
 ## 6. Packaging track: one package, and the `@mappo` organisation
 
 **Decided 2026-09-02.** mappo is one npm package, `mappo`, with subpath
-exports: the core (21.5 KB gzipped, the whole Earth inside) and the opt-in
+exports: the core (22.0 KB gzipped, the whole Earth inside) and the opt-in
 modules `mappo/globe`, `mappo/projections`, `mappo/vector`,
 `mappo/bodies/earth-vector`, `mappo/bodies/moon`, `mappo/bodies/mars` and
 `mappo/all`. Each module imports the core by the relative path `./mappo.js`,
@@ -116,7 +116,7 @@ in [weight.md §5](weight.md); the short version of why not a package per module
 - the modules import about twenty seam helpers from the core, so their versions
   could never move independently — eight packages published in lockstep on
   every release is ceremony, not modularity;
-- `npm install mappo` must remain the 21.5 KB core, or the headline is a
+- `npm install mappo` must remain the 22.0 KB core, or the headline is a
   footnote.
 
 The **`@mappo` organisation on npm is registered and deliberately empty.** It
