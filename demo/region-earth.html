@@ -93,7 +93,6 @@
   .stage mappo-world{position:absolute;display:block;width:300px;left:0;top:0}
   #lattice{pointer-events:none;z-index:1}
   #globe .mappo-overlay{z-index:3}
-  .arcs{position:absolute;inset:0;z-index:2;pointer-events:none;width:100%;height:100%}
 
   /* ── pins (48 px discs) and captions (240 px dashed boxes) ────────────── */
   .poi-root,.cap-root{pointer-events:none}
@@ -186,7 +185,6 @@
             distance="2.366" fog="-0.669 1.014" rotate-speed="0" interactive="false" overlays="false"
             graticule meridians="12" parallels="0" graticule-color="var(--graticule)"
             graticule-opacity="0.0784" equator-opacity="0" graticule-width="0.5"></mappo-world>
-          <canvas class="arcs" id="arcs" aria-hidden="true"></canvas>
         </div>
       </div>
     </div>
@@ -223,8 +221,8 @@
   OrbitControls locked to the equator. Here the same picture is four attributes on one element:
   <code>distribution="uniform"</code>, <code>dot-shape="tile"</code>, <code>distance="2.37"</code> and
   <code>fog="-0.67 1.01"</code>, with the land coming from mappo's own Natural Earth mask instead of a picture.</p>
-  <p>The pins and captions are ordinary DOM inside the element, positioned by mappo; the arcs are drawn on a
-  canvas from <code>locate()</code>. The spin is the original's: the camera orbits the screen's vertical while
+  <p>The pins and captions are ordinary DOM inside the element, positioned by mappo; the arcs are
+  <code>mappo/links</code>, fed the original's curve and faded by the fog at every depth. The spin is the original's: the camera orbits the screen's vertical while
   the globe leans 14.3°, so the pole slowly wanders — that motion is decomposed each frame into mappo's
   <code>focus</code>, <code>tilt</code> and <code>roll</code>. Drag the globe: the pointer feeds the same damped rotation OrbitControls uses
   (a twentieth of what is pending, each frame), so the globe eases after the hand and glides to a stop.
@@ -271,7 +269,7 @@ bindThemeToggle(document.getElementById("theme"));
 
 const RAD = Math.PI / 180, DEG = 180 / Math.PI;
 const $ = (id) => document.getElementById(id);
-const stage = $("stage"), globeEl = $("globe"), latticeEl = $("lattice"), arcsCanvas = $("arcs");
+const stage = $("stage"), globeEl = $("globe"), latticeEl = $("lattice");
 
 // ── the points of presence, as the section ships them ────────────────────────
 // Eighteen points: infrastructure (Workers, R2) in four groups, users in four
@@ -357,6 +355,7 @@ for (const p of POIS) {
 // sized from the disc the camera model asks for and centred where that camera
 // puts it. Both globes get the same box.
 let geom = { side: 300, left: 0, top: 0, W: 0, H: 0, cam: CAM.desktop };
+let arcLayer = null;   // mappo/links, once the globes exist
 function layout() {
   const W = stage.clientWidth, H = stage.clientHeight;
   if (!W || !H) return;
@@ -371,7 +370,8 @@ function layout() {
     if (el.getAttribute("fog") !== cam.fog) el.setAttribute("fog", cam.fog);
   }
   const dpr = Math.min(2, devicePixelRatio || 1);
-  arcsCanvas.width = Math.round(W * dpr); arcsCanvas.height = Math.round(H * dpr);
+  // The original's tube is 0.002 radii thick: in pixels, at the centre plane.
+  if (arcLayer) arcLayer.defaults.width = 0.004 * geom.R;
   // WebGL lines are one device pixel wide whatever the screen; so are these.
   const hairline = String(1 / dpr);
   for (const el of [ globeEl, latticeEl ]) if (el.getAttribute("graticule-width") !== hairline) el.setAttribute("graticule-width", hairline);
@@ -379,7 +379,7 @@ function layout() {
 layout();
 
 // mappo arrives now, after the children exist and the boxes have a size.
-const { registerBody } = await import("../dist/all.js");
+const { registerBody, links } = await import("../dist/all.js");
 // The graticule twin draws on a world with no figure at all.
 registerBody({ id: "void", name: "Void", latRange: [ -90, 90 ], figure: () => false });
 
@@ -395,10 +395,16 @@ function themeGraticule() {
   globeEl.setAttribute("equator-opacity", String(a));
   latticeEl.setAttribute("graticule-opacity", String(1 - (1 - a) ** 2));   // two more strokes over the base one
   arcColor = getComputedStyle(document.documentElement).getPropertyValue("--color-accent-200").trim() || "#ff7038";
+  if (arcLayer) { arcLayer.defaults.color = arcColor; arcLayer.redraw(); }
 }
 let arcColor = "#ff7038";
 themeGraticule();
 new MutationObserver(themeGraticule).observe(document.documentElement, { attributes: true, attributeFilter: [ "class", "style", "data-theme" ] });
+
+// The arcs are mappo/links on the lattice globe — the same camera in the same
+// box — which puts them over the graticule twin and under the pins, where the
+// hand-drawn canvas used to sit. fade: true takes the fog's alpha at each depth.
+arcLayer = links(lattice, { color: arcColor, width: 0.004 * geom.R, fade: true });
 
 // ── orientation: the original's kinematics, decomposed for mappo ─────────────
 // The original spins the CAMERA about the screen's vertical while the globe is
@@ -432,6 +438,7 @@ const still = params.has("still");
 let lastT = null, dragging = false, dragX = 0;
 const visible = new Set();               // pin ids currently shown
 const arcs = buildArcs();
+for (const arc of arcs) arc.link = arcLayer.add({ points: arc.pts.map((p) => [ p.lat, p.lon, p.r ]), range: [ 0, 0 ], opacity: 0 });
 const arcState = new Map();
 const capState = new Map();              // id → { growing, since, shown }
 const t0 = performance.now();
@@ -455,7 +462,6 @@ function paint(force = false) {
 
   const o = orientation(alpha, geom.cam.tilt);
   map.update(o);
-  lattice.update(o);
 
   // Visibility is the library's call: overlay-horizon="0.12 0.02" marks a pin
   // behind with hysteresis at the limb (appear above 0.12 facing, stay down to
@@ -484,7 +490,11 @@ function paint(force = false) {
     pin.setAttribute("aria-hidden", on ? "false" : "true");
     if (p.caption) caption(p, on, q, t, mobile);
   }
-  drawArcs(dt, located, pinShown);
+  // The arcs' slices for this frame, then the lattice's frame draws them; a
+  // still globe is asked to redraw the layer alone.
+  revealArcs(dt, pinShown);
+  lattice.update(o);
+  arcLayer.redraw();
 }
 
 // A caption grows out of its pin's side of the screen and bobs gently. Right-
@@ -522,13 +532,13 @@ function caption(p, pinOn, q, t, mobile) {
   cap.setAttribute("aria-hidden", "false");
 }
 
-// ── arcs: user → Workers, Workers → R2, drawn from locate() ──────────────────
+// ── arcs: user → Workers, Workers → R2, drawn by mappo/links ─────────────────
 // The original's curve: twenty chord samples between the two surface points,
 // each pushed outward by 0.3·(b − b²) — a bulge of 0.075 radii at the middle —
 // run through a Catmull-Rom spline and swept into a tube 0.002 radii thick.
 // Its reveal: the head races ahead, the tail follows, the colour fades with
-// the arc's own length. Here the same points are projected by mappo every
-// frame, with the fog's alpha at each depth.
+// the arc's own length. The same points go to mappo/links, which projects them
+// every frame with the fog's alpha at each depth and the camera's width.
 function buildArcs() {
   const unit = (p) => { const c = Math.cos(p.lat * RAD); return [ c * Math.sin(p.lon * RAD), Math.sin(p.lat * RAD), c * Math.cos(p.lon * RAD) ]; };
   const curve = (a, b) => {
@@ -595,14 +605,7 @@ function resample(pts, segments) {
   return out;
 }
 const ease = (t) => 1 - (1 - t) ** 3, clamp01 = (v) => Math.max(0, Math.min(1, v));
-function drawArcs(dt, located, pinShown) {
-  const ctx = arcsCanvas.getContext("2d");
-  const dpr = arcsCanvas.width / geom.W;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, geom.W, geom.H);
-  const D = geom.cam.distance, pxPerRadius = geom.R * Math.sqrt(D * D - 1);
-  ctx.strokeStyle = arcColor;
-  ctx.lineCap = "round";
+function revealArcs(dt, pinShown) {
   for (const arc of arcs) {
     const endpoint = (p) => pinShown(p);
     const startOn = endpoint(arc.from), endOn = endpoint(arc.to), on = startOn && endOn;
@@ -616,30 +619,10 @@ function drawArcs(dt, located, pinShown) {
     else st.end = clamp01(Math.max(st.start, st.end - step));
     st.startWas = startOn; st.endWas = endOn;
     const a = ease(st.start), b = ease(st.end), w = Math.max(0, b - a);
-    if (w <= 0) continue;
-    // The visible slice of the tube, in arc length.
-    const pts = arc.pts, n = pts.length - 1;
-    const from = a * n, to = b * n;
-    const sample = (u) => {
-      const i = Math.min(n - 1, Math.floor(u)), f = u - i;
-      const p = pts[i], q = pts[i + 1];
-      const lat = p.lat + (q.lat - p.lat) * f, lon = p.lon + (q.lon - p.lon) * f, r = p.r + (q.r - p.r) * f;
-      const L = map.locate(lat, lon, r);
-      return L && { x: L.x + geom.left, y: L.y + geom.top, fade: L.fade, k: pxPerRadius / (D - L.z * r) };
-    };
-    let prev = sample(from);
-    for (let u = Math.floor(from) + 1; u <= to + 1e-9; u++) {
-      const cur = sample(Math.min(u, to));
-      if (prev && cur) {
-        ctx.globalAlpha = 0.8 * w * (prev.fade + cur.fade) / 2;
-        ctx.lineWidth = 0.004 * (prev.k + cur.k) / 2;
-        ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(cur.x, cur.y); ctx.stroke();
-      }
-      prev = cur;
-      if (u >= to) break;
-    }
+    // The visible slice of the tube, in arc length, at the reveal's strength.
+    arc.link.range = [ a, b ];
+    arc.link.opacity = 0.8 * w;
   }
-  ctx.globalAlpha = 1;
 }
 
 // ── drag: the camera walks round the equator, a full turn per canvas height ──
