@@ -19,6 +19,10 @@
   /* Stars sit BEHIND the globes; the overlay in front of them clears rather
      than fills, or it would paint over the very thing it is annotating. */
   #stars{display:block;position:absolute;inset:0;width:100%;height:100%;z-index:0}
+  #near3d{display:block;position:absolute;inset:0;width:100%;height:100%;z-index:1}
+  /* Off-screen, not display:none — a hidden element has no box and mappo would
+     render it at its 300 px fallback, which is not enough map to be a texture. */
+  #texsrc{position:absolute;left:-20000px;top:0;width:2048px;pointer-events:none}
   .globe{z-index:1}
   #view{display:block;position:absolute;inset:0;width:100%;height:100%;z-index:2}
   /* The globe sits under the overlay and is sized square, centred in the clear
@@ -92,6 +96,17 @@
      component provides for exactly this: draw your own layer, and have it land
      on the pixel the geography is on. -->
 <canvas id="stars"></canvas>
+<!-- The near-Earth view is real 3D: a camera a few km above Starbase looking
+     along the surface. The sphere's texture is a mappo flat map, rasterised
+     from the element below — which is why the coastlines are still mappo's. -->
+<canvas id="near3d"></canvas>
+<div id="texsrc" aria-hidden="true">
+  <mappo-world id="earthFlat" mode="flat" cols="360" lat-min="-90" lat-max="90"
+    figure="solid outline" figure-source="vector"
+    figure-color="#1d4a2e" figure-stroke="#6fbf8a" figure-stroke-width="0.3"
+    borders borders-color="#4a7f5e" borders-opacity="0.55"
+    ground-color="#123a5c" background="#123a5c" interactive="false"></mappo-world>
+</div>
 <div class="globe" id="earthWrap">
   <mappo-world id="earthGlobe" mode="globe" cols="220"
     focus="25.997,-97.155" rotate-speed="0" globe-ring
@@ -150,10 +165,13 @@ import { MARS } from "../dist/bodies/mars.js";
 registerBody(MARS);
 
 import { createClock } from "./timectl.js";
+import { earthAt } from "./astro.js";
 import * as M from "./mission.js";
 import * as S from "./scene3d.js";
 import { stack, superHeavy, starship, DIM } from "./vehicle.js";
 import { loadGLB, normalize } from "./gltf.js";
+import * as N3 from "./near3d.js";
+import * as THREE from "./vendor/three.module.min.js";
 
 const $ = (id) => document.getElementById(id);
 const RAD = Math.PI / 180;
@@ -182,7 +200,10 @@ const pork = M.porkchop(SCAN);
 const TRIP = pork.best;
 
 const TMI_MS = TRIP.departure.getTime();          // the burn that leaves Earth
-const LAUNCH_MS = TMI_MS - 6 * 86400000;          // launch, refuel, then go
+// Launch, refuel, then go — six days ahead of the injection burn, and timed
+// for mid-morning at the pad rather than the middle of the night. The window
+// fixes the DATE, not the hour; 15:00 UTC is about 10 a.m. at Starbase.
+const LAUNCH_MS = TMI_MS - 6 * 86400000 + 15 * 3600000;
 const ARRIVE_MS = TRIP.arrival.getTime();
 const T = (ms) => (ms - LAUNCH_MS) / 1000;        // mission elapsed time, seconds
 
@@ -453,92 +474,121 @@ function drawVehicle(ctx, side, m, at, px, { pitch = 0, yaw = 0.7, up = null } =
   if (rolled) ctx.restore();
 }
 
-// NEAR EARTH — launch through trans-Mars injection, over a mappo Earth.
-function sceneNearEarth(t, w, h) {
-  earthWrap.hidden = false; marsWrap.hidden = true;
-  const [ , dr, speed ] = lerpTable(ASCENT, Math.max(0, t));
-  const g = shipGround(t);
-  const { lat, lon, alt } = g;
-  const radii = 1 + alt / M.R_EARTH;
-
-  // Up to SECO the view is locked to the pad and the Earth is effectively held
-  // still under the climb. After it the camera follows the SHIP and the planet
-  // turns underneath — which is the thing worth seeing, because the ground
-  // track marching west IS the Earth rotating.
-  const follow = t > SECO_T ? [ g.lat, g.lon ] : [ PAD.lat, PAD.lon ];
-  const map = globeOf(earthWrap);
-  if (map) {
-    const f = map.options.focus;
-    if (!f || Math.abs(f.lat - follow[0]) > 0.05 || Math.abs(f.lon - follow[1]) > 0.05) {
-      map.update({ focus: { lat: follow[0], lon: follow[1] } });
-    }
+// ── NEAR EARTH, in three.js ─────────────────────────────────────────────────
+// Built once, lazily, because the WebGL context and the texture are not free
+// and the cruise view never needs them.
+let N = null, meshesReady = false;
+function nearScene() {
+  if (!N) {
+    N = N3.createNearScene({ canvas: $("near3d"), textureEl: $("earthFlat") });
   }
-
-  // Zoomed hard at the pad, easing out to the whole disc by orbit. Sized after
-  // the focus moves, so the anchor is measured against the frame being drawn.
-  const k = Math.min(1, Math.max(0, (t - 120) / 700));
-  const px = (h * 3.1 * (1 - k) + h * 0.86 * k) * zoomBias;
-  sizeGlobe(earthWrap, px, clearX(w), h / 2, follow);
-  const ctx = ocContext(earthWrap, px);
-
-  // The flown trail, sampled from the same table the vehicle rides.
-  const trail = [];
-  const span = Math.min(t, SECO_T + PARK_T * 1.6);      // a couple of passes, no more
-  for (let s = Math.max(0, t - span); s <= Math.max(1, t); s += Math.max(1.5, span / 220)) {
-    const p2 = shipGround(s);
-    const q = onGlobe(earthWrap, p2.lat, p2.lon, 1 + p2.alt / M.R_EARTH);
-    trail.push(q && q.front ? q : null);
+  if (!meshesReady && BOOSTER_M.verts.length && SHIP_M.verts.length) {
+    const mat = () => new THREE.MeshLambertMaterial({ vertexColors: true });
+    N.stackObj = new THREE.Mesh(N3.toGeometry(STACK), mat());
+    N.shipObj = new THREE.Mesh(N3.toGeometry(SHIP_M), mat());
+    N.boostObj = new THREE.Mesh(N3.toGeometry(BOOSTER_M), mat());
+    // Scale is solved per frame below; metres to kilometres is folded into it.
+    for (const o of [ N.stackObj, N.shipObj, N.boostObj ]) N.vehicles.add(o);
+    meshesReady = true;
   }
-  ctx.strokeStyle = "#ffd479"; ctx.lineWidth = 1.6; ctx.beginPath();
-  let pen = false;
-  for (const q of trail) { if (!q) { pen = false; continue; }
-    if (pen) ctx.lineTo(q.x, q.y); else { ctx.moveTo(q.x, q.y); pen = true; } }
-  ctx.stroke();
-
-  // The booster's own path home, once it has one.
-  if (t >= 153) {
-    ctx.strokeStyle = "rgba(143,183,232,.85)"; ctx.lineWidth = 1.3; ctx.beginPath();
-    pen = false;
-    for (let s = 153; s <= Math.min(t, 416); s += 4) {
-      const [ ba, bd ] = lerpTable(BOOSTER, s);
-      const [ la, lo ] = downrangeTo(PAD.lat, PAD.lon, 93, bd);
-      const q = onGlobe(earthWrap, la, lo, 1 + ba / M.R_EARTH);
-      if (!q || !q.front) { pen = false; continue; }
-      if (pen) ctx.lineTo(q.x, q.y); else { ctx.moveTo(q.x, q.y); pen = true; }
-    }
-    ctx.stroke();
-  }
-
-  const shipAt = onGlobe(earthWrap, lat, lon, radii);
-  const upright = { up: shipAt?.up };
-  const vpx = 130 * (1 - k) + 34 * k;
-  if (t < 153) {
-    drawVehicle(ctx, px, STACK, shipAt, vpx * 1.25, { pitch: 0.12, yaw: 0.7, ...upright });
-  } else {
-    drawVehicle(ctx, px, SHIP_M, shipAt, vpx, { pitch: 0.1, yaw: 0.9, ...upright });
-    if (t <= 430) {
-      const [ ba, bd ] = lerpTable(BOOSTER, t);
-      const [ bla, blo ] = downrangeTo(PAD.lat, PAD.lon, 93, bd);
-      const bAt = onGlobe(earthWrap, bla, blo, 1 + ba / M.R_EARTH);
-      drawVehicle(ctx, px, BOOSTER_M, bAt, vpx * 0.95, { pitch: -0.15, yaw: 2.1, up: bAt?.up });
-    }
-  }
-  // The pad, so the trail has somewhere to start from.
-  const pad = onGlobe(earthWrap, PAD.lat, PAD.lon, 1);
-  if (pad && pad.front) {
-    ctx.fillStyle = "#ffd479";
-    ctx.beginPath(); ctx.arc(pad.x, pad.y, 2.6, 0, 7); ctx.fill();
-    ctx.fillStyle = "rgba(219,230,245,.65)"; ctx.font = "10px ui-monospace,Menlo,monospace";
-    ctx.fillText(PAD.name, pad.x + 7, pad.y + 3.5);
-  }
-  return { alt, dr, speed };
+  return N;
 }
+// A 121 m stack on a 6,371 km planet is a tenth of a pixel from any distance
+// that also shows a coastline, so it is drawn larger than life. Rather than
+// pick one lie and keep it, the exaggeration is solved every frame to hold the
+// vehicle at a constant FRACTION of the frame: the camera can then pull from
+// five kilometres to two hundred without the ship dwindling to a speck, which
+// is the whole reason a mission view exaggerates in the first place.
+//
+// Said plainly because it is a lie: at true scale the stack is invisible here.
+const STACK_M = 0.123;                 // km, actual
+const APPARENT = 0.30;                 // of frame height
+const FOV_DEG = 38;
+const exaggerationFor = (distKm) =>
+  (2 * distKm * Math.tan((FOV_DEG / 2) * RAD) * APPARENT) / STACK_M;
+const STACK_KM = 1.5;                  // a nominal size, for framing distances
+
+function sceneNearEarth(t, w, h) {
+  earthWrap.hidden = true; marsWrap.hidden = true;
+  const n = nearScene();
+  $("near3d").style.display = "block";
+  n.resize(w, h);
+
+  const g = shipGround(t);
+  const staged = t >= 153;
+
+  // The sun where the sun actually is, from the same earthAt() the transfer is
+  // solved with — so the terminator on the globe and the light on the rocket
+  // are the same fact rather than two guesses.
+  const sky = earthAt(new Date(LAUNCH_MS + t * 1000));
+  n.setSun(N3.latLonToVec(sky.dec, sky.subLon, 1).normalize());
+
+  if (meshesReady) {
+    // Solve the scale for the distance the camera is about to be at.
+    const distKm = STACK_KM * 3.4 + g.alt * 1.5;
+    const e = exaggerationFor(distKm) * 0.001;
+    for (const o of [ n.stackObj, n.shipObj, n.boostObj ]) o.scale.setScalar(e);
+    // Pitch over as the climb proceeds: vertical off the pad, downrange by MECO.
+    const lean = Math.min(1, Math.max(0, (t - 18) / 150)) * 1.15;
+    n.stackObj.visible = !staged;
+    n.shipObj.visible = staged;
+    n.boostObj.visible = staged && t <= 430;
+    if (!staged) n.stand(n.stackObj, g.lat, g.lon, g.alt, { lean });
+    else {
+      n.stand(n.shipObj, g.lat, g.lon, g.alt, { lean: 1.35 });
+      const [ ba, bd ] = lerpTable(BOOSTER, Math.min(t, 416));
+      const [ bla, blo ] = downrangeTo(PAD.lat, PAD.lon, 93, bd);
+      n.stand(n.boostObj, bla, blo, ba, { lean: t > 300 ? 0.06 : 2.6 });
+    }
+  }
+
+  // Trails, in world space — they are 3D curves now, not screen polylines.
+  const ship = [], boost = [];
+  for (let x = 0; x <= Math.max(1, t); x += Math.max(1.2, t / 260)) {
+    const q = shipGround(x);
+    ship.push(N3.latLonToVec(q.lat, q.lon, N3.R_EARTH + q.alt));
+  }
+  if (staged) {
+    for (let x = 153; x <= Math.min(t, 416); x += 2) {
+      const [ ba, bd ] = lerpTable(BOOSTER, x);
+      const [ bla, blo ] = downrangeTo(PAD.lat, PAD.lon, 93, bd);
+      boost.push(N3.latLonToVec(bla, blo, N3.R_EARTH + ba));
+    }
+  }
+  n.setTrail(n.shipTrail, ship);
+  n.setTrail(n.boostTrail, boost);
+
+  // The shot: low over the Gulf early, pulling back and up as the climb goes.
+  const climb = Math.min(1, Math.max(0, t / 420));
+  const watch = t > SECO_T ? g : (staged && t < 430
+    ? (() => { const [ ba, bd ] = lerpTable(BOOSTER, Math.min(t, 416));
+               const [ la, lo ] = downrangeTo(PAD.lat, PAD.lon, 93, bd);
+               return { lat: la, lon: lo, alt: ba }; })()
+    : g);
+  // Framed off the vehicle's own size, so the shot holds as the exaggeration
+  // is tuned: stand back three-and-a-half vehicle lengths, lift by one, and
+  // aim at its middle. Then pull out with the climb.
+  // Distance follows the vehicle's altitude, and the exaggeration above follows
+  // the distance — so the shot holds from the pad to the parking orbit.
+  const dist = STACK_KM * 3.4 + watch.alt * 1.5;
+  n.lookAtSurface(watch.lat, watch.lon, {
+    altKm: dist * 0.30,
+    backKm: dist,
+    targetAltKm: watch.alt + dist * 0.06,
+    heading: 93
+  });
+  n.render();
+  const [ , dr, speed ] = lerpTable(ASCENT, Math.max(0, t));
+  return { alt: g.alt, dr, speed };
+}
+
+const hideNear = () => { const c = $("near3d"); if (c) c.style.display = "none"; };
 
 // CRUISE — heliocentric, kilometres. Both orbits, the arc, and where everyone
 // is on it right now. No globe here: at 156 million km a planet is a dot, and
 // a dot is what it should be.
 function sceneCruise(t, w, h) {
-  earthWrap.hidden = true; marsWrap.hidden = true;
+  earthWrap.hidden = true; marsWrap.hidden = true; hideNear();
   const ms = LAUNCH_MS + t * 1000;
   const dt = Math.max(0, Math.min(TRIP.days * 86400, (ms - TMI_MS) / 1000));
   const ship = M.propagate(TRIP.earth.rKm, TRIP.v1, dt);
@@ -571,7 +621,7 @@ function sceneCruise(t, w, h) {
 // different body pack behind it: the whole point of the packs is that the
 // approach to Arcadia Planitia is drawn by the code that drew Starbase.
 function sceneMars(t, w, h) {
-  earthWrap.hidden = true; marsWrap.hidden = false;
+  earthWrap.hidden = true; marsWrap.hidden = false; hideNear();
   const ms = LAUNCH_MS + t * 1000;
   const left = Math.max(0, (ARRIVE_MS - ms) / 1000);
   // Closing from an approach view to the landing site over the last hours.
