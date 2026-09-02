@@ -775,7 +775,9 @@ link means to you.
 On the globe the far side is cut where the body is in the way, widths grow
 toward a perspective camera, and every vertex is one `locate()`: a link costs
 what it looks like. On the flat map the same points go through the projection
-and are cut at its seam. The module is 2.9 KB gzipped and registers nothing;
+and are cut at its seam, and `height` becomes the arch: the curve bows up the
+page, toward the north pole, by the same angle it would rise off the globe, so
+a hero map's arcs look the way they always have. The module is 2.9 KB gzipped and registers nothing;
 [the GitHub globe demo](https://rameerez.github.io/mappo/demo/github-globe.html)
 is a few hundred of these, opening and merging.
 

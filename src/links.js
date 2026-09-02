@@ -17,7 +17,9 @@
 // the body is in the way, widths grow toward a perspective camera, and
 // `fade: true` fades a link the way the globe fades its own lines (under fog,
 // with the fog). On the flat map the same points go through the projection and
-// are cut at its seam; height has no third dimension there.
+// are cut at its seam, and `height` arches the curve up the page — toward the
+// north pole, by the same angle it would rise off the globe — so a hero map's
+// arcs bow the way they always have; a spike stands up the page.
 //
 // A link is a plain object you keep and mutate. A change to `from`, `to`, `at`,
 // `height`, `segments` or `points` rebuilds its curve on the next draw; the rest
@@ -47,10 +49,22 @@ export function toLatLon(x, y, z) {
   return [ Math.asin(clamp(y / r, -1, 1)) * DEG, Math.atan2(x, z) * DEG, r ];
 }
 
+// The angle between two surface points, in radians: the great-circle distance
+// on a unit sphere.
+export function arcAngle(from, to) {
+  const A = toXYZ(from.lat, from.lon), B = toXYZ(to.lat, to.lon);
+  return Math.acos(clamp(A[0] * B[0] + A[1] * B[1] + A[2] * B[2], -1, 1));
+}
+
+// The height an arc gets unless told: 0.3 of the half-chord — 0.3 radii for
+// antipodes, next to nothing for neighbours — so short hops hug the ground and
+// long ones arc.
+export function arcHeight(from, to) {
+  return 0.3 * Math.sin(arcAngle(from, to) / 2);
+}
+
 // The curve between two surface points as [lat, lon, r] samples: the great
-// circle, evenly spaced in angle, lifted by height·sin(πt) radii. `height`
-// defaults to 0.3 of the half-chord — 0.3 radii for antipodes, next to nothing
-// for neighbours — so short hops hug the ground and long ones arc. Antipodes
+// circle, evenly spaced in angle, lifted by height·sin(πt) radii. Antipodes
 // have every great circle in common; the one over the pole is taken.
 export function arcPoints(from, to, { height, segments } = {}) {
   const A = toXYZ(from.lat, from.lon), B = toXYZ(to.lat, to.lon);
@@ -66,7 +80,7 @@ export function arcPoints(from, to, { height, segments } = {}) {
     len = Math.hypot(d[0], d[1], d[2]);
   }
   d = [ d[0] / len, d[1] / len, d[2] / len ];
-  const h = height ?? 0.3 * Math.sin(theta / 2);
+  const h = height ?? arcHeight(from, to);
   const n = segments ?? clamp(Math.round(theta * 36), 8, 72);
   const out = [];
   for (let i = 0; i <= n; i++) {
@@ -170,15 +184,18 @@ export class Links {
     const spike = link.at != null && link.to == null;
     const key = JSON.stringify([ link.points ?? null, link.from ?? link.at ?? null, link.to ?? null, link.height ?? null, link.segments ?? null ]);
     if (link._key === key) return link._geom;
-    let pts = null;
+    let pts = null, lift = 0;
     if (Array.isArray(link.points) && link.points.length > 1) {
       pts = link.points.map(([ lat, lon, r = 1 ]) => [ lat, lon, r ]);
     } else {
       const a = this.#place(link.from ?? link.at), b = spike ? null : this.#place(link.to);
       if (a && (spike || b)) {
-        pts = spike
-          ? [ [ a.lat, a.lon, 1 ], [ a.lat, a.lon, 1 + (Number(link.height) || 0.1) ] ]
-          : arcPoints(a, b, { height: link.height, segments: link.segments });
+        if (spike) pts = [ [ a.lat, a.lon, 1 ], [ a.lat, a.lon, 1 + (Number(link.height) || 0.1) ] ];
+        else {
+          // The height in radii is also the arch on the flat map, in radians of latitude.
+          lift = Number.isFinite(Number(link.height)) && link.height != null ? Number(link.height) : arcHeight(a, b);
+          pts = arcPoints(a, b, { height: lift, segments: link.segments });
+        }
       }
     }
     // A name a pending body cannot resolve yet is asked again next frame.
@@ -189,7 +206,7 @@ export class Links {
       const p = toXYZ(lat, lon);
       xyz[i * 3] = p[0] * r; xyz[i * 3 + 1] = p[1] * r; xyz[i * 3 + 2] = p[2] * r;
     });
-    return (link._geom = { pts, xyz, spike });
+    return (link._geom = { pts, xyz, spike, lift });
   }
 
   // The [lat, lon, r] at fractional vertex index u.
@@ -279,8 +296,11 @@ export class Links {
   }
 
   // On the flat map: the lat/lon samples through the projection, cut at its
-  // seam by the same code the graticule uses. A spike stands up the page, its
-  // height in the map's own scale (the equator is the map's width).
+  // seam by the same code the graticule uses. An arc's height becomes the
+  // arch: each sample is moved toward the north pole by height·sin(πt)
+  // radians of latitude — up the page on a cylindrical map — which survives
+  // the seam cut because it happens before the projection. A spike stands up
+  // the page, its height in the map's own scale (the equator is the map's width).
   #drawFlat(ctx, view, link, geom, a, b, style) {
     const map = this.map, hits = link._hits = [];
     ctx.lineWidth = style.width;
@@ -294,10 +314,10 @@ export class Links {
       if (style.width > 0) { ctx.beginPath(); ctx.moveTo(p.x, y0); ctx.lineTo(p.x, y1); ctx.stroke(); hits.push(p.x, y0, p.x, y1); }
       end = [ p.x, y1 ];
     } else {
-      const n = geom.pts.length - 1, line = [];
+      const n = geom.pts.length - 1, line = [], arch = (geom.lift || 0) * DEG;
       for (let u = a * n; ; u = Math.min(b * n, Math.floor(u) + 1)) {
         const s = this.#sample(geom, u);
-        line.push([ s[0], s[1] ]);
+        line.push([ arch ? Math.min(90, s[0] + arch * Math.sin(Math.PI * (u / n))) : s[0], s[1] ]);
         if (u >= b * n) break;
       }
       for (const piece of projectPolyline(line, map.projection)) {

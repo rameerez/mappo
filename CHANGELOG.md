@@ -93,7 +93,8 @@ that imports the core by relative path and registers itself:
   `opacity`, `blend: "lighter"`, `fade`, `range: [a, b]` for reveal and erase
   animations, `tip`, `data`. `layer.at(event)` hit-tests. On the globe the far
   side is cut where the body is in the way and widths follow the camera; on the
-  flat map the curve is cut at the projection's seam. `arcPoints()` is exported
+  flat map the curve is cut at the projection's seam and `height` arches it up
+  the page by the same angle. `arcPoints()` is exported
   for hosts doing their own curves.
 - The GitHub globe demo (`demo/github-globe.html`) rebuilds github.com/globe
   on it: the dotted sphere with its lighting, the pink arcs of merged pull

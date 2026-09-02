@@ -9,4 +9,4 @@
 // Works on the globe and the flat map alike (see src/links.js). Registers
 // nothing: a layer is something you ask a map for.
 
-export { links, Links, arcPoints, toXYZ, toLatLon } from "../links.js";
+export { links, Links, arcPoints, arcAngle, arcHeight, toXYZ, toLatLon } from "../links.js";

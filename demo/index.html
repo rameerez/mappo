@@ -505,6 +505,19 @@ highlight-color="#c2410c"</code></pre></div></div>
   </div><div class="meta"><h3>Overlays, flat</h3>
     <p>Identical attributes and CSS hooks as the globe — written once per build instead of per frame.</p>
     <pre><code>&lt;a data-lat="38.7" data-lon="-9.1"&gt;&lt;span&gt;Lisbon&lt;/span&gt;&lt;/a&gt;</code></pre></div></div>
+
+  <div class="card" id="flat-links-card"><div class="art">
+    <mappo-world id="flat-links" cols="120" figure-color="var(--coast)" marker-color="var(--accent)" marker-scale="1.1"
+      places="London, New York, Los Angeles, Tokyo, Lagos, Sydney"></mappo-world>
+  </div><div class="meta"><h3>Links, flat</h3>
+    <p>The arcs the globe draws, on the flat map: great circles cut at the seam — Los Angeles to Tokyo leaves one edge and
+    comes back on the other — arched up the page by their <code>height</code>, and a spike with a tip. <code>mappo/links</code>, 3 KB.</p>
+    <pre><code>import { links } from "mappo/links";
+const layer = links(el.map, { color: "var(--accent)", width: 1.5 });
+layer.add({ from: "London", to: "New York" });
+layer.add({ from: "Los Angeles", to: "Tokyo" });      // across the seam
+layer.add({ from: "Lagos", to: "Sydney", height: 0.5 });
+layer.add({ at: "Tokyo", height: 0.25, tip: 3 });</code></pre></div></div>
 </div>
 
 <!-- ───────────────────────── REFERENCE ───────────────────────── -->
@@ -548,6 +561,20 @@ Full-screen versions: <a href="./orbit.html">orbit</a> · <a href="./land.html">
 <script type="module">
   import { bindThemeToggle } from "../assets/theme.js";
   bindThemeToggle(document.getElementById("theme"));
+</script>
+<script type="module">
+  // Links, flat: the same module the GitHub globe uses, on the flat card above.
+  import { links } from "../dist/all.js";
+  const el = document.getElementById("flat-links");
+  const ready = el.map ? Promise.resolve() : customElements.whenDefined("mappo-world").then(() => new Promise(queueMicrotask));
+  await ready;
+  const layer = links(el.map, { color: "var(--accent)", width: 1.5, opacity: 0.9 });
+  layer.add({ from: "London", to: "New York" });
+  layer.add({ from: "Los Angeles", to: "Tokyo" });
+  layer.add({ from: "Lagos", to: "Sydney", height: 0.5 });
+  layer.add({ at: "Tokyo", height: 0.25, tip: 3 });
+  // The colour is a CSS variable: the theme toggle repaints the map by CSS, so ask the layer to follow.
+  new MutationObserver(() => layer.redraw()).observe(document.documentElement, { attributes: true, attributeFilter: [ "class", "style", "data-theme" ] });
 </script>
 <script type="module">
   // The night geometry — the spherical-cap spans, the tangent bisection and

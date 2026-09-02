@@ -223,3 +223,25 @@ test("links on the flat map: the curve goes through the projection and is cut at
   layer.destroy();
   el.map.destroy();
 });
+
+test("links on the flat map: height arches the curve up the page, by its angle in latitude", async () => {
+  const el = await mount(`<mappo-world cols="80"></mappo-world>`);
+  const { links } = linksModule;
+  const layer = links(el.map, { width: 1 });
+  const flat = layer.add({ from: [ 0, -60 ], to: [ 0, 60 ], height: 0 });
+  const arched = layer.add({ from: [ 0, -60 ], to: [ 0, 60 ], height: 0.5 });
+  layer.redraw();
+  const ys = (h) => { const out = []; for (let k = 0; k < h.length; k += 4) out.push(h[k + 1], h[k + 3]); return out; };
+  const flatYs = ys(flat._hits), archYs = ys(arched._hits);
+  assert.ok(Math.max(...flatYs) - Math.min(...flatYs) < 1e-6, "no height: the equator stays a straight line");
+  // In the layer's own scale (jsdom gives every box 300 px, so locate() and the
+  // layer canvas do not share a height here): 0.5 rad of latitude is 28.65° of
+  // the map's band, and the band is the canvas's height.
+  const [ latMin, latMax ] = el.map.options.latRange;
+  const expected = ((0.5 * 180 / Math.PI) / (latMax - latMin)) * 300;
+  const rise = flatYs[0] - Math.min(...archYs);
+  assert.ok(near(rise, expected, 1), `the apex sits 0.5 rad of latitude up the page (${rise.toFixed(1)} px, expected ${expected.toFixed(1)})`);
+  assert.ok(near(archYs[0], flatYs[0], 1e-6) && near(archYs.at(-1), flatYs.at(-1), 1e-6), "both ends stay on the ground");
+  layer.destroy();
+  el.map.destroy();
+});

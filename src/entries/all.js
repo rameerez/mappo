@@ -16,5 +16,5 @@ export {
 } from "./globe.js";
 export { BUILTIN_PROJECTIONS, adaptProjection, adaptCustom, adaptD3 } from "./projections.js";
 export { stitchRings, projectRings } from "./vector.js";
-export { links, Links, arcPoints, toXYZ, toLatLon } from "../links.js";
+export { links, Links, arcPoints, arcAngle, arcHeight, toXYZ, toLatLon } from "../links.js";
 import "../bodies/earth-vector.js";
