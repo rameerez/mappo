@@ -37,9 +37,9 @@
   .nav{position:sticky;top:0;z-index:40;background:color-mix(in oklab,var(--bg) 88%,transparent);
     backdrop-filter:blur(10px);border-bottom:1px solid transparent;transition:border-color .2s}
   .nav.stuck{border-bottom-color:var(--line)}
-  .nav .wrap{display:flex;align-items:center;gap:20px;height:62px}
+  .nav .wrap{display:flex;align-items:center;gap:20px;height:74px}
   .brand{display:flex;align-items:center;text-decoration:none;margin-right:auto}
-  .brand img{height:21px;width:auto;display:block;filter:var(--logo-filter)}
+  .brand img{height:32px;width:auto;display:block;filter:var(--logo-filter)}
   .nav a.link{color:var(--muted);text-decoration:none;font-size:14px;font-weight:520}
   .nav a.link:hover{color:var(--ink)}
   .icon-btn{display:grid;place-items:center;width:34px;height:34px;flex:none;
@@ -54,11 +54,27 @@
   :root[data-theme="dark"] .icon-btn .sun{display:none}
   .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
-  /* GitHub carries the star count and stands beside the primary call. */
-  .gh{display:inline-flex;align-items:center;gap:9px}
-  .gh .count{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:6px;
-    background:var(--tint);font:600 12px/1 var(--mono);font-variant-numeric:tabular-nums}
-  .gh .count svg{width:11px;height:11px}
+  /* GitHub's own star widget, rebuilt: two attached boxes in GitHub's greys,
+     the count pointing back at the button with a caret. Its colours are its
+     own, not the page's — that is what makes it read as GitHub's control
+     rather than as one of ours wearing their logo. */
+  .ghstar{display:inline-flex;align-items:stretch;gap:5px;font:600 12.5px/1 var(--sans);
+    --gh-bg:#f6f8fa; --gh-bg-hi:#eef1f4; --gh-line:#d1d9e0; --gh-fg:#24292f}
+  :root[data-theme="dark"] .ghstar{--gh-bg:#21262d; --gh-bg-hi:#30363d; --gh-line:#3d444d; --gh-fg:#f0f6fc}
+  .ghstar a{display:inline-flex;align-items:center;gap:6px;padding:0 11px;height:30px;
+    background:var(--gh-bg);border:1px solid var(--gh-line);border-radius:6px;
+    color:var(--gh-fg);text-decoration:none}
+  .ghstar a:hover{background:var(--gh-bg-hi);border-color:var(--gh-line)}
+  .ghstar svg{width:15px;height:15px;fill:currentColor;flex:none}
+  .ghstar .count{position:relative;padding:0 10px}
+  .ghstar .count[hidden]{display:none}
+  /* The caret: two triangles, the outer one the border colour, so the notch
+     has a 1px edge like the real one. */
+  .ghstar .count::before,.ghstar .count::after{content:"";position:absolute;top:50%;
+    transform:translateY(-50%);border:5px solid transparent;border-left-width:0}
+  .ghstar .count::before{left:-6px;border-right-color:var(--gh-line)}
+  .ghstar .count::after{left:-5px;border-right-color:var(--gh-bg)}
+  .ghstar .count:hover::after{border-right-color:var(--gh-bg-hi)}
 
   /* ── hero ─────────────────────────────────────────────────────────────── */
   .hero{position:relative;min-height:96vh;display:flex;flex-direction:column;
@@ -197,11 +213,12 @@
     <span class="install"><b>npm i</b> mappo</span>
     <div class="cta">
       <a class="primary" href="./demo/">See the demos</a>
-      <a class="gh" href="https://github.com/rameerez/mappo">
-        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
-        GitHub
-        <span class="count" id="stars" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 .25l2.06 4.18 4.61.67-3.33 3.25.78 4.6L8 10.78l-4.12 2.17.78-4.6L1.33 5.1l4.61-.67L8 .25Z"/></svg><span id="stars-n"></span></span>
-      </a>
+      <span class="ghstar">
+        <a href="https://github.com/rameerez/mappo" aria-label="Star mappo on GitHub">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>Star
+        </a>
+        <a class="count" id="stars" href="https://github.com/rameerez/mappo/stargazers" hidden><span id="stars-n"></span></a>
+      </span>
     </div>
   </div>
 
@@ -313,7 +330,7 @@ registerBody(MOON);
 registerBody(MARS);
 
 import { earthAt } from "./demo/astro.js";
-import { nightRings } from "./demo/terminator.js";
+import { nightRings, terminatorCurves } from "./demo/terminator.js";
 import { regions } from "./demo/countries.js";
 import { bindThemeToggle } from "./assets/theme.js";
 
@@ -402,15 +419,36 @@ panel("standby", () => {
     // frame the map draws, so this cannot drift from the dots underneath.
     el.map.addLayer((ctx, view) => {
       const { dec, subLon } = earthAt(new Date());
-      ctx.fillStyle = "rgba(0,0,0,0.82)";
-      for (const ring of nightRings(dec, subLon, 0, LAT)) {
+      const X = (lon) => fx(lon) * view.width;
+      const Y = (lat) => fy(lat) * view.height;
+      const trace = (pts, xy) => pts.forEach((p, i) => {
+        const [ x, y ] = xy(p);
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      });
+
+      // Night, as three washes rather than one: the horizon, then civil and
+      // astronomical twilight nested inside it. Stacked translucency deepens
+      // the way dusk does, where a single flat mask reads as a sticker.
+      for (const [ h0, alpha ] of [ [ 0, 0.42 ], [ -6, 0.34 ], [ -18, 0.34 ] ]) {
+        ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+        for (const ring of nightRings(dec, subLon, h0, LAT)) {
+          ctx.beginPath();
+          trace(ring, ([ lon, lat ]) => [ X(lon), Y(lat) ]);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+
+      // And the boundary itself. Without this the panel has a dark half and a
+      // light half and no sun line between them — which is the one thing the
+      // whole picture is about.
+      ctx.strokeStyle = "#ff5a4d";
+      ctx.lineWidth = 1.4;
+      ctx.lineJoin = ctx.lineCap = "round";
+      for (const curve of terminatorCurves(dec, subLon, 0, LAT)) {
         ctx.beginPath();
-        ring.forEach(([ lon, lat ], i) => {
-          const x = fx(lon) * view.width, y = fy(lat) * view.height;
-          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-        });
-        ctx.closePath();
-        ctx.fill();
+        trace(curve, ([ lon, lat ]) => [ X(lon), Y(lat) ]);
+        ctx.stroke();
       }
     });
     const tick = () => { $("sb-time").textContent = hhmm(new Date()); };

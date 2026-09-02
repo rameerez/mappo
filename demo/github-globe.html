@@ -430,6 +430,26 @@ function startLine(i) {
   landings.push(L);
   st.animating.push({ arc, line, count: 0, start: 0, landing: L });
 }
+// On load the globe is empty and fills at one line every two thirds of a
+// second, so the first ten seconds are the quietest ten seconds there are.
+// Seeding puts a set of lines on it already in flight, spread across the
+// draw-in and the hold, so it opens the way it looks a minute in.
+function seedLines(n) {
+  const count = Math.min(n, lines.length);
+  for (let k = 0; k < count; k++) {
+    startLine(k);
+    const t = st.animating[st.animating.length - 1];
+    if (!t) continue;
+    // Spread over the whole cycle: some still drawing, some held, some already
+    // erasing from the tail.
+    const phase = (k + 0.5) / count;
+    t.count = t.line.total * (0.15 + phase * (GH.pauseLengthFactor - 0.2));
+    t.start = Math.max(0, t.count - t.line.total * 0.92);
+    t.arc.range = [ clamp(t.start / t.line.total, 0, 1), clamp(t.count / t.line.total, 0, 1) ];
+  }
+  st.lineIndex = count;
+}
+
 function updateLines(dt, frames) {
   let i = Math.floor(st.lineIndex + dt * GH.dataIncrementSpeed);
   if (i >= lines.length) { i = 0; st.lineIndex = 0; }
@@ -661,6 +681,7 @@ st.loaded = maxAmount > 0;
 applyQuality();
 // For the curious and for the harnesses: the moving parts, read-only by convention.
 window.githubGlobe = { world, sky, arcs, spikes, tips, state: st, data, lines, orientation, setFrozen };
+seedLines(18);
 frame(performance.now());
 requestAnimationFrame(() => {
   const opts = { duration: 600, easing: "ease", fill: "both" };
