@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildGraticule, projectNormalized, DEFAULTS } from "../dist/mappo.js";
+import { buildGraticule, projectNormalized, DEFAULTS, EARTH } from "../dist/mappo.js";
 
 // The dist bundle is what ships — test THAT, not src/.
 
@@ -69,10 +69,12 @@ test("projectNormalized: lon 0 is the horizontal centre", () => {
   assert.equal(projectNormalized(0, 0, { latRange: [ -90, 90 ] }).y, 0.5);
 });
 
-test("projectNormalized: defaults to the library's own framing", () => {
-  const withDefault = projectNormalized(10, 20);
-  const explicit = projectNormalized(10, 20, { latRange: DEFAULTS.latRange });
-  assert.deepEqual(withDefault, explicit);
+test("projectNormalized: the range is required — there is no silent Earth default", () => {
+  assert.throws(() => projectNormalized(10, 20), /latRange/);
+  assert.throws(() => projectNormalized(10, 20, {}), /latRange/);
+  assert.throws(() => projectNormalized(10, 20, { latRange: [ 1 ] }), /latRange/);
+  // The documented spelling of "Earth's default framing":
+  assert.deepEqual(projectNormalized(84, -180, { latRange: EARTH.latRange }), { x: 0, y: 0 });
 });
 
 test("projectNormalized: reproduces the ERB glue it replaces", () => {
@@ -82,11 +84,11 @@ test("projectNormalized: reproduces the ERB glue it replaces", () => {
   assert.equal((p.y * 100).toFixed(2), "29.18");
 });
 
-test("new options carry defaults without disturbing old ones", () => {
+test("globe options carry defaults", () => {
   assert.equal(DEFAULTS.graticule, false, "opt-in, like every other flourish");
   assert.equal(DEFAULTS.meridians, 12);
   assert.equal(DEFAULTS.parallels, 11);
   assert.equal(DEFAULTS.overlays, true);
   assert.equal(DEFAULTS.maxDpr, 2);
-  assert.equal(DEFAULTS.graticuleColor, null, "falls back to dotColor at draw time");
+  assert.equal(DEFAULTS.graticuleColor, null, "falls back to figureColor at draw time");
 });

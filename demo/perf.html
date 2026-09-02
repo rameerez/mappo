@@ -27,7 +27,7 @@
   </p>
   <button id="run">Run full suite</button>
   <table id="results"><tr><th>scenario</th><th>metric</th><th>value</th><th>budget</th><th></th></tr></table>
-  <div id="stage"><mappo-world id="map" cities="London, Lagos, Singapore, New York, Tokyo"></mappo-world></div>
+  <div id="stage"><mappo-world id="map" places="London, Lagos, Singapore, New York, Tokyo"></mappo-world></div>
 
   <script type="module">
     import { Mappo } from "../dist/mappo.js";
@@ -149,7 +149,7 @@
       takeLongTasks();
       const t0 = performance.now();
       for (let i = 0; i < 200; i++) {
-        map.setAttribute("dot-color", i % 2 ? "#d3dce6" : "#c3ccd8");
+        map.setAttribute("figure-color", i % 2 ? "#d3dce6" : "#c3ccd8");
         map.setAttribute("tilt", String(i % 45));
       }
       await settle(200);

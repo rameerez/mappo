@@ -7,14 +7,26 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The supported development runtimes (package.json devEngines): the
+        # maintenance and active LTS lines. The published package itself is
+        # browser ESM and has no runtime requirement beyond a modern browser.
+        node-version: [22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - name: Build the single-file bundle from src/
-        run: node scripts/build.js
-      - name: Built artifact must be committed and current
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - name: Install development dependencies reproducibly
+        run: npm ci
+      - name: Build the single-file bundle and body packs from src/
+        run: npm run build
+      - name: Built artifacts must be committed and current
         run: git diff --exit-code dist/
       - name: Test suite (runs against dist/)
-        run: node --test
+        run: npm test
+      - name: Verify the publishable package contents
+        run: npm pack --dry-run

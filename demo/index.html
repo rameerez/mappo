@@ -137,8 +137,8 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
   <div>
     <mappo-world id="hero" mode="globe" cols="160" rotate-speed="6"
       tilt="18" roll="-14.3"
-      land="outline" land-source="vector"
-      land-stroke="var(--coast)" land-stroke-width="0.9"
+      figure="outline" figure-source="vector"
+      figure-stroke="var(--coast)" figure-stroke-width="0.9"
       graticule meridians="24" parallels="11"
       graticule-color="var(--grid)" equator-color="var(--coast)"
       graticule-opacity="0.45" equator-opacity="0.4" globe-ring="true">
@@ -157,7 +157,7 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
     at the horizon with plain CSS.</p>
     <pre><code>&lt;mappo-world mode="globe" rotate-speed="6"
   tilt="18" roll="-14.3"
-  land="solid outline" land-source="vector"
+  figure="solid outline" figure-source="vector"
   graticule meridians="24" parallels="11"&gt;
   &lt;a data-lat="38.7" data-lon="-9.1"&gt;&lt;span&gt;Lisbon&lt;/span&gt;&lt;/a&gt;
   &lt;a data-lat="35.7" data-lon="139.7"&gt;&lt;span&gt;Tokyo&lt;/span&gt;&lt;/a&gt;
@@ -179,10 +179,10 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
       <mappo-world id="flatshow"
         cols="300"
         lat-min="-58" lat-max="76"
-        land="solid outline" land-source="vector" borders
-        land-color="var(--day-land)" land-stroke="var(--day-coast)" land-stroke-width="0.55"
+        figure="solid outline" figure-source="vector" borders
+        figure-color="var(--day-land)" figure-stroke="var(--day-coast)" figure-stroke-width="0.55"
         borders-color="var(--day-coast)" borders-width="0.35" borders-opacity="0.3"
-        background="var(--day-sea)" ocean-color="var(--day-ocean)">
+        background="var(--day-sea)" ground-color="var(--day-ocean)">
         <a class="lead" data-lat="38.72"  data-lon="-9.14"  data-tz="Europe/Lisbon"    href="#t1"><i></i><span><b>Lisbon</b><em></em></span></a>
         <a class="lead" data-lat="35.68"  data-lon="139.69" data-tz="Asia/Tokyo"       href="#t2"><i></i><span><b>Tokyo</b><em></em></span></a>
         <a class="lead" data-lat="-23.55" data-lon="-46.63" data-tz="America/Sao_Paulo" href="#t3"><i></i><span><b>São Paulo</b><em></em></span></a>
@@ -221,7 +221,7 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
       to go stale. Everything else is mappo: the night is a polygon plotted through
       <code>projectNormalized()</code>, and the city markers are your own DOM, positioned by
       <code>data-lat</code>/<code>data-lon</code>, told only whether the sun is up where they stand.</p>
-      <span class="tag">projectNormalized()</span><span class="tag">land-source="vector"</span><span class="tag">borders</span><span class="tag">ocean-color</span><span class="tag">data-lat/data-lon</span><span class="tag">cols="300"</span>
+      <span class="tag">projectNormalized()</span><span class="tag">figure-source="vector"</span><span class="tag">borders</span><span class="tag">ground-color</span><span class="tag">data-lat/data-lon</span><span class="tag">cols="300"</span>
       <pre style="margin-top:12px"><code>// where the sun is overhead, from the clock alone
 const { dec, lon } = subsolarPoint(new Date());
 
@@ -244,7 +244,7 @@ label.classList.toggle("is-night", solarElevation(lat, lon, dec, sunLon) &lt; 0)
     53° shell draws its own turnaround lines. The orbital elements come from CelesTrak and
     the positions from an SGP4 propagator running in the page: no API key, no tracking
     service, nothing to go stale but the elements themselves.</p>
-    <span class="tag">locate()</span><span class="tag">mode="globe"</span><span class="tag">land="outline"</span><span class="tag">land-source="vector"</span><span class="tag">10,725 points/frame</span>
+    <span class="tag">locate()</span><span class="tag">mode="globe"</span><span class="tag">figure="outline"</span><span class="tag">figure-source="vector"</span><span class="tag">10,725 points/frame</span>
     <pre><code>// mappo hands back the projection it just drew with, so your own
 // canvas registers to the pixel — including things above the surface
 const p = map.locate(lat, lon, 1 + altitudeKm / 6371);
@@ -261,23 +261,22 @@ if (p.front) ctx.fillRect(p.x, p.y, 2, 2);   // .depth fades it with the limb</c
     its focus, and the planet shown <em>as the Sun sees it</em> — so the edge of the disc
     is the terminator and the pole leaning toward you is the season. Scrub a year either
     way and watch the Earth run faster in January than in July, because it does.</p>
-    <span class="tag">focus</span><span class="tag">tilt</span><span class="tag">land-source="vector"</span><span class="tag">locate()</span><span class="tag">Kepler + sidereal time</span>
+    <span class="tag">focus</span><span class="tag">tilt</span><span class="tag">figure-source="vector"</span><span class="tag">locate()</span><span class="tag">Kepler + sidereal time</span>
     <pre><code>// aim the globe at the subsolar point and the disc IS the daylit half
 earth.setAttribute("focus", `${dec},${subLon}`);
 earth.setAttribute("tilt", dec);   // focus is live now, so this re-aims</code></pre>
   </div>
 </div>
 
-<!-- ────────────────────────── THE YEAR ────────────────────────── -->
-<h2>Where the Earth is <span>— the orbit and the rotation, at any moment</span></h2>
+<!-- ────────────────────────── OTHER WORLDS ────────────────────────── -->
+<h2>The Moon and Mars <span>— the same renderers, another body</span></h2>
 <div class="card">
   <div class="meta">
-    <h3><a href="./year.html">Where the Earth is →</a></h3>
-    <p>Keplers equation solved in the page, the orbit drawn to scale with the Sun at its
-    focus, and the planet shown <em>as the Sun sees it</em> — so the edge of the disc is
-    the terminator and the pole leaning toward you is the season. Scrub a year either way
-    and watch the Earth run faster in January than in July, because it does.</p>
-    <span class="tag">focus</span><span class="tag">tilt</span><span class="tag">land-source="vector"</span><span class="tag">locate()</span><span class="tag">Kepler + sidereal time</span>
+    <h3><a href="./worlds.html">Other worlds →</a></h3>
+    <p>Lunar maria and Martian lowlands drawn by the very same flat and globe renderers,
+    from opt-in body packs that ship apart from the bundle. Landing sites from each body's
+    own gazetteer, and all three worlds at their true relative diameters.</p>
+    <span class="tag">body="moon"</span><span class="tag">&lt;mappo-mars&gt;</span><span class="tag">places="Apollo 11"</span><span class="tag">registerBody()</span>
   </div>
 </div>
 
@@ -290,8 +289,8 @@ earth.setAttribute("tilt", dec);   // focus is live now, so this re-aims</code><
       <div class="sun"></div>
       <div class="carrier" id="carrier">
         <mappo-world mode="globe" cols="140" rotate-speed="45" tilt="23.44"
-          land="solid outline" land-source="vector"
-          land-color="#6ea8ff" land-stroke="#bcd4ff" land-stroke-width="0.8"
+          figure="solid outline" figure-source="vector"
+          figure-color="#6ea8ff" figure-stroke="#bcd4ff" figure-stroke-width="0.8"
           background="#0d1b33" graticule meridians="24" parallels="11"
           graticule-color="#1e2a3d" equator-color="#6ea8ff" equator-opacity="0.4"
           globe-ring="true"></mappo-world>
@@ -309,7 +308,7 @@ earth.setAttribute("tilt", dec);   // focus is live now, so this re-aims</code><
     what gives a planet seasons.</p>
     <pre><code>&lt;div class="carrier"&gt;
   &lt;mappo-world mode="globe" tilt="23.44" rotate-speed="45"
-    land="solid outline" land-source="vector"&gt;&lt;/mappo-world&gt;
+    figure="solid outline" figure-source="vector"&gt;&lt;/mappo-world&gt;
 &lt;/div&gt;
 
 const phase = (t % YEAR_MS) / YEAR_MS, a = phase * Math.PI * 2;
@@ -319,18 +318,18 @@ carrier.style.transform =
 </div>
 
 <!-- ───────────────────────── LIVE PLAYGROUND ───────────────────────── -->
-<h2>Land styles <span>— one map, every option, updated live</span></h2>
+<h2>Figure styles <span>— one map, every option, updated live</span></h2>
 <div class="hero" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
   <div>
-    <div class="controls" data-group="land">
-      <button data-opt="land" data-val="dots" aria-pressed="false">dots</button>
-      <button data-opt="land" data-val="solid" aria-pressed="false">solid</button>
-      <button data-opt="land" data-val="outline" aria-pressed="false">outline</button>
-      <button data-opt="land" data-val="solid outline" aria-pressed="true">solid outline</button>
+    <div class="controls" data-group="figure">
+      <button data-opt="figure" data-val="dots" aria-pressed="false">dots</button>
+      <button data-opt="figure" data-val="solid" aria-pressed="false">solid</button>
+      <button data-opt="figure" data-val="outline" aria-pressed="false">outline</button>
+      <button data-opt="figure" data-val="solid outline" aria-pressed="true">solid outline</button>
     </div>
-    <div class="controls" data-group="landSource">
-      <button data-opt="landSource" data-val="grid" aria-pressed="true">grid</button>
-      <button data-opt="landSource" data-val="vector" aria-pressed="false">vector</button>
+    <div class="controls" data-group="figureSource">
+      <button data-opt="figureSource" data-val="grid" aria-pressed="true">grid</button>
+      <button data-opt="figureSource" data-val="vector" aria-pressed="false">vector</button>
     </div>
     <div class="controls" data-group="mode">
       <button data-opt="mode" data-val="flat" aria-pressed="true">flat</button>
@@ -340,12 +339,12 @@ carrier.style.transform =
       <button data-opt="borders" data-val="off" aria-pressed="true">no borders</button>
       <button data-opt="borders" data-val="on" aria-pressed="false">borders</button>
     </div>
-    <mappo-world id="play" cols="140" land="solid outline"
-      land-color="var(--land)" land-stroke="var(--coast)" rotate-speed="5" roll="-12"></mappo-world>
+    <mappo-world id="play" cols="140" figure="solid outline"
+      figure-color="var(--land)" figure-stroke="var(--coast)" rotate-speed="5" roll="-12"></mappo-world>
   </div>
   <div>
     <h3 style="margin:0 0 6px;font-size:17px">Every combination is one attribute</h3>
-    <p style="color:var(--muted);margin:0 0 12px"><code>land</code> is a space-separated token list, so
+    <p style="color:var(--muted);margin:0 0 12px"><code>figure</code> is a space-separated token list, so
     combinations read the way you say them. The same names mean the same thing on the flat map and the globe.</p>
     <pre id="playCode"><code></code></pre>
     <p style="color:var(--muted);margin:10px 0 0;font-size:13px">Attributes are live — the buttons above just
@@ -358,21 +357,21 @@ carrier.style.transform =
 <div class="grid">
   <div class="card"><div class="art">
     <mappo-world mode="globe" cols="140" rotate-speed="0" roll="0" tilt="0"
-      land="outline" land-source="vector" land-stroke="var(--coast)"></mappo-world>
+      figure="outline" figure-source="vector" figure-stroke="var(--coast)"></mappo-world>
   </div><div class="meta"><h3>Upright</h3>
     <p>No lean, no tilt — the reference frame.</p>
     <pre><code>roll="0" tilt="0"</code></pre></div></div>
 
   <div class="card"><div class="art">
     <mappo-world mode="globe" cols="140" rotate-speed="0" roll="-14.3" tilt="0"
-      land="outline" land-source="vector" land-stroke="var(--coast)"></mappo-world>
+      figure="outline" figure-source="vector" figure-stroke="var(--coast)"></mappo-world>
   </div><div class="meta"><h3>Roll — the lean</h3>
     <p>Turns the finished disc in the plane of the screen. Watch the equator.</p>
     <pre><code>roll="-14.3"</code></pre></div></div>
 
   <div class="card"><div class="art">
     <mappo-world mode="globe" cols="140" rotate-speed="0" roll="0" tilt="30"
-      land="solid outline" land-source="vector" land-color="var(--land)" land-stroke="var(--coast)"
+      figure="solid outline" figure-source="vector" figure-color="var(--land)" figure-stroke="var(--coast)"
       graticule meridians="24" parallels="11" graticule-color="var(--grid)"
       equator-color="var(--coast)" equator-opacity="0.4"></mappo-world>
   </div><div class="meta"><h3>Tilt — the axis</h3>
@@ -381,7 +380,7 @@ carrier.style.transform =
 
   <div class="card"><div class="art">
     <mappo-world mode="globe" cols="140" rotate-speed="0" roll="-14.3" tilt="25"
-      land="solid outline" land-source="vector" land-color="var(--land)" land-stroke="var(--coast)"
+      figure="solid outline" figure-source="vector" figure-color="var(--land)" figure-stroke="var(--coast)"
       graticule meridians="24" parallels="11" graticule-color="var(--grid)"
       equator-color="var(--coast)" equator-opacity="0.4"></mappo-world>
   </div><div class="meta"><h3>Both, composed</h3>
@@ -390,14 +389,14 @@ carrier.style.transform =
 
   <div class="card"><div class="art">
     <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-10"
-      land="solid" land-source="vector" borders land-color="var(--land)"
+      figure="solid" figure-source="vector" borders figure-color="var(--land)"
       borders-color="var(--coast)" borders-opacity="0.8"></mappo-world>
   </div><div class="meta"><h3>Country borders</h3>
     <p>Every national boundary, on the sphere.</p>
-    <pre><code>land="solid" land-source="vector" borders</code></pre></div></div>
+    <pre><code>figure="solid" figure-source="vector" borders</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-10" dot-color="var(--coast)"
+    <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-10" figure-color="var(--coast)"
       graticule meridians="24" parallels="23"
       graticule-color="var(--grid)" equator-color="var(--accent)" equator-opacity="0.4"></mappo-world>
   </div><div class="meta"><h3>Dots + dense graticule</h3>
@@ -409,32 +408,32 @@ carrier.style.transform =
 <h2>Flat <span>— grid detail versus real geography</span></h2>
 <div class="grid">
   <div class="card"><div class="art">
-    <mappo-world cols="120" dot-color="var(--coast)"></mappo-world>
+    <mappo-world cols="120" figure-color="var(--coast)"></mappo-world>
   </div><div class="meta"><h3>The dot field</h3>
     <p>What mappo is named for. Resolution is a runtime parameter.</p>
     <pre><code>&lt;mappo-world cols="120"&gt;&lt;/mappo-world&gt;</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <mappo-world cols="120" land="outline" land-stroke="var(--coast)"></mappo-world>
+    <mappo-world cols="120" figure="outline" figure-stroke="var(--coast)"></mappo-world>
   </div><div class="meta"><h3>Grid contours</h3>
     <p>Traced from the bitmask. Blocky by design, follows <code>cols</code>, free.</p>
-    <pre><code>land="outline"</code></pre></div></div>
+    <pre><code>figure="outline"</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <mappo-world cols="120" land="outline" land-source="vector" land-stroke="var(--coast)"></mappo-world>
+    <mappo-world cols="120" figure="outline" figure-source="vector" figure-stroke="var(--coast)"></mappo-world>
   </div><div class="meta"><h3>Vector coastlines</h3>
     <p>Natural Earth at 1/32°. Smooth at any size, independent of <code>cols</code>. ~13 KB.</p>
-    <pre><code>land="outline" land-source="vector"</code></pre></div></div>
+    <pre><code>figure="outline" figure-source="vector"</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <mappo-world cols="120" land="solid outline" land-source="vector" borders
-      land-color="var(--land)" land-stroke="var(--coast)" borders-opacity="0.6"></mappo-world>
+    <mappo-world cols="120" figure="solid outline" figure-source="vector" borders
+      figure-color="var(--land)" figure-stroke="var(--coast)" borders-opacity="0.6"></mappo-world>
   </div><div class="meta"><h3>Everything</h3>
     <p>Filled, coasted, bordered.</p>
-    <pre><code>land="solid outline" land-source="vector" borders</code></pre></div></div>
+    <pre><code>figure="solid outline" figure-source="vector" borders</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <mappo-world cols="120" land="solid" land-source="vector" land-color="var(--land)"
+    <mappo-world cols="120" figure="solid" figure-source="vector" figure-color="var(--land)"
       highlight-color="var(--accent)"
       highlight-polygon='[[[42.1,-8.2],[41.9,-6.2],[39.7,-7.0],[38.0,-7.0],[37.0,-7.4],[37.0,-8.9],[38.7,-9.5],[41.0,-8.9],[42.1,-8.2]]]'></mappo-world>
   </div><div class="meta"><h3>Highlight a region</h3>
@@ -443,7 +442,7 @@ carrier.style.transform =
 highlight-color="#c2410c"</code></pre></div></div>
 
   <div class="card"><div class="art">
-    <mappo-world cols="120" land="solid" land-source="vector" land-color="var(--land)">
+    <mappo-world cols="120" figure="solid" figure-source="vector" figure-color="var(--land)">
       <a class="pin" data-lat="38.7" data-lon="-9.1" href="#"><span>Lisbon</span></a>
       <a class="pin" data-lat="-23.5" data-lon="-46.6" href="#"><span>São Paulo</span></a>
       <a class="pin" data-lat="35.7" data-lon="139.7" href="#"><span>Tokyo</span></a>
@@ -454,17 +453,20 @@ highlight-color="#c2410c"</code></pre></div></div>
 </div>
 
 <!-- ───────────────────────── REFERENCE ───────────────────────── -->
-<p class="foot" style="margin:34px 0 0"><strong>One caveat, stated plainly:</strong> on the GLOBE a filled land style draws from the 512×256 mask, not the vector outlines — clipping a vector polygon to the visible hemisphere needs an algorithm mappo does not have yet, and every shortcut for it was measured painting open ocean. Fill and coast therefore both come from the grid there, where they agree by construction. <code>land="outline"</code> with <code>land-source="vector"</code> is exact on the globe, and the flat map is exact in every combination.</p>
+<p class="foot" style="margin:34px 0 0"><strong>One caveat, stated plainly:</strong> on the GLOBE a filled figure style draws from the 512×256 mask, not the vector outlines — clipping a vector polygon to the visible hemisphere needs an algorithm mappo does not have yet, and every shortcut for it was measured painting open ocean. Fill and coast therefore both come from the grid there, where they agree by construction. <code>figure="outline"</code> with <code>figure-source="vector"</code> is exact on the globe, and the flat map is exact in every combination.</p>
 
 <h2>Every option</h2>
 <div class="hero" style="grid-template-columns:1fr 1fr">
-  <pre><code>land            "dots" | "solid" | "outline" | "solid outline"
-land-source     "grid" (bitmask) | "vector" (Natural Earth)
-land-color      fill        → falls back to dot-color
-land-stroke     coastline   → falls back to land-color
-land-stroke-width
-borders         country borders (vector)
+  <pre><code>body            "earth" (default) | any registered body ("moon", "mars", yours)
+figure          "dots" | "solid" | "outline" | "solid outline"
+figure-source   "grid" (traced from the body) | "vector" (the body's outlines)
+figure-color    the figure: dots, or the fill
+figure-stroke   the edge       → falls back to figure-color
+figure-stroke-width
+ground-color    everything that is not figure, as filler dots
+borders         region boundaries (Earth: countries)
 borders-color / borders-width / borders-opacity
+places          gazetteer names of the body · markers "Name@lat,lon"
 highlight-polygon / highlight-color</code></pre>
   <pre><code>mode            "flat" | "globe"
 tilt            axial tilt, degrees (23.44 = Earth)
@@ -483,7 +485,8 @@ max-dpr         cap the globe backing store (default 2)</code></pre>
 top of this page repaints every map above without a line of JavaScript.
 Full-screen versions: <a href="./orbit.html">orbit</a> · <a href="./land.html">land styles</a> ·
 <a href="./v05.html">graticule &amp; overlays</a> · <a href="./v05b.html">roll &amp; tilt</a> ·
-<a href="./perf.html">performance</a> · <a href="../index.html">landing page</a>.</p>
+<a href="./worlds.html">Moon &amp; Mars</a> · <a href="./perf.html">performance</a> ·
+<a href="../index.html">landing page</a>.</p>
 
 </div>
 <script type="module" src="../dist/mappo.js"></script>
@@ -703,30 +706,30 @@ setInterval(paintNight, 30000);
 
   const play = document.getElementById("play");
   const code = document.querySelector("#playCode code");
-  const state = { land: "solid outline", landSource: "grid", mode: "flat", borders: "off" };
+  const state = { figure: "solid outline", figureSource: "grid", mode: "flat", borders: "off" };
 
   function render() {
-    play.setAttribute("land", state.land);
-    play.setAttribute("land-source", state.landSource);
+    play.setAttribute("figure", state.figure);
+    play.setAttribute("figure-source", state.figureSource);
     play.setAttribute("mode", state.mode);
     if (state.borders === "on") play.setAttribute("borders", "");
     else play.removeAttribute("borders");
     // borders and vector coastlines are the same dataset — asking for borders
-    // without vector land would draw one at a detail the other cannot match.
+    // without vector outlines would draw one at a detail the other cannot match.
     const needsVector = state.borders === "on";
-    if (needsVector && state.landSource !== "vector") {
-      state.landSource = "vector";
-      play.setAttribute("land-source", "vector");
-      document.querySelectorAll('[data-opt="landSource"]').forEach((b) =>
+    if (needsVector && state.figureSource !== "vector") {
+      state.figureSource = "vector";
+      play.setAttribute("figure-source", "vector");
+      document.querySelectorAll('[data-opt="figureSource"]').forEach((b) =>
         b.setAttribute("aria-pressed", String(b.dataset.val === "vector")));
     }
     const attrs = [
       state.mode === "globe" ? 'mode="globe" rotate-speed="5" roll="-12"' : null,
-      `land="${state.land}"`,
-      state.landSource === "vector" ? 'land-source="vector"' : null,
+      `figure="${state.figure}"`,
+      state.figureSource === "vector" ? 'figure-source="vector"' : null,
       state.borders === "on" ? "borders" : null
     ].filter(Boolean).join("\n  ");
-    code.textContent = `<mappo-world cols="140"\n  ${attrs}\n  land-color="#c9d3bd"\n  land-stroke="#5f7a4a">\n</mappo-world>`;
+    code.textContent = `<mappo-world cols="140"\n  ${attrs}\n  figure-color="#c9d3bd"\n  figure-stroke="#5f7a4a">\n</mappo-world>`;
   }
 
   document.querySelectorAll(".controls button").forEach((btn) => {

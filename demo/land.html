@@ -12,28 +12,28 @@
 </style></head><body>
 <button id="t">Toggle dark</button>
 
-<h2>FLAT — <code>land="dots"</code> · <code>"solid"</code> · <code>"outline"</code> · <code>"solid outline"</code></h2>
+<h2>FLAT — <code>figure="dots"</code> · <code>"solid"</code> · <code>"outline"</code> · <code>"solid outline"</code></h2>
 <div class="row">
-  <mappo-world cols="120" dot-color="var(--land)"></mappo-world>
-  <mappo-world cols="120" land="solid"  land-color="var(--land)"></mappo-world>
-  <mappo-world cols="120" land="outline" land-stroke="var(--coast)"></mappo-world>
-  <mappo-world cols="120" land="solid outline" land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="1.5"></mappo-world>
+  <mappo-world cols="120" figure-color="var(--land)"></mappo-world>
+  <mappo-world cols="120" figure="solid"  figure-color="var(--land)"></mappo-world>
+  <mappo-world cols="120" figure="outline" figure-stroke="var(--coast)"></mappo-world>
+  <mappo-world cols="120" figure="solid outline" figure-color="var(--land)" figure-stroke="var(--coast)" figure-stroke-width="1.5"></mappo-world>
 </div>
 
 <h2>GLOBE — the same four values, identical option names</h2>
 <div class="row3">
-  <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-14.3" dot-color="var(--land)"></mappo-world>
-  <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-14.3" land="solid" land-color="var(--land)"></mappo-world>
-  <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-14.3" land="outline" land-stroke="var(--coast)"></mappo-world>
+  <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-14.3" figure-color="var(--land)"></mappo-world>
+  <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-14.3" figure="solid" figure-color="var(--land)"></mappo-world>
+  <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-14.3" figure="outline" figure-stroke="var(--coast)"></mappo-world>
 </div>
 <div class="row3" style="margin-top:20px">
-  <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-14.3" land="solid outline"
-    land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="1.2"></mappo-world>
-  <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-14.3" land="solid outline" graticule
-    meridians="24" parallels="23" land-color="var(--land)" land-stroke="var(--coast)"
+  <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-14.3" figure="solid outline"
+    figure-color="var(--land)" figure-stroke="var(--coast)" figure-stroke-width="1.2"></mappo-world>
+  <mappo-world mode="globe" cols="150" rotate-speed="0" roll="-14.3" figure="solid outline" graticule
+    meridians="24" parallels="23" figure-color="var(--land)" figure-stroke="var(--coast)"
     graticule-color="var(--grid)" equator-color="var(--coast)" equator-opacity="0.8"></mappo-world>
-  <mappo-world mode="globe" cols="150" rotate-speed="7" roll="-14.3" tilt="10" land="solid outline"
-    land-color="var(--land)" land-stroke="var(--coast)"></mappo-world>
+  <mappo-world mode="globe" cols="150" rotate-speed="7" roll="-14.3" tilt="10" figure="solid outline"
+    figure-color="var(--land)" figure-stroke="var(--coast)"></mappo-world>
 </div>
 
 <script type="module" src="../dist/mappo.js"></script>

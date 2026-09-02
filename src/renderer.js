@@ -1,37 +1,47 @@
-// The renderer: one land mask in, one interactive <svg> out.
+// The renderer: one body in, one interactive <svg> out — or, in globe mode, a
+// canvas sphere (globe.js). This class owns the options, the body, the
+// overlay children and the differential update; the flat SVG scene is built
+// here and the globe is delegated.
 //
 // Design decisions worth knowing before changing things:
 //
-// - The FLAT map is SVG on purpose: dots stay real elements — CSS hover, focusable markers,
-//   restylable from outside. Sensible up to ~250 cols; beyond that a canvas
-//   renderer (same options object) is the plan.
+// - The FLAT map is SVG on purpose: dots stay real elements — CSS hover,
+//   focusable markers, restylable from outside. Sensible up to ~250 cols;
+//   beyond that a canvas renderer (same options object) is the plan.
 //
 // - POSITIONING: every dot/marker is `<g transform="translate(x,y)"><use/></g>`
 //   and ALL animation (hover, pulse, shimmer) transforms the INNER element,
-//   whose shapes are centered on the local origin. Never scale an element
-//   that carries x/y geometry: the scale multiplies the translate and dots
-//   fly diagonally instead of growing in place (transform-box: fill-box is
-//   not reliable on <use> cross-browser).
+//   whose shapes are centred on the local origin. Never scale an element that
+//   carries x/y geometry: the scale multiplies the translate and dots fly
+//   diagonally instead of growing in place (transform-box: fill-box is not
+//   reliable on <use> cross-browser).
 //
-// - DIFFERENTIAL UPDATES — the crash lesson. Rebuilding the world per
-//   option change froze and eventually OOM-killed tabs: each rebuild parses
+// - EVERY INSTANCE IS SELF-CONTAINED. The stylesheet is scoped to the host
+//   with a data-mappo attribute, @keyframes names carry the instance id, and
+//   so do the SVG ids the <use> elements and the ground pattern reference —
+//   `href="#id"` resolves against the whole document, so two maps sharing an
+//   id would both draw the FIRST map's dot shape and size. Many worlds on one
+//   page is a first-class case, not an edge case.
+//
+// - DIFFERENTIAL UPDATES — the crash lesson. Rebuilding the world per option
+//   change froze and eventually OOM-killed tabs: each rebuild parses
 //   thousands of nodes, recalcs style/layout for all of them, re-registers
-//   every infinite animation, and discards ~1MB of DOM for GC — and a
-//   slider drag asks for that 60×/second. So update() classifies changed
-//   keys and does the CHEAPEST sufficient thing:
-//     · style keys  (colors, tilt, cursors, animation…) → rewrite ONE
-//       persistent <style> element. No DOM touched.
-//     · def keys    (dotShape/dotSize/markerShape/markerScale) → replace
-//       two <defs> children; every <use> updates for free.
-//     · marker keys (cities, markerPulse) → rebuild only the markers group.
-//     · geometry    (cols, latRange, interactive) → full rebuild, but
-//       leading+trailing debounced to ≥150ms spacing, with an LRU cache of
-//       dot-markup strings per resolution (dragging back and forth replays
-//       cached geometry instead of recomputing it).
-//   Animation phases (--mappo-pw wave / --mappo-pn noise) are baked into every dot
-//   at build time and consumed via calc() in CSS, so animation mode AND
-//   duration are pure style patches too. Negative animation-delays start
-//   each dot mid-cycle — no synchronized flash on load.
+//   every infinite animation, and discards ~1MB of DOM for GC — and a slider
+//   drag asks for that 60×/second. So update() classifies changed keys and
+//   does the CHEAPEST sufficient thing:
+//     · style keys  (colours, strokes, tilt, cursors, animation…) → rewrite
+//       ONE persistent <style> element. No DOM touched.
+//     · def keys    (dotShape/dotSize/markerShape/markerScale/groundColor) →
+//       replace the <defs>; every <use> updates for free.
+//     · marker keys (places, markerPulse) → rebuild only the markers group.
+//     · geometry    (cols, latRange, figure, figureSource, borders…) → full
+//       rebuild, but leading+trailing debounced to ≥150ms spacing, with an
+//       LRU cache of dot-markup strings per resolution.
+//     · body        → full rebuild, immediately, with caches dropped.
+//   Animation phases (--mappo-pw wave / --mappo-pn noise) are baked into every
+//   dot at build time and consumed via calc() in CSS, so animation mode AND
+//   duration are pure style patches too. Negative animation-delays start each
+//   dot mid-cycle — no synchronized flash on load.
 //
 // - Events are DELEGATED from the svg root (three listeners total), never
 //   per-dot. Payload coordinates come from data attributes on the wrapper.
@@ -39,94 +49,98 @@
 // - The tilt lives on a WRAPPER div around the svg — the svg itself stays
 //   untransformed so consumer getBoundingClientRect math keeps working.
 
-import { resolveBody, EARTH, trackMap, untrackMap } from "./body.js";
+import { resolveBody, resolvePlaces, bodyLatRange, trackMap, untrackMap } from "./body.js";
 import { project, cellCenter, projectNormalized } from "./projection.js";
 import { normalizeRings, pointInRings } from "./highlight.js";
-import { buildLand, parseLandStyle, landRings, borderRings } from "./land.js";
-import { resolveCity } from "./cities.js";
+import { buildFigure, parseFigureStyle, figureOutlines, figureBorders } from "./figure.js";
 import { noise2 } from "./noise.js";
 import { GlobeRenderer } from "./globe.js";
 import { hoverShade } from "./color.js";
 
 export const DEFAULTS = {
-  // Shape of the world: "flat" (SVG plane) or "globe" (rotating canvas
-  // sphere — tilt becomes the axial tilt; hover/click and animation are
-  // flat-only for now).
+  // Shape of the world: "flat" (SVG plane) or "globe" (rotating canvas sphere).
   mode: "flat",
-  // Which sphere. Earth unless a body pack has been registered and named;
-  // see src/body.js. Takes a name or a body object.
+  // Which world. Earth unless a body pack has been registered and named; see
+  // src/body.js. Takes a name or a body object.
   body: null,
-  rotateSpeed: 4,             // globe spin, degrees per second (0 = still)
-  globeRing: false,           // opt-in hairline halo around the globe
-  // Backdrop (both modes)
-  background: "none",         // uniform fill behind everything (flat rect / globe disc)
-  oceanColor: "none",         // water cells as filler dots, e.g. "#e8eef5"; "none" = off
   // Grid
   cols: null,                 // auto: 120 flat · 170 globe (hard max 260); set to override
-  latRange: [-58, 84],        // cut Antarctica + arctic emptiness
+  // Latitude bounds. null means "the body's own framing" (Earth cuts Antarctica
+  // and the arctic emptiness; the Moon and Mars show their poles). The
+  // effective range is always available as options.latRange.
+  latMin: null,
+  latMax: null,
+  // The FIGURE — what the body classifies as drawn (land, maria, lowlands…) —
+  // and how it is rendered. A space-separated token list, so combinations
+  // read the way you would say them out loud. Identical on both renderers:
+  //   "dots"           the dot field mappo is named for (default)
+  //   "solid"          filled
+  //   "outline"        the edge only
+  //   "solid outline"  filled, with the edge drawn on top
+  figure: "dots",
+  figureColor: "#d3dce6",     // the figure's colour: the dots, or the fill
+  figureStroke: null,         // the edge; defaults to figureColor
+  figureStrokeWidth: 1,
+  // Where the edge comes from: "grid" (traced from the body's figure() on the
+  // dot grid — blocky, follows cols, free) or "vector" (the body's own
+  // outlines — smooth at any size; a body without them falls back to grid).
+  figureSource: "grid",
+  // The GROUND — everything that is not figure — as filler dots in their own
+  // shade, e.g. "#e8eef5"; "none" leaves it empty. Draws under any figure style.
+  groundColor: "none",
+  background: "none",         // a uniform fill behind everything (flat rect / globe disc)
+  // Region boundaries (Earth: country borders), where the body has them.
+  borders: false,
+  bordersColor: null,         // defaults to the figure stroke
+  bordersWidth: 0.5,
+  bordersOpacity: 0.55,
   // Dots
   dotShape: "circle",         // "circle" | "square" | "triangle" | an SVG path string (24×24 units)
   dotSize: 0.55,              // fraction of a grid cell the dot fills
-  dotColor: "#d3dce6",
-  dotHoverColor: null,        // auto: a contrast-aware shade of dotColor (darker for light dots, lighter for dark)
+  dotHoverColor: null,        // auto: a contrast-aware shade of figureColor
   dotHoverScale: 2.6,
-  // City markers
-  cities: [],                 // ["London", { name, lat, lon, color? }, …]
-  markers: [],                // coordinate pins: [{ name, lat, lon }, ...] — merged with cities
-  focus: null,                // { lat, lon } the globe starts facing (rotate-speed 0 holds it)
-  // Graticule — the meridian/parallel grid (globe mode). The equator is
-  // drawn separately so it can carry its own weight: it is the line a
-  // reader orients against.
-  // How land is drawn. A space-separated token list, so combinations read
-  // the way you would say them out loud. Works identically on both renderers:
-  //   "dots"           the dot field mappo is named for (default)
-  //   "solid"          filled landmass
-  //   "outline"        coastline only
-  //   "solid outline"  filled, with the coast drawn on top
-  land: "dots",
-  landColor: null,            // fill; defaults to dotColor
-  landStroke: null,           // coastline; defaults to landColor, then dotColor
-  landStrokeWidth: 1,
-  // Where the coastline comes from: "grid" (traced from the bitmask — blocky,
-  // follows cols, free) or "vector" (real Natural Earth outlines — smooth at
-  // any size, ~13 KB).
-  landSource: "grid",
-  borders: false,             // country borders (vector data; any land style)
-  bordersColor: null,         // defaults to the coastline colour
-  bordersWidth: 0.5,
-  bordersOpacity: 0.55,
-  roll: 0,                    // globe LEAN, in the plane of the screen (deg)
-  graticule: false,
-  meridians: 12,              // evenly spaced longitudes
-  parallels: 11,              // evenly spaced latitudes; the equator is extra
-  graticuleColor: null,       // defaults to dotColor
-  equatorColor: null,         // defaults to graticuleColor
-  graticuleOpacity: 0.28,
-  // Only a touch above the other lines. The equator earns its own colour
-  // and weight option so it CAN be emphasised, but emphasising it by default
-  // reads as a bug — one parallel inexplicably darker than its neighbours.
-  equatorOpacity: 0.36,
-  // Position host DOM carrying data-lat/data-lon over the map (globe mode).
-  overlays: true,
-  // Cap the canvas backing store. 3× devices buy no visible detail on a
-  // dot field and pay full fill-rate for it.
-  maxDpr: 2,
-  highlightPolygon: null,     // rings of [lat, lon] — dots inside draw in highlightColor (globe mode)
+  // Places: gazetteer names of the current body ("London" on Earth, "Apollo 11"
+  // on the Moon) and/or your own { name, lat, lon, color? } records.
+  places: [],
+  focus: null,                // { lat, lon } the globe faces (rotate-speed 0 holds it)
+  highlightPolygon: null,     // rings of [lat, lon] — figure cells inside draw in highlightColor
   highlightColor: "#8fb0d8",
   markerShape: "circle",
   markerColor: "#2262fe",
   markerScale: 1.5,           // relative to a dot
-  markerPulse: false,         // radar ping (expanding fading ring) — opt-in; mappo ships static by default
+  markerPulse: false,         // radar ping (expanding fading ring) — opt-in
   markerHoverScale: 1.8,
+  // The globe
+  rotateSpeed: 4,             // spin, degrees per second (0 = still)
+  roll: 0,                    // LEAN, in the plane of the screen (deg)
+  globeRing: false,           // opt-in hairline halo around the globe
+  // Graticule — the meridian/parallel grid (globe mode). The equator is drawn
+  // separately so it can carry its own weight: it is the line a reader
+  // orients against.
+  graticule: false,
+  meridians: 12,              // evenly spaced longitudes
+  parallels: 11,              // evenly spaced latitudes; the equator is extra
+  graticuleColor: null,       // defaults to figureColor
+  equatorColor: null,         // defaults to graticuleColor
+  graticuleOpacity: 0.28,
+  // Only a touch above the other lines. The equator earns its own colour and
+  // weight option so it CAN be emphasised, but emphasising it by default reads
+  // as a bug — one parallel inexplicably darker than its neighbours.
+  equatorOpacity: 0.36,
+  // Position host DOM carrying data-lat/data-lon over the map.
+  overlays: true,
+  // Cap the canvas backing store. 3× devices buy no visible detail on a dot
+  // field and pay full fill-rate for it.
+  maxDpr: 2,
   // Plane transform (degrees; the classic hero skew)
   tilt: 0,
   rotate: 0,
   perspective: 1000,
-  // Animation animation over the whole matrix. Three plain-language knobs:
-  animation: "none",            // "none" | "wave" | "noise" | "ripple" | "sweep" | "sparkle"
-  animationPeriod: 6,           // seconds per full cycle (bigger = slower)
-  animationHeight: 0.8,         // crest height, in CELLS (1 = one grid cell)
-  animationWidth: 0.13,         // crest window as a fraction of the cycle (smaller = thinner front)
+  // Animation over the whole matrix. Three plain-language knobs:
+  animation: "none",          // "none" | "wave" | "noise" | "ripple" | "sweep" | "sparkle"
+  animationPeriod: 6,         // seconds per full cycle (bigger = slower)
+  animationHeight: 0.8,       // crest height, in CELLS (1 = one grid cell)
+  animationWidth: 0.13,       // crest window as a fraction of the cycle (smaller = thinner front)
   // Interaction
   cursor: "default",
   markerCursor: "pointer",
@@ -134,29 +148,30 @@ export const DEFAULTS = {
   // Callbacks (each also fires as a bubbling CustomEvent "mappo:*")
   onDotClick: null,           // ({ lat, lon, col, row, element })
   onDotEnter: null,
-  onCityClick: null,          // ({ name, lat, lon, element })
-  onCityEnter: null
+  onPlaceClick: null,         // ({ name, lat, lon, kind?, element })
+  onPlaceEnter: null
 };
 
-// Which update path each option needs. Callback keys appear in none of
-// these on purpose: they're read at dispatch time, changing them costs
-// nothing. Anything unlisted defaults to the safe full rebuild.
+// Which update path each option needs. Callback keys appear in none of these
+// on purpose: they're read at dispatch time, changing them costs nothing.
+// Anything unlisted defaults to the safe full rebuild.
 const STYLE_KEYS = new Set([
-  "dotColor", "dotHoverColor", "dotHoverScale", "markerColor",
-  "markerHoverScale", "tilt", "rotate", "perspective",
+  "figureColor", "figureStroke", "figureStrokeWidth", "dotHoverColor", "dotHoverScale",
+  "bordersColor", "bordersWidth", "bordersOpacity", "highlightColor",
+  "markerColor", "markerHoverScale", "tilt", "rotate", "perspective",
   "animation", "animationPeriod", "animationHeight", "animationWidth", "cursor", "markerCursor",
   // Backdrop knobs are pure stylesheet in flat mode: the bg rect and the
-  // pattern-filled ocean rect always exist; only their fills change.
+  // pattern-filled ground rect always exist; only their fills change.
   "background", "globeRing"
 ]);
-const DEF_KEYS = new Set(["dotShape", "dotSize", "markerShape", "markerScale", "oceanColor"]);
-const MARKER_KEYS = new Set(["cities", "markerPulse", "interactive"]);
-const CALLBACK_KEYS = new Set(["onDotClick", "onDotEnter", "onCityClick", "onCityEnter"]);
+const DEF_KEYS = new Set([ "dotShape", "dotSize", "markerShape", "markerScale", "groundColor" ]);
+const MARKER_KEYS = new Set([ "places", "markerPulse", "interactive" ]);
+const CALLBACK_KEYS = new Set([ "onDotClick", "onDotEnter", "onPlaceClick", "onPlaceEnter" ]);
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const CELL = 10;        // internal SVG units per grid cell — never exposed
 
-// Every instance scopes its own stylesheet to itself with this.
+// Every instance scopes its stylesheet and its SVG ids with this.
 let instanceSeq = 0;
 const MAX_COLS = 260;   // above this, SVG node count degrades interaction
 const REBUILD_MS = 150; // min spacing between geometry rebuilds
@@ -181,7 +196,7 @@ function span(name, fn) {
   const entries = performance.getEntriesByName(name);
   const ms = entries[entries.length - 1]?.duration ?? 0;
   performance.clearMarks(m0);
-  return [out, ms];
+  return [ out, ms ];
 }
 function dbg(...args) {
   if (Mappo.debug) console.debug("[mappo]", ...args);
@@ -196,30 +211,44 @@ export class Mappo {
   constructor(container, options = {}) {
     this.container = container;
     this.options = { ...DEFAULTS, ...options };
-    // Which sphere. Resolved once here and once per update, never per cell.
+    this._uid = ++instanceSeq;
+    // Preserve which latitude bounds the caller actually owns. The effective
+    // range lives in options.latRange; null bounds inherit from each body, so
+    // a late-arriving Moon can change Earth's +84 default to its own +90 while
+    // keeping an explicit lat-min untouched.
+    this._latRangeOverride = "latRange" in options
+      ? [ options.latRange?.[0] ?? null, options.latRange?.[1] ?? null ]
+      : [ options.latMin ?? null, options.latMax ?? null ];
+    // Which world. Resolved once here and once per body update, never per cell.
     this._body = resolveBody(this.options.body);
-    // A body knows the band worth drawing — the Moon wants its poles, Earth
-    // does not want its ice. Only when the caller has not said otherwise —
-    // and remembered, because a body that registers LATER has to be allowed
-    // to bring its own band with it.
-    this._bodyOwnsLatRange =
-      !("latRange" in options) && !("latMin" in options) && !("latMax" in options);
-    if (this._bodyOwnsLatRange && this._body.latRange) this.options.latRange = this._body.latRange;
-    this._dotsCache = new Map(); // "body|cols|latMin|latMax" → dots markup string
-    trackMap(this);
+    // Host DOM carrying data-lat/data-lon is harvested ONCE, here, before any
+    // renderer touches the container's children, and lent to whichever
+    // renderer is active. Owning the list here is what lets a mode switch and
+    // a destroy()/re-connect keep the host's elements.
+    this._overlays = typeof container.querySelectorAll === "function"
+      ? Array.from(container.querySelectorAll("[data-lat][data-lon]"))
+      : [];
+    this._dotsCache = new Map();    // "cols|latMin|latMax" → { markup, dots }
+    this._figureCache = new Map();  // figure paths have a different value shape
+    this.#applyLatRange();
     this.render();
+    // Do not retain a half-constructed map if a host DOM or custom body throws
+    // during its first render.
+    trackMap(this);
   }
 
-  // Swap the sphere under a map that has already drawn. Two things have to
-  // happen together and used not to: the band the body asked for is
-  // re-applied (the Moon wants its poles), and the geometry is rebuilt from
-  // scratch. Both caches are body-keyed, so "rebuild" really does recompute
-  // rather than replay the Earth that was drawn while the pack was loading.
+  // The resolved body this map is drawing — a registered pack, the object you
+  // passed, or a pending placeholder while a named pack has not arrived.
+  get body() {
+    return this._body;
+  }
+
+  // Swap the world under a map that has already drawn. Two things have to
+  // happen together: the band the body asked for is re-applied (the Moon
+  // wants its poles), and the geometry is rebuilt from scratch with the
+  // instance caches dropped, so "rebuild" really does recompute.
   adoptBody(body) {
-    if (body === this._body) return;
-    this._body = body;
-    if (this._bodyOwnsLatRange && body.latRange) this.options.latRange = body.latRange;
-    this.render();
+    if (this.#setBody(body)) this.render();
   }
 
   // Where a point lands on screen, in CSS pixels from the top-left of the
@@ -229,8 +258,8 @@ export class Mappo {
   //   const p = map.locate(51.5, -0.1);        // London, on the surface
   //   const s = map.locate(lat, lon, 1.086);   // and something in orbit
   //
-  // `radius` is distance from the centre of the Earth in Earth radii, and only
-  // means anything on the globe: a flat map has no third dimension to leave.
+  // `radius` is distance from the body's centre in body radii, and only means
+  // anything on the globe: a flat map has no third dimension to leave.
   // Returns null before the first frame, and { front: false } for a point the
   // globe is currently hiding. On the flat map `front` is always true, and the
   // answer ignores tilt/rotate/perspective — those are a CSS transform on top
@@ -255,16 +284,38 @@ export class Mappo {
   // subset of options, as often as you like; the component picks the
   // cheapest sufficient refresh and never lets bursts stack up.
   update(options = {}) {
-    const changed = Object.keys(options).filter((k) => !sameOption(options[k], this.options[k]));
+    // Bodies compare by identity (a replacement pack with the same id is a
+    // different world); everything else structurally.
+    const changed = Object.keys(options).filter((k) =>
+      k === "body" ? options.body !== this.options.body : !sameOption(options[k], this.options[k]));
+    let nextOverride = [ ...this._latRangeOverride ];
+    if ("latRange" in options) {
+      nextOverride = [ options.latRange?.[0] ?? null, options.latRange?.[1] ?? null ];
+    } else {
+      if ("latMin" in options) nextOverride[0] = options.latMin;
+      if ("latMax" in options) nextOverride[1] = options.latMax;
+    }
+    const oldRange = this.options.latRange;
+    const nextBody = changed.includes("body") ? resolveBody(options.body) : this._body;
+    const nextRange = this.#rangeFor(nextBody, nextOverride); // validate before mutating live state
+    this._latRangeOverride = nextOverride;
     Object.assign(this.options, options);
-    if (changed.length === 0) return;
-    // Like mode: a different sphere is different geometry, so it skips the
+    this.options.latRange = nextRange;
+    // Like mode: a different world is different geometry, so it skips the
     // patch tiers entirely rather than hoping `body` appears in one of them.
     if (changed.includes("body")) {
       dbg("update: body →", this.options.body, "→ full rebuild");
-      this.adoptBody(resolveBody(this.options.body));
+      this.#setBody(nextBody);
+      // A body representation can change ("moon" → the same MOON object)
+      // alongside another option. Render the whole merged update even when
+      // the resolved body identity itself did not change.
+      this.render();
       return;
     }
+    if (!sameOption(oldRange, this.options.latRange) && !changed.includes("latRange")) {
+      changed.push("latRange");
+    }
+    if (changed.length === 0) return;
 
     if (changed.every((k) => CALLBACK_KEYS.has(k))) {
       dbg("update: callbacks only", changed, "→ no work");
@@ -280,7 +331,13 @@ export class Mappo {
       return;
     }
     if (this.options.mode === "globe") {
-      if (this._globe) { this._globe.update(changed); dbg("update:", changed, "→ globe refresh"); }
+      if (this._globe) {
+        this._globe.update(changed, this._body);
+        // Canvas has no accessible descendants: keep its text alternative in
+        // sync with runtime marker/body changes just as the flat SVG does.
+        this._globe.canvas.setAttribute("aria-label", this.#ariaLabel());
+        dbg("update:", changed, "→ globe refresh");
+      }
       else this.#scheduleRebuild();
       return;
     }
@@ -295,24 +352,62 @@ export class Mappo {
     }
     const patches = [];
     if (changed.some((k) => DEF_KEYS.has(k))) {
-      const [, defsMs] = span("wm:patch-defs", () => this.#patchDefs());
+      const [ , defsMs ] = span("wm:patch-defs", () => this.#patchDefs());
       patches.push(`defs ${defsMs.toFixed(1)}ms`);
     }
     if (changed.some((k) => MARKER_KEYS.has(k))) {
-      const [, markersMs] = span("wm:patch-markers", () => this.#patchMarkers());
+      const [ , markersMs ] = span("wm:patch-markers", () => this.#patchMarkers());
       patches.push(`markers ${markersMs.toFixed(1)}ms`);
     }
-    const [, styleMs] = span("wm:patch-style", () => this.#patchStyle());
+    const [ , styleMs ] = span("wm:patch-style", () => this.#patchStyle());
     patches.push(`style ${styleMs.toFixed(1)}ms`);
     dbg("update:", changed, "→", patches.join(" · "));
   }
 
+  // Tear down, and hand the host's overlay children back exactly as they
+  // were: a moved or re-connected element must find them again.
   destroy() {
     untrackMap(this);
     clearTimeout(this._rebuildTimer);
     this._globe?.destroy();
     this._globe = null;
-    this.container.replaceChildren();
+    this.svg = null;
+    this.styleEl = null;
+    this._tiltWrap = null;
+    this._overlayLayer = null;
+    for (const el of this._overlays) releaseOverlay(el);
+    this.container.replaceChildren(...this._overlays);
+    this.container.removeAttribute?.("data-mappo");
+  }
+
+  #applyLatRange() {
+    this.options.latRange = this.#rangeFor(this._body, this._latRangeOverride);
+  }
+
+  #rangeFor(body, override) {
+    const inherited = bodyLatRange(body);
+    const range = [ override[0] ?? inherited[0], override[1] ?? inherited[1] ];
+    const [ min, max ] = range;
+    if (!Number.isFinite(min) || !Number.isFinite(max) || min < -90 || max > 90 || min >= max) {
+      throw new RangeError("latRange must stay within [-90, 90] with min < max");
+    }
+    return range;
+  }
+
+  #setBody(body) {
+    const bodyChanged = body !== this._body;
+    const oldRange = this.options.latRange;
+    const nextRange = this.#rangeFor(body, this._latRangeOverride);
+    this._body = body;
+    this.options.latRange = nextRange;
+    if (bodyChanged) {
+      // The caches are keyed on geometry only; the body is implied by the
+      // instance, so a new body means a clean slate.
+      this._dotsCache.clear();
+      this._figureCache.clear();
+      this._cacheBytes = 0;
+    }
+    return bodyChanged || !sameOption(oldRange, this.options.latRange);
   }
 
   // -- the full build (geometry path only) -------------------------------------
@@ -321,26 +416,6 @@ export class Mappo {
   // drag renders at most every REBUILD_MS with a guaranteed final render at
   // the resting value. This is the backpressure valve — without it, drag
   // input outruns render capacity and the tab drowns.
-// Position adopted overlay children against the flat projection.
-//
-// Percentages, not pixels: the SVG scales with its container, so a percent
-// stays correct through every resize without mappo having to watch for one.
-// Depth is published as 1 — a flat map has no limb — so a stylesheet
-// written against --mappo-depth for the globe works here unchanged.
-_placeOverlays() {
-  if (!this._overlayEls?.length) return;
-  const latRange = this.options.latRange;
-  for (const el of this._overlayEls) {
-    const lat = Number(el.dataset.lat);
-    const lon = Number(el.dataset.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-    const p = projectNormalized(lat, lon, { latRange });
-    el.style.left = `${(p.x * 100).toFixed(3)}%`;
-    el.style.top = `${(p.y * 100).toFixed(3)}%`;
-    el.style.setProperty("--mappo-depth", "1");
-  }
-}
-
   #scheduleRebuild() {
     // ADAPTIVE spacing (perf-harness lesson): a fixed 150ms floor against
     // 70-146ms renders is a ~50% main-thread duty cycle — the storm scenario
@@ -364,8 +439,6 @@ _placeOverlays() {
 
     // <mappo-world> is an unknown element to the parser, so it is INLINE
     // unless the page says otherwise — and an inline box has clientWidth 0.
-    // The globe used to defend against this alone, which left the flat map
-    // laying out against nothing and locate() with no width to answer in.
     // One guarantee, made once, before either renderer runs.
     if (typeof getComputedStyle === "function" && this.container?.style &&
         getComputedStyle(this.container).display === "inline") {
@@ -376,9 +449,11 @@ _placeOverlays() {
       // Leaving the SVG scene: the canvas replaces the container's children,
       // so the persistent svg/style handles must not survive to be patched
       // while detached. Rebuilt from scratch on return to flat.
-      if (this.svg) { this.svg = null; this.styleEl = null; }
-      if (this._globe) this._globe.update();
-      else this._globe = new GlobeRenderer(this.container, this.options);
+      if (this.svg) { this.svg = null; this.styleEl = null; this._tiltWrap = null; this._overlayLayer = null; }
+      if (this._globe) this._globe.update(null, this._body);
+      else this._globe = new GlobeRenderer(this.container, this.options, this._body, this._overlays);
+      this._globe.canvas.setAttribute("role", "img");
+      this._globe.canvas.setAttribute("aria-label", this.#ariaLabel());
       return;
     }
     if (this._globe) { this._globe.destroy(); this._globe = null; }
@@ -389,11 +464,11 @@ _placeOverlays() {
     const rows = Math.round((cols / 360) * (o.latRange[1] - o.latRange[0]));
     this.grid = { cols, rows, latRange: o.latRange };
 
-    // PERSISTENT scene (heap-growth lesson): svg, tilt wrapper, style
-    // element and listeners are created ONCE and reused forever — a rebuild
-    // swaps viewBox + innerHTML in place. v2 recreated all three per rebuild
-    // and re-bound listeners each time; across a slider storm that churned
-    // tens of MB of discarded containers on top of the node garbage.
+    // PERSISTENT scene (heap-growth lesson): svg, tilt wrapper, style element
+    // and listeners are created ONCE and reused — a rebuild swaps viewBox +
+    // innerHTML in place. v2 recreated all three per rebuild and re-bound
+    // listeners each time; across a slider storm that churned tens of MB of
+    // discarded containers on top of the node garbage.
     const renderT0 = performance.now();
     if (!this.svg) {
       this.svg = document.createElementNS(SVG_NS, "svg");
@@ -402,41 +477,38 @@ _placeOverlays() {
       this._tiltWrap = document.createElement("div");
       this._tiltWrap.className = "mappo-tilt";
       this._tiltWrap.appendChild(this.svg);
-this.styleEl = document.createElement("style");
-// Same contract as the globe: host DOM carrying data-lat/data-lon is
-// adopted and positioned. On a flat map the position is static, so it
-// is written once per build rather than per frame — but the markup,
-// the attributes and the CSS hooks are identical, which is the point
-// of having one overlay API rather than two.
-this._overlayEls = this.options.overlays === false ? []
-  : Array.from(this.container.querySelectorAll("[data-lat][data-lon]"));
-if (this._overlayEls.length) {
-  this._overlayLayer = document.createElement("div");
-  this._overlayLayer.className = "mappo-overlay";
-  Object.assign(this._overlayLayer.style, {
-    position: "absolute", inset: "0", pointerEvents: "none"
-  });
-  for (const el of this._overlayEls) {
-    Object.assign(el.style, { position: "absolute" });
-    this._overlayLayer.appendChild(el);
-  }
-}
-this.container.replaceChildren(this.styleEl, this._tiltWrap);
-if (this._overlayLayer) {
-  if (getComputedStyle(this.container).position === "static") {
-    this.container.style.position = "relative";
-  }
-  this.container.appendChild(this._overlayLayer);
-}
+      this.styleEl = document.createElement("style");
+      // Same contract as the globe: host DOM carrying data-lat/data-lon is
+      // adopted and positioned. On a flat map the position is static, so it
+      // is written once per build rather than per frame — but the markup,
+      // the attributes and the CSS hooks are identical, which is the point
+      // of having one overlay API rather than two.
+      this._overlayLayer = null;
+      if (this._overlays.length) {
+        this._overlayLayer = document.createElement("div");
+        this._overlayLayer.className = "mappo-overlay";
+        Object.assign(this._overlayLayer.style, { position: "absolute", inset: "0", pointerEvents: "none" });
+        for (const el of this._overlays) {
+          Object.assign(el.style, { position: "absolute", left: "0", top: "0", transform: "", willChange: "" });
+          this._overlayLayer.appendChild(el);
+        }
+      }
+      this.container.replaceChildren(this.styleEl, this._tiltWrap);
+      if (this._overlayLayer) {
+        if (getComputedStyle(this.container).position === "static") this.container.style.position = "relative";
+        this.container.appendChild(this._overlayLayer);
+      }
       this.#bindEvents(this.svg); // once — handlers guard on options.interactive
     }
     const svg = this.svg;
     svg.setAttribute("viewBox", `0 0 ${cols * CELL} ${rows * CELL}`);
     svg.setAttribute("aria-label", this.#ariaLabel());
     // One parse for the whole scene — the fast path for full builds.
-    const [markup, buildMs] = span("wm:build-markup", () =>
-      this.#defsMarkup(o) + this.#backdropMarkup(cols, rows) + (parseLandStyle(o.land).dots ? this.#dotsMarkup(this.grid) : this.#landMarkup(this.grid, o)) + this.#markersMarkup(this.grid, o));
-    const [, parseMs] = span("wm:parse-innerHTML", () => { svg.innerHTML = markup; });
+    const [ markup, buildMs ] = span("wm:build-markup", () =>
+      this.#defsMarkup(o) + this.#backdropMarkup(cols, rows) +
+      (parseFigureStyle(o.figure).dots ? this.#dotsMarkup(this.grid) : this.#figureMarkup(this.grid, o)) +
+      this.#markersMarkup(this.grid, o));
+    const [ , parseMs ] = span("wm:parse-innerHTML", () => { svg.innerHTML = markup; });
     this.#applyStyle(this.#css(o));
     // Calibration (perf-harness lesson #2): the JS-side cost is only ~25%
     // of a rebuild — the style recalc, layout and paint land AFTER this
@@ -452,7 +524,29 @@ if (this._overlayLayer) {
       }));
     }
     dbg(`render: cols=${cols} rows=${rows} · build ${buildMs.toFixed(1)}ms · parse ${parseMs.toFixed(1)}ms · total ${this._lastRenderMs.toFixed(1)}ms · ${svg.querySelectorAll("*").length} nodes`);
-    this._placeOverlays();
+    if (this._overlayLayer) this._overlayLayer.hidden = o.overlays === false;
+    this.#placeOverlays();
+  }
+
+  // Position adopted overlay children against the flat projection.
+  //
+  // Percentages, not pixels: the SVG scales with its container, so a percent
+  // stays correct through every resize without mappo having to watch for one.
+  // Depth is published as 1 — a flat map has no limb — so a stylesheet
+  // written against --mappo-depth for the globe works here unchanged.
+  #placeOverlays() {
+    if (this.options.overlays === false) return;
+    const latRange = this.options.latRange;
+    for (const el of this._overlays) {
+      const lat = Number(el.dataset.lat);
+      const lon = Number(el.dataset.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      const p = projectNormalized(lat, lon, { latRange });
+      el.style.left = `${(p.x * 100).toFixed(3)}%`;
+      el.style.top = `${(p.y * 100).toFixed(3)}%`;
+      el.style.setProperty("--mappo-depth", "1");
+      el.removeAttribute("data-mappo-behind");
+    }
   }
 
   // -- cheap patches -----------------------------------------------------------
@@ -463,7 +557,7 @@ if (this._overlayLayer) {
 
   #patchDefs() {
     // Wholesale swap via the one true builder — a hand-maintained subset
-    // here is how the ocean pattern got silently wiped by dot-shape patches.
+    // here is how the ground pattern got silently wiped by dot-shape patches.
     const defs = this.svg?.querySelector("defs");
     if (defs) defs.outerHTML = this.#defsMarkup(this.options);
   }
@@ -478,26 +572,31 @@ if (this._overlayLayer) {
 
   // -- markup builders ---------------------------------------------------------
 
-  #defsMarkup(o) {
-    // The ocean is ONE pattern-filled rect, not thousands of nodes: the
-    // pattern tiles the dot shape (at 0.62×) across every grid cell, and
-    // the stylesheet colors it — so oceanColor stays a style-tier knob
-    // even at max resolution.
-    return `<defs>${
-      this.#shapeMarkup("mappo-dot-shape", o.dotShape, o.dotSize)}${
-      this.#shapeMarkup("mappo-marker-shape", o.markerShape, o.dotSize * o.markerScale)
-    }<pattern id="mappo-ocean-pat" width="${CELL}" height="${CELL}" patternUnits="userSpaceOnUse">${this.#oceanDotMarkup(o)}</pattern></defs>`;
+  // SVG ids are document-global, so every one of ours carries the instance id.
+  #id(name) {
+    return `${name}-i${this._uid}`;
   }
 
-  // A DIRECT shape with an inline fill — not <use>: CSS can't reliably
-  // reach into a pattern's use-shadow tree across browsers (the original
-  // implementation rendered nothing in some engines). The cost: oceanColor
+  #defsMarkup(o) {
+    // The ground is ONE pattern-filled rect, not thousands of nodes: the
+    // pattern tiles the dot shape (at 0.62×) across every grid cell, and the
+    // stylesheet shows or hides it — so groundColor stays a defs-tier knob
+    // even at max resolution.
+    return `<defs>${
+      this.#shapeMarkup(this.#id("mappo-dot-shape"), o.dotShape, o.dotSize)}${
+      this.#shapeMarkup(this.#id("mappo-marker-shape"), o.markerShape, o.dotSize * o.markerScale)
+    }<pattern id="${this.#id("mappo-ground-pat")}" width="${CELL}" height="${CELL}" patternUnits="userSpaceOnUse">${this.#groundDotMarkup(o)}</pattern></defs>`;
+  }
+
+  // A DIRECT shape with an inline fill — not <use>: CSS can't reliably reach
+  // into a pattern's use-shadow tree across browsers (the original
+  // implementation rendered nothing in some engines). The cost: groundColor
   // is a defs-tier knob instead of style-tier. Still no geometry rebuild.
-  #oceanDotMarkup(o) {
-    if (!o.oceanColor || o.oceanColor === "none") return "";
+  #groundDotMarkup(o) {
+    if (!o.groundColor || o.groundColor === "none") return "";
     const r = (CELL * o.dotSize * 0.62) / 2;
     const c = CELL / 2;
-    const fill = `fill="${escapeAttr(o.oceanColor)}"`;
+    const fill = `fill="${escapeAttr(o.groundColor)}"`;
     switch (o.dotShape) {
       case "square":
         return `<rect x="${c - r}" y="${c - r}" width="${r * 2}" height="${r * 2}" rx="${(r * 0.25).toFixed(2)}" ${fill}/>`;
@@ -508,15 +607,15 @@ if (this._overlayLayer) {
     }
   }
 
-  // Backdrop layers, always present so background/oceanColor patch as pure
+  // Backdrop layers, always present so background/groundColor patch as pure
   // style. Both sit under the dots and ignore the pointer.
   #backdropMarkup(cols, rows) {
     const w = cols * CELL, h = rows * CELL;
     return `<rect class="mappo-bg" x="0" y="0" width="${w}" height="${h}"/>` +
-           `<rect class="mappo-ocean" x="0" y="0" width="${w}" height="${h}" fill="url(#mappo-ocean-pat)"/>`;
+           `<rect class="mappo-ground" x="0" y="0" width="${w}" height="${h}" fill="url(#${this.#id("mappo-ground-pat")})"/>`;
   }
 
-  // One reusable shape per role, centered on the local origin so inner-
+  // One reusable shape per role, centred on the local origin so inner-
   // element transforms scale in place.
   #shapeMarkup(id, shape, size) {
     const r = (CELL * size) / 2;
@@ -536,17 +635,13 @@ if (this._overlayLayer) {
         return `<path id="${id}" fill-rule="evenodd" d="M0 0 Q${(pr * 0.55).toFixed(2)} ${(Number(hy) + pr * 1.1).toFixed(2)} ${(pr * 0.966).toFixed(2)} ${(Number(hy) + pr * 0.259).toFixed(2)} A${pr.toFixed(2)} ${pr.toFixed(2)} 0 1 0 ${(-pr * 0.966).toFixed(2)} ${(Number(hy) + pr * 0.259).toFixed(2)} Q${(-pr * 0.55).toFixed(2)} ${(Number(hy) + pr * 1.1).toFixed(2)} 0 0 Z M0 ${hy} m${(-pr * 0.42).toFixed(2)} 0 a${(pr * 0.42).toFixed(2)} ${(pr * 0.42).toFixed(2)} 0 1 0 ${(pr * 0.84).toFixed(2)} 0 a${(pr * 0.42).toFixed(2)} ${(pr * 0.42).toFixed(2)} 0 1 0 ${(-pr * 0.84).toFixed(2)} 0"/>`;
       }
       default:
-        // Custom SVG path, 24×24 box centered on origin (icon convention).
+        // Custom SVG path, 24×24 box centred on origin (icon convention).
         return `<path id="${id}" d="${escapeAttr(shape)}" transform="scale(${((r * 2) / 24).toFixed(4)})"/>`;
     }
   }
 
-  // Dot geometry depends ONLY on (cols, latRange) — colors, shapes and
-  // animation all live elsewhere — so the markup string caches perfectly per
-  // resolution. Both animation phases ship on every dot (~30 bytes each):
-  // that's what makes animation a style-only knob.
   // lat/lon rings → SVG path data in this map's units. The same equirectangular
-  // mapping the dot grid uses, so vector land lands exactly where grid land does.
+  // mapping the dot grid uses, so vector outlines land exactly where grid ones do.
   #vectorPath(rings, grid) {
     const [ latMin, latMax ] = grid.latRange;
     const w = grid.cols * CELL, h = grid.rows * CELL;
@@ -563,60 +658,47 @@ if (this._overlayLayer) {
     return parts.join("");
   }
 
-  // Land as shape. `solid`, `outline` and `solid outline` are three renderings
-  // of ONE geometry: the closed boundary contours from land.js. Because the
-  // loops are closed and consistently wound, the same `d` both fills (holes
-  // correct under fill-rule: nonzero) and strokes as a true coastline — no
-  // internal cell edges, because a contour is only ever drawn where land meets
-  // sea. Tracing per-cell rectangles instead would stroke a wireframe.
-  #landMarkup(grid, o) {
-    const style = parseLandStyle(o.land);
-    const vector = landRings(o.landSource, this._body);
+  // The figure as shape. `solid`, `outline` and `solid outline` are three
+  // renderings of ONE geometry: the closed boundary contours from figure.js.
+  // Because the loops are closed and consistently wound, the same `d` both
+  // fills (holes correct under fill-rule: nonzero) and strokes as a true
+  // edge — no internal cell edges, because a contour is only ever drawn where
+  // figure meets ground. Colours live in the stylesheet, so they patch
+  // without touching this markup.
+  #figureMarkup(grid, o) {
+    const vector = figureOutlines(o.figureSource, this._body);
     // `borders` belongs in the key: the cached markup CONTAINS the borders
     // path, so leaving it out means turning borders off replays a cached scene
-    // that still has them. (Caught by the demo toggles, not by a unit test —
-    // cache keys only lie when you change the thing they forgot.)
-    // The body is in the key. Without it a map that drew Earth while its
-    // pack was still loading replays that Earth for ever after.
-    const key = `land|${this._body.id}|${o.landSource}|${o.borders ? "b" : ""}|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
-    let geom = this._dotsCache.get(key);
+    // that still has them. The body is NOT in the key: the caches are dropped
+    // whenever the body changes, so a key can only ever hit its own world.
+    const key = `${o.figureSource}|${o.borders ? "b" : ""}|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
+    let geom = this._figureCache.get(key);
     if (!geom) {
-      const { cells, loops } = buildLand(grid, { body: this._body });
+      const { cells, loops } = buildFigure(grid, { body: this._body });
+      const borders = o.borders ? figureBorders(this._body) : null;
       geom = {
         d: vector
           ? this.#vectorPath(vector, grid)
           : loops.map((loop) => `M${loop.map(([ x, y ]) => `${x * CELL} ${y * CELL}`).join("L")}Z`).join(""),
-        borders: o.borders ? this.#vectorPath(borderRings(this._body), grid) : "",
+        borders: borders?.length ? this.#vectorPath(borders, grid) : "",
         cells
       };
-      this._dotsCache.set(key, geom);
+      this._figureCache.set(key, geom);
+      if (this._figureCache.size > 8) this._figureCache.delete(this._figureCache.keys().next().value);
     }
     this._dotCount = geom.cells.length;
-
-    const fill = style.fill ? (o.landColor ?? o.dotColor) : "none";
-    const stroke = style.stroke ? (o.landStroke ?? o.landColor ?? o.dotColor) : "none";
-    const width = o.landStrokeWidth ?? 1;
-    // style= rather than fill=/stroke=: `fill="var(--x)"` is invalid, while the
-    // style property resolves — so land follows the host's CSS variables with
-    // no colour resolver on this side.
-    const css = `fill:${escapeAttr(fill)};stroke:${escapeAttr(stroke)};` +
-      `stroke-width:${width * (CELL / 10)};stroke-linejoin:round;fill-rule:nonzero`;
-    const borders = geom.borders
-      ? `<path class="mappo-borders" style="fill:none;stroke:${escapeAttr(o.bordersColor ?? stroke)};` +
-        `stroke-width:${(o.bordersWidth ?? 0.5) * (CELL / 10)};stroke-linejoin:round;opacity:${o.bordersOpacity ?? 0.55}" d="${geom.borders}"/>`
-      : "";
-    return `<g class="mappo-land"><path class="mappo-land-path" style="${css}" d="${geom.d}"/>` +
-      `${borders}${this.#landHighlightMarkup(grid, o)}</g>`;
+    const borders = geom.borders ? `<path class="mappo-borders" d="${geom.borders}"/>` : "";
+    return `<g class="mappo-figure"><path class="mappo-figure-path" d="${geom.d}"/>${borders}${this.#figureHighlightMarkup(grid, o)}</g>`;
   }
 
-  // The highlight polygon in FLAT mode — the same ray-cast highlight.js already
-  // did for the globe. A highlight is a FILL, so it paints the land cells inside
+  // The highlight polygon in FLAT mode — the same ray-cast highlight.js does
+  // for the globe. A highlight is a FILL, so it paints the figure cells inside
   // the region rather than tracing them: it reads as a lit area, and it reuses
   // the very cell list the contours were traced from.
-  #landHighlightMarkup(grid, o) {
+  #figureHighlightMarkup(grid, o) {
     if (!o.highlightPolygon?.length) return "";
     const normalized = normalizeRings(o.highlightPolygon);
-    const { cells } = buildLand(grid, { body: this._body });
+    const { cells } = buildFigure(grid, { body: this._body });
     const parts = [];
     for (const [ col, row ] of cells) {
       const c = cellCenter(col, row, grid);
@@ -624,21 +706,26 @@ if (this._overlayLayer) {
       parts.push(`M${col * CELL} ${row * CELL}h${CELL}v${CELL}h-${CELL}Z`);
     }
     if (!parts.length) return "";
-    return `<path class="mappo-land-highlight" style="fill:${escapeAttr(o.highlightColor)}" d="${parts.join("")}"/>`;
+    return `<path class="mappo-figure-highlight" d="${parts.join("")}"/>`;
   }
 
+  // Dot geometry depends ONLY on (cols, latRange) for a given body — colours,
+  // shapes and animation all live elsewhere — so the markup string caches
+  // perfectly per resolution. Both animation phases ship on every dot (~30
+  // bytes each): that's what makes animation a style-only knob.
   #dotsMarkup(grid) {
-    const key = `${this._body.id}|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
+    const key = `${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
     const cached = this._dotsCache.get(key);
     if (cached) { dbg(`dots cache HIT ${key}`); this._dotCount = cached.dots; return cached.markup; }
     dbg(`dots cache MISS ${key} — computing`);
 
     let dots = 0;
-    const parts = [`<g class="mappo-dots">`];
+    const shape = this.#id("mappo-dot-shape");
+    const parts = [ `<g class="mappo-dots">` ];
     for (let row = 0; row < grid.rows; row++) {
       for (let col = 0; col < grid.cols; col++) {
         const c = cellCenter(col, row, grid);
-        if (!this._body.isLand(c.lat, c.lon)) continue;
+        if (!this._body.figure(c.lat, c.lon)) continue;
         dots++;
 
         // Every animation mode is a PHASE FIELD baked per dot; the stylesheet
@@ -659,7 +746,7 @@ if (this._overlayLayer) {
         const density = `${(col + row) % 2 === 0 ? " mappo-h" : ""}${(2 * col + 3 * row) % 3 === 0 ? " mappo-t" : ""}`;
         parts.push(
           `<g class="mappo-pos" transform="translate(${col * CELL + CELL / 2} ${row * CELL + CELL / 2})" data-col="${col}" data-row="${row}">` +
-          `<use class="mappo-dot${density}" href="#mappo-dot-shape" style="--mappo-pw:${pw};--mappo-pn:${pn};--mappo-pr:${pr};--mappo-ps:${ps};--mappo-pk:${pk};--mappo-a:${a}"/></g>`
+          `<use class="mappo-dot${density}" href="#${shape}" style="--mappo-pw:${pw};--mappo-pn:${pn};--mappo-pr:${pr};--mappo-ps:${ps};--mappo-pk:${pk};--mappo-a:${a}"/></g>`
         );
       }
     }
@@ -681,76 +768,71 @@ if (this._overlayLayer) {
   }
 
   #markersMarkup(grid, o) {
-    const parts = [`<g class="mappo-markers">`];
-    for (const entry of [ ...o.cities, ...(o.markers || []) ]) {
-      const city = resolveCity(entry);
-      if (!city) {
-        console.warn(`[mappo] unknown city: ${JSON.stringify(entry)} — not in the registry; pass { name, lat, lon } instead`);
-        continue;
-      }
-      const { col, row } = snapToLand(city.lat, city.lon, grid);
-      const fill = city.color ? ` style="fill:${escapeAttr(city.color)}"` : "";
-      const focus = o.interactive ? ` tabindex="0" role="button" aria-label="${escapeAttr(city.name)}"` : "";
+    const shape = this.#id("mappo-marker-shape");
+    const parts = [ `<g class="mappo-markers">` ];
+    for (const place of resolvePlaces(o.places, this._body)) {
+      const { col, row } = snapToFigure(place.lat, place.lon, grid, this._body);
+      const fill = place.color ? ` style="fill:${escapeAttr(place.color)}"` : "";
+      const kind = place.kind ? ` data-kind="${escapeAttr(place.kind)}"` : "";
+      const focus = o.interactive ? ` tabindex="0" role="button" aria-label="${escapeAttr(place.name)}"` : "";
       // The ping ring renders BEHIND the core and animates independently —
       // the core barely breathes, the ring expands and fades. Scaling one
       // element for "pulse" read as throbbing, not pinging.
       parts.push(
-        `<g class="mappo-pos" transform="translate(${col * CELL + CELL / 2} ${row * CELL + CELL / 2})" data-city="${escapeAttr(city.name)}" data-lat="${city.lat}" data-lon="${city.lon}"${focus}>` +
-        (o.markerPulse ? `<use class="mappo-marker-ring" href="#mappo-marker-shape"${fill}/>` : "") +
-        `<use class="mappo-marker" href="#mappo-marker-shape"${fill}/></g>`
+        `<g class="mappo-pos" transform="translate(${col * CELL + CELL / 2} ${row * CELL + CELL / 2})" data-place="${escapeAttr(place.name)}" data-lat="${place.lat}" data-lon="${place.lon}"${kind}${focus}>` +
+        (o.markerPulse ? `<use class="mappo-marker-ring" href="#${shape}"${fill}/>` : "") +
+        `<use class="mappo-marker" href="#${shape}"${fill}/></g>`
       );
     }
     parts.push("</g>");
     return parts.join("");
   }
 
-  // The component stylesheet — defaults, not law; outside CSS wins.
-// Write the instance stylesheet, SCOPED TO THIS MAP.
-//
-// The rules are generated per instance but their selectors are generic
-// (.mappo-dot, .mappo-marker …) and a <style> in the document applies to the whole
-// document — so on a page with two maps the LAST one to render silently
-// repainted every other one. Eight maps on the demo page all took the last
-// map`s marker colour; only land escaped, because it carries an inline fill.
-//
-// Two things leak and both are handled: selectors get an attribute scope, and
-// @keyframes NAMES get the same suffix, since two maps animating at different
-// periods would otherwise define the same animation twice.
-//
-// Selectors are rewritten through the CSSOM rather than by regex on the text:
-// the browser has already parsed the structure, so keyframe stops (`0%, 100%`)
-// and at-rule preludes cannot be mistaken for selectors.
-#applyStyle(css) {
-  const uid = (this._uid ??= ++instanceSeq);
-  // Node-safe, like the rest of this class's seams: the update-tier tests
+  // Write the instance stylesheet, SCOPED TO THIS MAP.
+  //
+  // The rules are generated per instance but their selectors are generic
+  // (.mappo-dot, .mappo-marker …) and a <style> in the document applies to the
+  // whole document — so on a page with two maps the LAST one to render would
+  // silently repaint every other one. Two things leak and both are handled:
+  // selectors get an attribute scope, and @keyframes NAMES get the same
+  // suffix, since two maps animating at different periods would otherwise
+  // define the same animation twice.
+  //
+  // Selectors are rewritten through the CSSOM rather than by regex on the
+  // text: the browser has already parsed the structure, so keyframe stops
+  // (`0%, 100%`) and at-rule preludes cannot be mistaken for selectors.
+  #applyStyle(css) {
+    const uid = this._uid;
+    // Node-safe, like the rest of this class's seams: the update-tier tests
     // drive the renderer with a stub container.
     this.container.setAttribute?.("data-mappo", uid);
-  this.styleEl.textContent = css
-    .replace(/@keyframes\s+(mappo-[\w-]+)/g, (_m, name) => `@keyframes ${name}-i${uid}`)
-    .replace(/animation:\s*(mappo-[\w-]+)/g, (_m, name) => `animation: ${name}-i${uid}`);
+    this.styleEl.textContent = css
+      .replace(/@keyframes\s+(mappo-[\w-]+)/g, (_m, name) => `@keyframes ${name}-i${uid}`)
+      .replace(/animation:\s*(mappo-[\w-]+)/g, (_m, name) => `animation: ${name}-i${uid}`);
 
-  const sheet = this.styleEl.sheet;
-  if (!sheet) return;                      // not yet in the document; next render scopes it
-  const scope = `[data-mappo="${uid}"]`;
-  const walk = (rules) => {
-    for (const rule of rules) {
-      if (rule.selectorText) {
-        rule.selectorText = rule.selectorText.split(",")
-          .map((sel) => `${scope} ${sel.trim()}`).join(", ");
-      } else if (rule.cssRules && !rule.name) {   // @media etc; @keyframes has .name
-        walk(rule.cssRules);
+    const sheet = this.styleEl.sheet;
+    if (!sheet) return;                      // not yet in the document; next render scopes it
+    const scope = `[data-mappo="${uid}"]`;
+    const walk = (rules) => {
+      for (const rule of rules) {
+        if (rule.selectorText) {
+          rule.selectorText = rule.selectorText.split(",")
+            .map((sel) => `${scope} ${sel.trim()}`).join(", ");
+        } else if (rule.cssRules && !rule.name) {   // @media etc; @keyframes has .name
+          walk(rule.cssRules);
+        }
       }
-    }
-  };
-  try { walk(sheet.cssRules); } catch { /* cross-origin or unparsed: leave global */ }
-}
+    };
+    try { walk(sheet.cssRules); } catch { /* cross-origin or unparsed: leave global */ }
+  }
 
+  // The component stylesheet — defaults, not law; outside CSS wins.
   #css(o) {
-    // The hover rules below are only true while there is something to hover.
-    const style = parseLandStyle(o.land);
+    const style = parseFigureStyle(o.figure);
+    const stroke = o.figureStroke ?? o.figureColor;
     return `
-      .mappo-bg { fill: ${o.background === "none" ? "none" : o.background}; pointer-events: none; }
-      .mappo-ocean { display: ${o.oceanColor === "none" ? "none" : "inline"}; pointer-events: none; }
+      .mappo-bg { fill: ${o.background}; pointer-events: none; }
+      .mappo-ground { display: ${o.groundColor === "none" ? "none" : "inline"}; pointer-events: none; }
       .mappo-tilt { perspective: ${o.perspective}px; }
       .mappo-tilt .mappo-svg {
         width: 100%; height: auto; display: block;
@@ -758,7 +840,7 @@ if (this._overlayLayer) {
         transform-style: preserve-3d;
       }
       .mappo-dot {
-        fill: ${o.dotColor};
+        fill: ${o.figureColor};
         cursor: ${o.cursor};
         /* The hover wake: growing is INSTANT (transition:none below), the
            shrink-back runs slow and delayed — sweeping the cursor leaves a
@@ -767,11 +849,22 @@ if (this._overlayLayer) {
       }
       ${o.interactive && style.dots ? `
       .mappo-pos:hover > .mappo-dot {
-        fill: ${o.dotHoverColor ?? hoverShade(o.dotColor)};
+        fill: ${o.dotHoverColor ?? hoverShade(o.figureColor)};
         transform: scale(${o.dotHoverScale});
         transition: none;
-        animation: none; /* a running animation transform animation would win otherwise */
+        animation: none; /* a running animation transform would win otherwise */
       }` : ""}
+      .mappo-figure-path {
+        fill: ${style.fill ? o.figureColor : "none"};
+        stroke: ${style.stroke ? stroke : "none"};
+        stroke-width: ${o.figureStrokeWidth};
+        stroke-linejoin: round; fill-rule: nonzero;
+      }
+      .mappo-borders {
+        fill: none; stroke: ${o.bordersColor ?? stroke};
+        stroke-width: ${o.bordersWidth}; stroke-linejoin: round; opacity: ${o.bordersOpacity};
+      }
+      .mappo-figure-highlight { fill: ${o.highlightColor}; }
       .mappo-marker {
         fill: ${o.markerColor};
         cursor: ${o.markerCursor};
@@ -852,7 +945,7 @@ if (this._overlayLayer) {
         0%, 100% { transform: translateY(0) scale(1); }
         50%      { transform: translateY(calc(var(--mappo-a, 1) * -${(amp * 0.75).toFixed(1)}px)) scale(1.1); }
       }`,
-          // Concentric rings expanding from the map's center.
+          // Concentric rings expanding from the map's centre.
           ripple: `
       .mappo-dots ${sel} {
         animation: mappo-ripple ${dur}s linear infinite;
@@ -904,13 +997,10 @@ if (this._overlayLayer) {
     const detailFor = (target) => {
       const pos = target.closest?.(".mappo-pos");
       if (!pos) return null;
-      if (pos.dataset.city !== undefined) {
-        return { kind: "city", detail: {
-          name: pos.dataset.city,
-          lat: Number(pos.dataset.lat),
-          lon: Number(pos.dataset.lon),
-          element: pos
-        } };
+      if (pos.dataset.place !== undefined) {
+        const detail = { name: pos.dataset.place, lat: Number(pos.dataset.lat), lon: Number(pos.dataset.lon), element: pos };
+        if (pos.dataset.kind !== undefined) detail.kind = pos.dataset.kind;
+        return { kind: "place", detail };
       }
       const col = Number(pos.dataset.col), row = Number(pos.dataset.row);
       const c = cellCenter(col, row, this.grid);
@@ -919,7 +1009,7 @@ if (this._overlayLayer) {
 
     const dispatch = (kind, phase, detail) => {
       if (!this.options.interactive) return;
-      const cb = this.options[`on${kind === "city" ? "City" : "Dot"}${phase}`];
+      const cb = this.options[`on${kind === "place" ? "Place" : "Dot"}${phase}`];
       if (cb) cb(detail);
       this.container.dispatchEvent(new CustomEvent(
         `mappo:${kind}${phase.toLowerCase()}`,
@@ -941,23 +1031,27 @@ if (this._overlayLayer) {
     svg.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" && e.key !== " ") return;
       const hit = detailFor(e.target);
-      if (hit?.kind === "city") { e.preventDefault(); dispatch("city", "Click", hit.detail); }
+      if (hit?.kind === "place") { e.preventDefault(); dispatch("place", "Click", hit.detail); }
     });
   }
 
   #ariaLabel() {
-    const names = this.options.cities.map((c) => resolveCity(c)?.name).filter(Boolean);
-    return names.length
-      ? `Dotted world map highlighting ${names.join(", ")}`
-      : "Dotted world map";
+    const body = this._body;
+    if (body.pending) return `Map of ${body.id}, waiting for its body pack`;
+    const names = resolvePlaces(this.options.places, body).map((p) => p.name).filter(Boolean);
+    const dotted = parseFigureStyle(this.options.figure).dots ? "Dotted " : "";
+    const terms = body.terms ? ` showing ${body.terms.figure} against ${body.terms.ground}` : "";
+    const highlights = names.length ? `, highlighting ${names.join(", ")}` : "";
+    return `${dotted}${body.name} map${terms}${highlights}`;
   }
 }
 
-// Snap a lat/lon to the nearest LAND dot in the grid, searching outward a
+// Snap a lat/lon to the nearest FIGURE cell in the grid, searching outward a
 // few rings — coastal cities often sit in a sea cell at coarse resolutions
-// (harbors do that), and a marker floating just off the coast looks broken.
-// Pure function (exported for tests and consumers doing their own math).
-export function snapToLand(lat, lon, grid, body = EARTH) {
+// (harbours do that), and a marker floating just off the coast looks broken.
+// Pure function (exported for consumers doing their own math).
+export function snapToFigure(lat, lon, grid, body) {
+  if (!body) throw new TypeError("snapToFigure needs a body — pass EARTH or another registered body");
   const { x, y } = project(lat, lon, grid);
   const col0 = Math.min(grid.cols - 1, Math.max(0, Math.floor(x)));
   const row0 = Math.min(grid.rows - 1, Math.max(0, Math.floor(y)));
@@ -970,7 +1064,7 @@ export function snapToLand(lat, lon, grid, body = EARTH) {
         const col = col0 + dc, row = row0 + dr;
         if (col < 0 || col >= grid.cols || row < 0 || row >= grid.rows) continue;
         const c = cellCenter(col, row, grid);
-        if (!body.isLand(c.lat, c.lon)) continue;
+        if (!body.figure(c.lat, c.lon)) continue;
         const d = (col - x) ** 2 + (row - y) ** 2;
         if (!best || d < best.d) best = { col, row, d };
       }
@@ -978,16 +1072,27 @@ export function snapToLand(lat, lon, grid, body = EARTH) {
     if (best) return best;
   }
   // Deep-ocean coordinates render where they are — honest, and it makes
-  // custom "cities" like ships or islands-below-resolution still work.
+  // custom places like ships or islands-below-resolution still work.
   return { col: col0, row: row0 };
 }
 
-// Option equality for the differential update: cities and latRange are the
-// only structural values; everything else compares by identity.
+// Option equality for the differential update. Structural for arrays and
+// plain option objects (places, latRange, highlightPolygon, focus — the
+// element parses a fresh object from its attribute every time, and a fresh
+// `focus` that says the same thing must not re-aim the globe); identity for
+// everything else, functions included.
 function sameOption(a, b) {
   if (a === b) return true;
-  if (Array.isArray(a) && Array.isArray(b)) return JSON.stringify(a) === JSON.stringify(b);
+  if (a && b && typeof a === "object" && typeof b === "object") return JSON.stringify(a) === JSON.stringify(b);
   return false;
+}
+
+// Undo everything a renderer wrote on an overlay element, leaving the host's
+// own markup and styles alone.
+function releaseOverlay(el) {
+  for (const prop of [ "position", "left", "top", "transform", "willChange" ]) el.style[prop] = "";
+  el.style.removeProperty("--mappo-depth");
+  el.removeAttribute("data-mappo-behind");
 }
 
 function escapeAttr(value) {

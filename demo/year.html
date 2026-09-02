@@ -132,7 +132,7 @@
 <canvas id="orbit"></canvas>
 <div id="earth3d">
   <mappo-world id="globe3d" mode="globe" cols="140" rotate-speed="0" interactive="false"
-    land="solid" land-source="grid" land-color="var(--land)"
+    figure="solid" figure-source="grid" figure-color="var(--land)"
     background="var(--sea)" globe-ring="true"
     graticule meridians="12" parallels="7"
     graticule-color="var(--grid)" graticule-opacity="0.5" equator-opacity="0.35"></mappo-world>
@@ -162,7 +162,7 @@
     </div>
     <div id="globewrap">
       <mappo-world id="earth" mode="globe" cols="200" rotate-speed="0" interactive="false"
-        land="solid" land-source="grid" land-color="var(--land)"
+        figure="solid" figure-source="grid" figure-color="var(--land)"
         background="var(--sea)"
         graticule meridians="24" parallels="11"
         graticule-color="var(--grid)" equator-color="#7fb2d8"
@@ -196,7 +196,7 @@ import { earthAt, seasonOf, solarLongitudeCrossing, apsis, AU_KM, EARTH_R_KM, SU
 import { withClocks, solarElevation } from "./clocks.js";
 import { createClock } from "./timectl.js";
 import { gmst } from "./astro.js";
-import { landShapes } from "../dist/mappo.js";
+import { EARTH } from "../dist/mappo.js";
 
 const $ = (id) => document.getElementById(id);
 const TAU = Math.PI * 2, RAD = Math.PI / 180;
@@ -281,7 +281,7 @@ function axisVector(eps) {
 // one globe. Stroking the REAL coastline over the top costs 0.4 ms, because
 // an outline needs no clipping: lift the pen at the horizon and carry on.
 // So the blocks become shading and the vector line becomes the edge.
-const COAST = landShapes().filter((r) => r.length > 12);
+const COAST = EARTH.outlines().filter((r) => r.length > 12);
 
 function strokeCoast(map, ctx, color, width, alpha) {
   if (!map?.locate) return;

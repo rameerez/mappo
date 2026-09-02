@@ -1,42 +1,54 @@
 {
   "name": "mappo",
-  "version": "0.6.0",
-  "description": "A world map as a zero-dependency web component: a dot field or real Natural Earth coastlines, flat SVG or a rotating canvas globe. Country borders, a graticule, a built-in city registry (just type \"London\"), six animations, drag-to-spin with momentum, and your own DOM positioned on the sphere. One ESM file, no build step.",
+  "version": "0.7.0",
+  "description": "Maps of any world as a zero-dependency web component: Earth in the box, the Moon and Mars as opt-in packs, your own worlds through a small body interface. A dot field or vector outlines, flat SVG or a rotating canvas globe.",
   "type": "module",
   "main": "dist/mappo.js",
   "exports": {
-    ".": "./dist/mappo.js"
+    ".": "./dist/mappo.js",
+    "./bodies/moon": "./dist/bodies/moon.js",
+    "./bodies/mars": "./dist/bodies/mars.js"
   },
   "files": [
     "dist/",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
     "build": "node scripts/build.js",
-    "generate-mask": "node scripts/generate-mask.js",
-    "test": "node --test"
+    "test": "node --test",
+    "generate": "npm run generate:earth && npm run generate:moon && npm run generate:mars",
+    "generate:earth": "node scripts/generate-earth.js",
+    "generate:moon": "node scripts/generate-moon.js",
+    "generate:mars": "node scripts/generate-mars.js",
+    "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
     "mappo",
     "world-map",
     "dotted-map",
     "dot-map",
+    "globe",
+    "3d-globe",
+    "rotating-globe",
+    "planetary-map",
+    "moon-map",
+    "mars-map",
+    "fantasy-map",
+    "orthographic",
+    "equirectangular",
     "coastline",
     "natural-earth",
     "country-borders",
     "graticule",
     "svg",
+    "canvas",
     "web-component",
     "custom-element",
-    "cities",
     "visualization",
     "hero",
-    "zero-dependency",
-    "globe",
-    "3d-globe",
-    "rotating-globe",
-    "canvas"
+    "zero-dependency"
   ],
   "author": "rameerez",
   "license": "MIT",
@@ -48,5 +60,17 @@
   "bugs": {
     "url": "https://github.com/rameerez/mappo/issues"
   },
-  "sideEffects": true
+  "sideEffects": true,
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^22.22.2 || ^24.15.0 || >=26.0.0",
+      "onFail": "error"
+    }
+  },
+  "devDependencies": {
+    "jpeg-js": "0.4.4",
+    "jsdom": "30.0.1",
+    "pngjs": "7.0.0"
+  }
 }

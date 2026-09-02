@@ -169,17 +169,18 @@
     <pre><code>&lt;script type="module" src="https://unpkg.com/mappo"&gt;&lt;/script&gt;
 
 &lt;mappo-world mode="globe"
-  land="solid outline" land-source="vector"&gt;&lt;/mappo-world&gt;</code></pre>
-    <p class="note">That is the entire integration. <strong>69&nbsp;KB gzipped</strong>,
-    zero dependencies, MIT.</p>
+  figure="solid outline" figure-source="vector"&gt;&lt;/mappo-world&gt;</code></pre>
+    <p class="note">That is the entire integration. <strong>79&nbsp;KB gzipped</strong> with the
+    whole Earth inside, zero dependencies, MIT. The Moon and Mars are opt-in packs; any world
+    you can describe as a function is a body too.</p>
   </div>
   <div class="hero-stage">
     <mappo-world id="hero" mode="globe" cols="170" rotate-speed="5"
       tilt="18" roll="-14.3"
-      land="solid outline" land-source="vector"
-      land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="0.75"
+      figure="solid outline" figure-source="vector"
+      figure-color="var(--land)" figure-stroke="var(--coast)" figure-stroke-width="0.75"
       borders borders-color="var(--coast)" borders-width="0.35" borders-opacity="0.3"
-      background="var(--sea)" ocean-color="var(--ocean)"
+      background="var(--sea)" ground-color="var(--ocean)"
       graticule meridians="24" parallels="11"
       graticule-color="var(--coast)" equator-color="var(--coast)"
       graticule-opacity="0.3" equator-opacity="0.34" globe-ring="true">
@@ -200,42 +201,42 @@
 
   <div class="card">
     <div class="art">
-      <mappo-world cols="130" cities="London, Lagos, Singapore, New York, São Paulo, Sydney"
-        dot-color="var(--dot)" marker-color="var(--accent)" marker-scale="1.6"
+      <mappo-world cols="130" places="London, Lagos, Singapore, New York, São Paulo, Sydney"
+        figure-color="var(--dot)" marker-color="var(--accent)" marker-scale="1.6"
         animation="wave" animation-period="7" tilt="34" perspective="900"></mappo-world>
     </div>
     <div class="meta">
       <h3>The dot field, lying down</h3>
       <p>The look mappo is named for: land as dots at whatever resolution you ask for,
-      a surface wave that reads as height under tilt, cities by name.</p>
+      a surface wave that reads as height under tilt, places by name.</p>
       <pre><code>&lt;mappo-world tilt="34" animation="wave"
-  cities="London, Lagos, Singapore"&gt;</code></pre>
+  places="London, Lagos, Singapore"&gt;</code></pre>
     </div>
   </div>
 
   <div class="card">
     <div class="art">
       <mappo-world cols="260" lat-min="-56" lat-max="78"
-        land="solid outline" land-source="vector" borders
-        land-color="var(--land)" land-stroke="var(--coast)" land-stroke-width="0.5"
+        figure="solid outline" figure-source="vector" borders
+        figure-color="var(--land)" figure-stroke="var(--coast)" figure-stroke-width="0.5"
         borders-color="var(--coast)" borders-width="0.35" borders-opacity="0.4"
-        background="var(--sea)" ocean-color="var(--ocean)"></mappo-world>
+        background="var(--sea)" ground-color="var(--ocean)"></mappo-world>
     </div>
     <div class="meta">
       <h3>Real coastlines, and borders</h3>
       <p>The Natural Earth outline instead of the grid — smooth at any size, with
       country borders a raster could never express, over a dotted sea.</p>
-      <pre><code>&lt;mappo-world land="solid outline"
-  land-source="vector" borders
-  ocean-color="#dfe6da"&gt;</code></pre>
+      <pre><code>&lt;mappo-world figure="solid outline"
+  figure-source="vector" borders
+  ground-color="#dfe6da"&gt;</code></pre>
     </div>
   </div>
 
   <div class="card">
     <div class="art round">
       <mappo-world mode="globe" cols="170" rotate-speed="7" tilt="24"
-        dot-color="var(--dot)" background="var(--ocean)"
-        cities="Reykjavik, Cairo, Delhi, Perth, Santiago"
+        figure-color="var(--dot)" background="var(--ocean)"
+        places="Reykjavik, Cairo, Delhi, Perth, Santiago"
         marker-color="var(--accent)" marker-scale="1.6"></mappo-world>
     </div>
     <div class="meta">
@@ -243,7 +244,7 @@
       <p>The same dots on a canvas sphere: drag to spin, flick for momentum,
       release and it keeps its heading. Hover and click still reach every dot.</p>
       <pre><code>&lt;mappo-world mode="globe" tilt="24"
-  rotate-speed="7" ocean-color="#dfe6da"&gt;</code></pre>
+  rotate-speed="7" ground-color="#dfe6da"&gt;</code></pre>
     </div>
   </div>
 
@@ -251,7 +252,7 @@
     <div class="art round">
       <mappo-world mode="globe" cols="230" rotate-speed="0" interactive="false"
         focus="46.5,2.35" tilt="26"
-        dot-color="var(--dot)" background="var(--ocean)"
+        figure-color="var(--dot)" background="var(--ocean)"
         markers="France@48.86,2.35" marker-shape="pin" marker-scale="4"
         marker-color="var(--accent)" marker-pulse="true"
         highlight-color="var(--coast)"
@@ -290,6 +291,14 @@ and an Earth in orbit — in the <a href="./demo/">demo gallery</a>.</p>
     page; scrub a year either way.</p>
   </div>
 </div>
+<div class="card">
+  <div class="meta" style="padding:20px 22px 22px">
+    <h3 style="font-size:17px"><a href="./demo/worlds.html">The Moon and Mars →</a></h3>
+    <p style="font-size:14px;max-width:76ch">The same flat and globe renderers drawing
+    lunar maria and Martian lowlands from opt-in body packs—plus landing sites and all
+    three worlds at their true relative diameters.</p>
+  </div>
+</div>
 </div>
 
 <!-- ───────────────────────── INSTALL ───────────────────────── -->
@@ -323,8 +332,8 @@ import "mappo"</code></pre>
 <div class="bench">
   <div class="bench-view">
     <mappo-world id="map" mode="globe" tilt="30"
-      background="var(--sea)" ocean-color="var(--ocean)" dot-color="#9fb08f"
-      cities="London, Lagos, Singapore, New York, Tokyo, Sao Paulo, Nairobi, Sydney"></mappo-world>
+      background="var(--sea)" ground-color="var(--ocean)" figure-color="#9fb08f"
+      places="London, Lagos, Singapore, New York, Tokyo, Sao Paulo, Nairobi, Sydney"></mappo-world>
     <p id="eventlog">Hover the dots. Click a city.</p>
   </div>
   <aside class="knobs" aria-label="Live options">
@@ -337,9 +346,12 @@ import "mappo"</code></pre>
             <button type="button" data-value="globe" role="radio" aria-checked="true">globe</button>
           </div>
         </label>
-        <label class="span2">cols <input id="cols" type="range" min="40" max="260" value="170"></label>
-        <label>ocean-color
-          <select id="ocean-color"><option value="var(--ocean)">sea</option><option>none</option><option value="#c4daee">blue</option><option value="#223041">off-dark</option></select>
+        <label>body
+          <select id="body"><option>earth</option><option>moon</option><option>mars</option></select>
+        </label>
+        <label>cols <input id="cols" type="range" min="40" max="260" value="170"></label>
+        <label>ground-color
+          <select id="ground-color"><option value="var(--ocean)">sea</option><option>none</option><option value="#c4daee">blue</option><option value="#223041">off-dark</option></select>
         </label>
         <label>background
           <select id="background"><option value="var(--sea)">paper</option><option>none</option><option value="#dbe9f6">sky</option><option value="#0b1220">midnight</option></select>
@@ -347,18 +359,18 @@ import "mappo"</code></pre>
       </div>
     </div>
     <div>
-      <p class="knob-eyebrow">Land</p>
+      <p class="knob-eyebrow">Figure</p>
       <div class="knob-grid">
-        <label>land
-          <select id="land"><option>dots</option><option>solid</option><option>outline</option><option>solid outline</option></select>
+        <label>figure
+          <select id="figure"><option>dots</option><option>solid</option><option>outline</option><option>solid outline</option></select>
         </label>
-        <label>land-source
-          <select id="land-source"><option>grid</option><option>vector</option></select>
+        <label>figure-source
+          <select id="figure-source"><option>grid</option><option>vector</option></select>
         </label>
+        <label>figure-color <input id="figure-color" type="text" data-coloris value="#9fb08f"></label>
         <label>borders
           <select id="borders"><option>false</option><option>true</option></select>
         </label>
-        <label>land-color <input id="land-color" type="text" data-coloris value="#c9d3bd"></label>
       </div>
     </div>
     <div>
@@ -367,8 +379,7 @@ import "mappo"</code></pre>
         <label>dot-shape
           <select id="dot-shape"><option>circle</option><option>square</option><option>triangle</option></select>
         </label>
-        <label>dot-color <input id="dot-color" type="text" data-coloris value="#9fb08f"></label>
-        <label class="span2">dot-size <input id="dot-size" type="range" min="0.2" max="1" step="0.05" value="0.55"></label>
+        <label>dot-size <input id="dot-size" type="range" min="0.2" max="1" step="0.05" value="0.55"></label>
       </div>
     </div>
     <div>
@@ -387,7 +398,7 @@ import "mappo"</code></pre>
     <div>
       <p class="knob-eyebrow">Markers</p>
       <div class="knob-grid">
-        <label class="span2">cities <input id="cities" value="London, Lagos, Singapore, New York, Tokyo, Sao Paulo, Nairobi, Sydney"></label>
+        <label class="span2">places <input id="places" value="London, Lagos, Singapore, New York, Tokyo, Sao Paulo, Nairobi, Sydney"></label>
         <label>marker-shape
           <select id="marker-shape"><option>circle</option><option>square</option><option>triangle</option><option>pin</option></select>
         </label>
@@ -420,13 +431,13 @@ import "mappo"</code></pre>
     <h3>Two levels of detail of the same world</h3>
     <p>A ~22&nbsp;KB packed land bitmask (Natural Earth, public domain) generates the dot
     grid at any resolution — resolution is a slider, not a redesign. Ask for
-    <code>land-source="vector"</code> instead and you get the real coastline, smooth at
+    <code>figure-source="vector"</code> instead and you get the real coastline, smooth at
     any size, plus borders that follow rivers.</p>
   </div>
   <div>
     <h3>The same options on both renderers</h3>
     <p>The flat map is SVG and the globe is canvas, because each is right for its job —
-    but <code>land</code>, <code>borders</code>, <code>ocean-color</code> and the rest are
+    but <code>figure</code>, <code>borders</code>, <code>ground-color</code> and the rest are
     one vocabulary across both. Switching <code>mode</code> keeps your styling.</p>
   </div>
   <div>
@@ -437,17 +448,25 @@ import "mappo"</code></pre>
     Labels fade and hide with plain CSS — mappo never dictates how they look.</p>
   </div>
   <div>
-    <h3>Cities by name</h3>
-    <p>A built-in registry of ~160 world cities: <code>cities="Nairobi, Seoul"</code>
-    just works, and coastal coordinates snap to the nearest land dot. Or skip the
-    gazetteer entirely with <code>markers="Name@lat,lon"</code>.</p>
+    <h3>Places by name, on any world</h3>
+    <p>Every body carries its own gazetteer: <code>places="Nairobi, Seoul"</code> on Earth
+    (~160 cities), <code>places="Apollo 11, Shackleton"</code> on the Moon,
+    <code>places="Curiosity"</code> on Mars. Coordinates snap to the nearest figure dot. Or
+    skip the gazetteer entirely with <code>markers="Name@lat,lon"</code>.</p>
+  </div>
+  <div>
+    <h3>Any world, one interface</h3>
+    <p>Earth ships in the bundle; the Moon and Mars are opt-in packs of 8–11&nbsp;KB. A body
+    is a small object — <code>figure(lat, lon)</code>, optional outlines, borders and places —
+    so an invented planet for a game is a function, and <code>registerBody()</code> gives it
+    a <code>&lt;mappo-yourworld&gt;</code> tag.</p>
   </div>
   <div>
     <h3>Real elements, your CSS</h3>
     <p>The flat map is light DOM: every dot hoverable, every marker focusable, everything
     restylable from your stylesheet. Colours accept <code>var(--token)</code> and are
     re-resolved on a theme flip, so a dark-mode toggle repaints the map for free. Events
-    bubble as <code>mappo:cityclick</code> and friends in both modes — the globe
+    bubble as <code>mappo:placeclick</code> and friends in both modes — the globe
     re-earns them with canvas hit-testing.</p>
   </div>
   <div>
@@ -468,22 +487,24 @@ import "mappo"</code></pre>
     <tr><th>attribute</th><th>what it does</th></tr>
     <tr><td>mode</td><td><em>flat</em> (default) · <em>globe</em> — a rotating, grabbable canvas sphere. Drag to spin, flick for momentum.</td></tr>
     <tr><td>cols</td><td>Resolution: dots across the full longitude span. Auto: 120 flat · 170 globe; hard max 260.</td></tr>
-    <tr><td>lat-min / lat-max</td><td>The latitude band drawn. Defaults to <code>-58</code>…<code>84</code> — Antarctica and the arctic emptiness cut.</td></tr>
+    <tr><td>body</td><td>Which world: <em>earth</em> (default, in the bundle) or any registered body — <em>moon</em>, <em>mars</em>, your own. Every body also has its own tag: <code>&lt;mappo-moon&gt;</code>.</td></tr>
+    <tr><td>lat-min / lat-max</td><td>The latitude band drawn. Defaults to the body's own framing: <code>-58</code>…<code>84</code> on Earth (Antarctica and the arctic emptiness cut), pole to pole on the Moon and Mars.</td></tr>
     <tr><td>background</td><td>A uniform fill behind everything: the rect on the flat map, the disc on the globe.</td></tr>
-    <tr><td>ocean-color</td><td>Water cells as filler dots in their own shade. Draws under any land style, so solid continents can still sit on a dotted sea.</td></tr>
+    <tr><td>ground-color</td><td>Everything that is not figure — the ocean, the highlands — as filler dots in their own shade. Draws under any figure style, so solid continents can still sit on a dotted sea.</td></tr>
     <tr><td>interactive / cursor</td><td>Turn pointer behaviour off for pure decoration; set the cursor over the map.</td></tr>
     <tr><td>max-dpr</td><td>Caps the canvas backing store (default 2). 3× devices buy no visible detail on a dot field and pay full fill-rate for it.</td></tr>
   </table>
 
-  <h3>Land</h3>
+  <h3>The figure</h3>
+  <p class="note">Every map draws a <strong>figure</strong> on a <strong>ground</strong>. On Earth the figure is land and the ground is ocean; on the Moon, maria on highlands; on Mars, lowlands on highlands; on your own world, whatever you say. Every option that styles the figure starts with <code>figure-</code>.</p>
   <table>
     <tr><th>attribute</th><th>what it does</th></tr>
-    <tr><td>land</td><td>A space-separated token list, so it reads the way you would say it: <em>dots</em> (default) · <em>solid</em> · <em>outline</em> · <em>solid outline</em>.</td></tr>
-    <tr><td>land-source</td><td><em>grid</em> — contours traced from the bitmask: blocky by design, follows <code>cols</code>, costs nothing extra. <em>vector</em> — the real Natural Earth coastline, smooth at any size.</td></tr>
-    <tr><td>land-color</td><td>The fill. Defaults to <code>dot-color</code>.</td></tr>
-    <tr><td>land-stroke / land-stroke-width</td><td>The coastline. Defaults to <code>land-color</code>, then <code>dot-color</code>.</td></tr>
-    <tr><td>borders</td><td>Country borders. Vector data, so they work under any land style; a 512×256 raster cannot express a border that follows a river.</td></tr>
-    <tr><td>borders-color / -width / -opacity</td><td>Default to the coastline colour at <code>0.5</code> and <code>0.55</code>.</td></tr>
+    <tr><td>figure</td><td>A space-separated token list, so it reads the way you would say it: <em>dots</em> (default) · <em>solid</em> · <em>outline</em> · <em>solid outline</em>.</td></tr>
+    <tr><td>figure-source</td><td><em>grid</em> — contours traced from the body on the dot grid: blocky by design, follows <code>cols</code>, costs nothing extra. <em>vector</em> — the body's own outlines (Natural Earth on Earth), smooth at any size.</td></tr>
+    <tr><td>figure-color</td><td>The figure's colour: the dots, or the fill. Any colour, including <code>var(--token)</code>.</td></tr>
+    <tr><td>figure-stroke / figure-stroke-width</td><td>The edge — the coastline on Earth. Defaults to <code>figure-color</code>.</td></tr>
+    <tr><td>borders</td><td>Region boundaries where the body has them: country borders on Earth. Vector data, so they work under any figure style; a 512×256 raster cannot express a border that follows a river.</td></tr>
+    <tr><td>borders-color / -width / -opacity</td><td>Default to the edge colour at <code>0.5</code> and <code>0.55</code>.</td></tr>
   </table>
 
   <h3>Dots</h3>
@@ -491,8 +512,7 @@ import "mappo"</code></pre>
     <tr><th>attribute</th><th>what it does</th></tr>
     <tr><td>dot-shape</td><td>circle · square · triangle · a custom SVG path (24×24 units).</td></tr>
     <tr><td>dot-size</td><td>Fraction of a grid cell the dot fills (default <code>0.55</code>).</td></tr>
-    <tr><td>dot-color</td><td>Any colour, including <code>var(--token)</code>.</td></tr>
-    <tr><td>dot-hover-color / -scale</td><td>Hover colour auto-derives as a contrast-aware shade of <code>dot-color</code> — darker for light dots, lighter for dark. Override either.</td></tr>
+    <tr><td>dot-hover-color / -scale</td><td>Hover colour auto-derives as a contrast-aware shade of <code>figure-color</code> — darker for light dots, lighter for dark. Override either.</td></tr>
   </table>
 
   <h3>The globe</h3>
@@ -505,20 +525,20 @@ import "mappo"</code></pre>
     <tr><td>globe-ring</td><td>A hairline halo at the limb. Off by default.</td></tr>
     <tr><td>graticule</td><td>The meridian and parallel grid.</td></tr>
     <tr><td>meridians / parallels</td><td>How many of each (12 and 11). The equator is drawn separately, so it can carry its own weight.</td></tr>
-    <tr><td>graticule-color / -opacity</td><td>Default to <code>dot-color</code> at <code>0.28</code>.</td></tr>
+    <tr><td>graticule-color / -opacity</td><td>Default to <code>figure-color</code> at <code>0.28</code>.</td></tr>
     <tr><td>equator-color / -opacity</td><td>Default to the graticule at <code>0.36</code> — a touch above its neighbours, never a stripe.</td></tr>
   </table>
 
   <h3>Markers and overlays</h3>
   <table>
     <tr><th>attribute</th><th>what it does</th></tr>
-    <tr><td>cities</td><td>Comma-separated registry names: <code>"Nairobi, Seoul"</code>.</td></tr>
-    <tr><td>markers</td><td>Coordinates without the registry: <code>"Name@lat,lon;…"</code> — same pipeline and events as cities.</td></tr>
+    <tr><td>places</td><td>Comma-separated names from the body's gazetteer: <code>"Nairobi, Seoul"</code> on Earth, <code>"Apollo 11"</code> on the Moon.</td></tr>
+    <tr><td>markers</td><td>Coordinates without the gazetteer: <code>"Name@lat,lon;…"</code> — same pipeline and events as places.</td></tr>
     <tr><td>marker-shape</td><td>circle · square · triangle · <strong>pin</strong>, the map-pin silhouette, anchored at its tip.</td></tr>
     <tr><td>marker-color / -scale / -cursor</td><td>Any colour; size relative to a dot; the cursor over a marker.</td></tr>
     <tr><td>marker-pulse</td><td>A radar ping: an expanding, fading ring.</td></tr>
     <tr><td>overlays</td><td>Position host children carrying <code>data-lat</code>/<code>data-lon</code> over the map (globe). On by default; each gets <code>--mappo-depth</code> and <code>data-mappo-behind</code>.</td></tr>
-    <tr><td>highlight-polygon / -color</td><td>JSON rings of <code>[lat, lon]</code> — every land dot inside draws in the highlight colour. You supply the shape; the point-in-polygon test runs once per geometry build, never per frame.</td></tr>
+    <tr><td>highlight-polygon / -color</td><td>JSON rings of <code>[lat, lon]</code> — every figure dot inside draws in the highlight colour. You supply the shape; the point-in-polygon test runs once per geometry build, never per frame.</td></tr>
   </table>
 
   <h3>Motion and the hero look</h3>
@@ -531,8 +551,9 @@ import "mappo"</code></pre>
 </div>
 
 <p class="note" style="margin-top:22px">
-  The full API — the <code>Mappo</code> class, callbacks, and low-level exports like
-  <code>isLand(lat, lon)</code>, <code>landShapes()</code> and the city registry — is in the
+  The full API — the <code>Mappo</code> class, callbacks, the body interface for your own
+  worlds, and low-level exports like <code>EARTH.figure(lat, lon)</code>,
+  <code>EARTH.outlines()</code> and <code>EARTH.places</code> — is in the
   <a href="https://github.com/rameerez/mappo#readme">README</a>.
 </p>
 
@@ -547,6 +568,14 @@ import "mappo"</code></pre>
 <script type="module">
   import { bindThemeToggle } from "./assets/theme.js";
   import Coloris from "./demo/coloris.js";
+  import { registerBody } from "./dist/mappo.js";
+  import { MOON } from "./dist/bodies/moon.js";
+  import { MARS } from "./dist/bodies/mars.js";
+
+  // The playground's body knob. Two opt-in packs, registered by name; the
+  // <mappo-world> below adopts whichever one its attribute asks for.
+  registerBody(MOON);
+  registerBody(MARS);
 
   bindThemeToggle(document.getElementById("theme"));
 
@@ -616,26 +645,41 @@ import "mappo"</code></pre>
   }
   applyMode("globe");
 
-  // Land style decides which knobs still mean anything: with the dot field off,
-  // dot-shape and dot-size describe nothing on screen.
-  const landSel = document.getElementById("land");
-  const syncLand = () => {
-    const dots = landSel.value.split(/\s+/).includes("dots");
+  // Figure style decides which knobs still mean anything: with the dot field
+  // off, dot-shape and dot-size describe nothing on screen; with it on, the
+  // edge source and borders do not apply.
+  const figureSel = document.getElementById("figure");
+  const syncFigure = () => {
+    const dots = figureSel.value.split(/\s+/).includes("dots");
     for (const id of [ "dot-shape", "dot-size" ]) {
       const el = document.getElementById(id);
       el.disabled = !dots;
       el.closest("label").classList.toggle("off", !dots);
     }
-    for (const id of [ "land-color", "land-source" ]) {
+    for (const id of [ "figure-source", "borders" ]) {
       const el = document.getElementById(id);
-      el.closest("label").classList.toggle("off", dots && landSel.value === "dots");
+      el.closest("label").classList.toggle("off", dots);
     }
   };
-  landSel.addEventListener("input", syncLand);
-  syncLand();
+  figureSel.addEventListener("input", syncFigure);
+  syncFigure();
 
-  map.addEventListener("mappo:cityclick", (e) =>
-    log.textContent = `city click → ${e.detail.name} (${e.detail.lat}, ${e.detail.lon})`);
+  // Each world brings its own gazetteer, so the places knob follows the body.
+  const PLACES = {
+    earth: "London, Lagos, Singapore, New York, Tokyo, Sao Paulo, Nairobi, Sydney",
+    moon: "Apollo 11, Apollo 17, Luna 9, Chang'e 4, Shackleton",
+    mars: "Curiosity, Perseverance, Viking 1, Olympus Mons, Hellas Planitia"
+  };
+  const bodySel = document.getElementById("body");
+  const placesInput = document.getElementById("places");
+  bodySel.addEventListener("input", () => {
+    placesInput.value = PLACES[bodySel.value];
+    map.setAttribute("places", placesInput.value);
+    log.textContent = `${bodySel.value}: ${map.map.body.terms.figure} against ${map.map.body.terms.ground}`;
+  });
+
+  map.addEventListener("mappo:placeclick", (e) =>
+    log.textContent = `place click → ${e.detail.name} (${e.detail.lat}, ${e.detail.lon})`);
   map.addEventListener("mappo:dotclick", (e) =>
     log.textContent = `dot click → lat ${e.detail.lat.toFixed(1)}, lon ${e.detail.lon.toFixed(1)}`);
 

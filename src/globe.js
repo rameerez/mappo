@@ -1,4 +1,4 @@
-// Globe mode: the same land grid wrapped on a sphere and spun — on canvas,
+// Globe mode: the same figure grid wrapped on a sphere and spun — on canvas,
 // not SVG. A rotating globe re-projects every dot every frame; SVG would
 // mean thousands of DOM attribute writes at 60Hz, which is exactly the
 // failure mode the flat renderer's architecture exists to avoid. Canvas
@@ -10,18 +10,25 @@
 // just outside the sphere. tilt doubles as the axial tilt here — the same
 // option that lays the flat map down leans the globe.
 //
+// Geometry is a sphere of unit radius; `radiusKm` on a body is for the
+// consumer's arithmetic, never for drawing. Latitude is planetocentric,
+// longitude east-positive — whatever the body, whatever its native map used.
+//
 // Node-safe: the point-buffer builders are pure and testable; GlobeRenderer
 // touches the DOM only in its constructor, which only runs in a browser.
+//
+// Per frame, nothing is allocated for the geometry: dots, figure quads,
+// contour loops and vector outlines are all precomputed unit-sphere
+// coordinates in typed arrays, and each frame only rotates them. Several
+// globes on one page is a first-class case.
 
-import { resolveBody, EARTH } from "./body.js";
-import { cellCenter } from "./projection.js";
-import { resolveCity } from "./cities.js";
+import { resolvePlaces } from "./body.js";
+import { cellCenter, cellCorner } from "./projection.js";
 import { normalizeRings, pointInRings } from "./highlight.js";
 import { noise2 } from "./noise.js";
 import { hoverShade, resolveColor, usesCssVars } from "./color.js";
 import { buildGraticule } from "./graticule.js";
-import { buildLand, parseLandStyle, landRings, borderRings } from "./land.js";
-import { cellCorner } from "./projection.js";
+import { buildFigure, parseFigureStyle, figureOutlines, figureBorders } from "./figure.js";
 
 // Unit-sphere position for a lat/lon. At rotation 0, lon 0 faces the
 // viewer (+z out of the screen), +y is north.
@@ -36,35 +43,18 @@ export function latLonToXYZ(lat, lon) {
   };
 }
 
-// Land dots as a flat Float32Array [x,y,z, x,y,z, …] — same grid sampling
-// as the flat renderer (cellCenter + isLand), so flat and globe agree on
-// what the world looks like at a given resolution.
-// Per-point highlight flags, aligned index-for-index with
-// buildGlobePoints (same loop, same skip rule) — the phase-array
-// discipline, reused: geometry arrays never reorder, parallel arrays
-// annotate.
-export function buildGlobeFlags(cols, latRange, test, water = false, body = EARTH) {
+// Figure dots as a flat Float32Array [x,y,z, x,y,z, …] — same grid sampling
+// as the flat renderer (cellCenter + the body's figure()), so flat and globe
+// agree on what the world looks like at a given resolution. `ground` flips
+// the selection to the complement (the filler dots).
+export function buildGlobePoints(cols, latRange, body, ground = false) {
   const rows = Math.round((cols / 360) * (latRange[1] - latRange[0]));
   const grid = { cols, rows, latRange };
   const out = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const c = cellCenter(col, row, grid);
-      if (body.isLand(c.lat, c.lon) === water) continue;
-      out.push(test(c.lat, c.lon) ? 1 : 0);
-    }
-  }
-  return new Uint8Array(out);
-}
-
-export function buildGlobePoints(cols, latRange, water = false, body = EARTH) {
-  const rows = Math.round((cols / 360) * (latRange[1] - latRange[0]));
-  const grid = { cols, rows, latRange };
-  const out = [];
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const c = cellCenter(col, row, grid);
-      if (body.isLand(c.lat, c.lon) === water) continue;
+      if (body.figure(c.lat, c.lon) === ground) continue;
       const p = latLonToXYZ(c.lat, c.lon);
       out.push(p.x, p.y, p.z);
     }
@@ -72,18 +62,35 @@ export function buildGlobePoints(cols, latRange, water = false, body = EARTH) {
   return new Float32Array(out);
 }
 
-// Per-point animation phase + amplitude, aligned index-for-index with
-// buildGlobePoints (same loop, same skip rule). Phase picks WHEN a dot
-// moves in the cycle, amp how far — the exact fields the flat renderer
-// bakes into its dot markup, so the six modes read the same on a sphere.
-export function buildGlobePhases(cols, latRange, mode, water = false, body = EARTH) {
+// Per-point highlight flags, aligned index-for-index with buildGlobePoints
+// (same loop, same skip rule) — the phase-array discipline, reused: geometry
+// arrays never reorder, parallel arrays annotate.
+export function buildGlobeFlags(cols, latRange, test, body) {
   const rows = Math.round((cols / 360) * (latRange[1] - latRange[0]));
   const grid = { cols, rows, latRange };
   const out = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const c = cellCenter(col, row, grid);
-      if (body.isLand(c.lat, c.lon) === water) continue;
+      if (!body.figure(c.lat, c.lon)) continue;
+      out.push(test(c.lat, c.lon) ? 1 : 0);
+    }
+  }
+  return new Uint8Array(out);
+}
+
+// Per-point animation phase + amplitude, aligned index-for-index with
+// buildGlobePoints. Phase picks WHEN a dot moves in the cycle, amp how far —
+// the exact fields the flat renderer bakes into its dot markup, so the modes
+// read the same on a sphere.
+export function buildGlobePhases(cols, latRange, mode, body) {
+  const rows = Math.round((cols / 360) * (latRange[1] - latRange[0]));
+  const grid = { cols, rows, latRange };
+  const out = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const c = cellCenter(col, row, grid);
+      if (!body.figure(c.lat, c.lon)) continue;
       let p;
       switch (mode) {
         case "noise":   p = (noise2(col * 0.22, row * 0.22) + 1) / 2; break;
@@ -98,13 +105,36 @@ export function buildGlobePhases(cols, latRange, mode, water = false, body = EAR
   return new Float32Array(out);
 }
 
+// [lat, lon] rings → one Float32Array of unit-sphere xyz per ring, memoised
+// on the rings array itself (a body memoises its decoded outlines, so this
+// is computed once per body per page, however many globes draw it).
+const XYZ_RINGS = new WeakMap();
+function xyzRings(rings) {
+  let out = XYZ_RINGS.get(rings);
+  if (!out) {
+    out = rings.map((ring) => {
+      const a = new Float32Array(ring.length * 3);
+      for (let i = 0; i < ring.length; i++) {
+        const p = latLonToXYZ(ring[i][0], ring[i][1]);
+        a[i * 3] = p.x; a[i * 3 + 1] = p.y; a[i * 3 + 2] = p.z;
+      }
+      return a;
+    });
+    XYZ_RINGS.set(rings, out);
+  }
+  return out;
+}
+
 export class GlobeRenderer {
   // @param container [HTMLElement] emptied; a square canvas fills its width.
   // @param options   [Object] the owning Mappo's options (shared ref).
-  constructor(container, options) {
+  // @param body      [Object] the resolved body — Mappo owns resolution.
+  // @param overlays  [Array]  host elements carrying data-lat/data-lon,
+  //   harvested by Mappo before any renderer touched the container.
+  constructor(container, options, body, overlays = []) {
     this.container = container;
     this.o = options;
-    this._body = resolveBody(options.body);
+    this._body = body;
     // focus: start the spin facing a point — the rotation that brings
     // the focus longitude to the front (z-max at rot = -λ, since
     // latLonToXYZ puts λ=0 facing the viewer at angle 0).
@@ -117,32 +147,26 @@ export class GlobeRenderer {
     // cut into a stretched ribbon. The second half of that fix lives here:
     // the canvas box is aspect-locked square via CSS, so display size and
     // backing store can never disagree on shape.
-    // Harvest host overlay markup BEFORE the canvas replaces the
-    // container's children, or replaceChildren would delete the very
-    // labels the caller asked us to position. mappo adopts them: they are
-    // re-parented into an absolutely-positioned layer over the canvas and
-    // given a transform every frame. The host keeps ownership of
-    // everything else — markup, styling, and whether they are links.
-    this._overlayEls = this.o.overlays === false ? []
-      : Array.from(container.querySelectorAll("[data-lat][data-lon]"));
-
     this.canvas = document.createElement("canvas");
     this.canvas.className = "mappo-globe";
     this.canvas.style.display = "block";
     this.canvas.style.width = "100%";
     this.canvas.style.aspectRatio = "1 / 1";
     container.replaceChildren(this.canvas);
-    if (this._overlayEls.length) {
+    // The host's overlay elements are re-parented into an absolutely-
+    // positioned layer over the canvas and given a transform every frame.
+    // The host keeps ownership of everything else — markup, styling, and
+    // whether they are links.
+    this._overlayEls = overlays;
+    if (overlays.length) {
       if (getComputedStyle(container).position === "static") container.style.position = "relative";
       this._overlayLayer = document.createElement("div");
       this._overlayLayer.className = "mappo-overlay";
       // pointer-events:none on the LAYER, not the children: the layer must
       // not swallow drag-to-spin, but a label that wants to be clickable
       // only has to set pointer-events:auto on itself.
-      Object.assign(this._overlayLayer.style, {
-        position: "absolute", inset: "0", pointerEvents: "none"
-      });
-      for (const el of this._overlayEls) {
+      Object.assign(this._overlayLayer.style, { position: "absolute", inset: "0", pointerEvents: "none" });
+      for (const el of overlays) {
         Object.assign(el.style, { position: "absolute", left: "0", top: "0", willChange: "transform" });
         this._overlayLayer.appendChild(el);
       }
@@ -151,7 +175,6 @@ export class GlobeRenderer {
     this.ctx = this.canvas.getContext("2d");
 
     this._watchTheme();
-
     this._rebuildData();
 
     // Reduced motion: one static frame, no loop. Checked once at build —
@@ -162,7 +185,7 @@ export class GlobeRenderer {
     // Offscreen globes must not burn frames — pause when scrolled away.
     this._visible = true;
     if (typeof IntersectionObserver === "function") {
-      this._io = new IntersectionObserver(([entry]) => {
+      this._io = new IntersectionObserver(([ entry ]) => {
         this._visible = entry.isIntersecting;
         if (this._visible && !this._raf && !this._static) {
           this._t = null; // don't let the paused gap become one giant dt
@@ -183,27 +206,24 @@ export class GlobeRenderer {
     if (!this._static) this._loop();
   }
 
-  // Any option may have changed (the options object is shared with the
-  // owning Mappo, so no diffing is possible here). Rebuilding the point
-  // buffer is a few ms even at max resolution — just do it. The rotation
-  // angle deliberately survives.
   // Options that only change how the existing geometry is PAINTED or POINTED.
-  // Everything else — resolution, land, the point set, what is on it — has to
-  // be rebuilt, and an unknown key is treated as "rebuild" so a new option can
-  // never quietly land in the cheap path.
+  // Everything else — resolution, figure, the point set, what is on it — has
+  // to be rebuilt, and an unknown key is treated as "rebuild" so a new option
+  // can never quietly land in the cheap path.
   static PAINT_ONLY = new Set([
     "tilt", "roll", "rotateSpeed", "focus", "globeRing", "background",
-    "dotColor", "dotHoverColor", "dotHoverScale", "landColor", "landStroke",
-    "landStrokeWidth", "bordersColor", "bordersWidth", "bordersOpacity",
+    "figureColor", "figureStroke", "figureStrokeWidth", "dotHoverColor", "dotHoverScale",
+    "bordersColor", "bordersWidth", "bordersOpacity",
     "graticuleColor", "equatorColor", "graticuleOpacity", "equatorOpacity",
-    "markerColor", "markerScale", "markerHoverScale", "highlightColor"
+    "markerColor", "markerScale", "markerHoverScale", "highlightColor", "overlays"
   ]);
 
   // @param changed [Array|null] option keys that actually changed. Omit it and
   //   everything is rebuilt, which is what any caller that does not know gets.
-  update(changed = null) {
+  // @param body    [Object] the body to draw; Mappo passes its resolved one.
+  update(changed = null, body = this._body) {
     this._cvCache = null;
-    if (!changed || changed.includes("body")) this._body = resolveBody(this.o.body);
+    this._body = body;
     // Re-checked on every update, not only at build: a colour can BECOME a
     // var() long after construction — a themed attribute set from JS, a knob,
     // a framework binding — and a globe that installed no observer because it
@@ -211,13 +231,13 @@ export class GlobeRenderer {
     // when it was built, and never follow the theme again.
     this._watchTheme();
 
-    // Rebuilding the point set and re-decoding the coastline costs about
+    // Rebuilding the point set and re-decoding the outlines costs about
     // 13 ms at cols=150. Pointing the globe somewhere costs nothing. Pages
     // that re-aim every frame — a sun's-eye view, a follow-that-satellite —
     // were paying the first price for the second thing.
     const cheap = changed?.length && changed.every((k) => GlobeRenderer.PAINT_ONLY.has(k));
     if (!cheap) {
-      this._land = null;
+      this._figureGeom = null;
       this._rebuildData();
     }
     if (!changed || changed.includes("focus")) this.#aim();
@@ -239,9 +259,9 @@ export class GlobeRenderer {
   // last one goes away.
   _watchTheme() {
     const wanted = typeof MutationObserver === "function" && usesCssVars(
-      this.o.dotColor, this.o.graticuleColor, this.o.equatorColor, this.o.markerColor,
-      this.o.oceanColor, this.o.background, this.o.landColor, this.o.landStroke,
-      this.o.bordersColor, this.o.highlightColor);
+      this.o.figureColor, this.o.figureStroke, this.o.graticuleColor, this.o.equatorColor,
+      this.o.markerColor, this.o.groundColor, this.o.background, this.o.bordersColor,
+      this.o.highlightColor, this.o.dotHoverColor);
     if (wanted === !!this._themeObserver) return;
     if (!wanted) { this._themeObserver.disconnect(); this._themeObserver = null; return; }
     this._themeObserver = new MutationObserver(() => { this._cvCache = null; this._draw(); });
@@ -259,6 +279,8 @@ export class GlobeRenderer {
     return this._cvCache.get(value);
   }
 
+  // Remove everything this renderer put in the container. The overlay
+  // elements are Mappo's to keep; only the layer around them goes.
   destroy() {
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = null;
@@ -278,13 +300,13 @@ export class GlobeRenderer {
 
   // ── pointer layer: hover/click events + drag-to-spin ─────────────────────
   // Mirrors the flat renderer's contract exactly: onDotClick/onDotEnter/
-  // onCityClick/onCityEnter callbacks + bubbling mappo:* CustomEvents,
+  // onPlaceClick/onPlaceEnter callbacks + bubbling mappo:* CustomEvents,
   // gated by `interactive`. On top of that, the globe is grabbable: drag
   // spins it directly, a flick carries momentum, and the spin relaxes back
   // to rotateSpeed on an exponential (~0.8s) — seamless handoff, no snap.
 
-  // One marker/highlight footprint, honoring the shape options — the canvas
-  // twin of the flat renderer's <use href="#mappo-marker-shape">.
+  // One marker/highlight footprint, honouring the shape options — the canvas
+  // twin of the flat renderer's <use href="#…marker-shape">.
   #drawShape(sx, sy, size, shape) {
     const ctx = this.ctx;
     if (shape === "square") {
@@ -301,7 +323,7 @@ export class GlobeRenderer {
       // floats above it. A punched hole keeps it reading as a pin at
       // small sizes.
       const r = size * 0.62;
-      const hy = sy - r * 1.9;      // head center
+      const hy = sy - r * 1.9;      // head centre
       ctx.beginPath();
       ctx.arc(sx, hy, r, Math.PI * 0.85, Math.PI * 0.15);
       ctx.quadraticCurveTo(sx + r * 0.55, hy + r * 1.1, sx, sy);
@@ -384,7 +406,7 @@ export class GlobeRenderer {
     this._hoverKey = key;
     this._hover = hit;
     this.canvas.style.cursor = hit
-      ? (hit.kind === "city" ? this.o.markerCursor : this.o.cursor)
+      ? (hit.kind === "place" ? this.o.markerCursor : this.o.cursor)
       : "grab";
     if (hit) this.#dispatch(hit.kind, "Enter", hit.detail);
     if (this._static) this._draw();
@@ -398,7 +420,7 @@ export class GlobeRenderer {
     if (this._static) this._draw();
   }
 
-  // Screen point → sphere surface → lat/lon → grid cell (or city, checked
+  // Screen point → sphere surface → lat/lon → grid cell (or place, checked
   // first in screen space since markers draw on top).
   #hitTest(e) {
     const rect = this.canvas.getBoundingClientRect();
@@ -420,22 +442,25 @@ export class GlobeRenderer {
     const uy = cy + rdx * sinRo + rdy * cosRo;
     const base = Math.max(0.75, (4 * R) / (this.o.cols ?? 170)) * this.o.dotSize * 1.6;
 
-    for (const city of this.cityData) {
-      const x1 = city.p.x * cosR + city.p.z * sinR;
-      const z1 = -city.p.x * sinR + city.p.z * cosR;
-      const y2 = city.p.y * cosT - z1 * sinT;
-      const z2 = city.p.y * sinT + z1 * cosT;
+    for (const place of this.placeData) {
+      const x1 = place.p.x * cosR + place.p.z * sinR;
+      const z1 = -place.p.x * sinR + place.p.z * cosR;
+      const y2 = place.p.y * cosT - z1 * sinT;
+      const z2 = place.p.y * sinT + z1 * cosT;
       if (z2 <= 0.01) continue;
       if (Math.hypot(ux - (cx + x1 * R), uy - (cy - y2 * R)) <= Math.max(10, base * this.o.markerScale * 0.9)) {
-        return { kind: "city", detail: { name: city.name, lat: city.lat, lon: city.lon, element: this.canvas } };
+        const detail = { name: place.name, lat: place.lat, lon: place.lon, element: this.canvas };
+        if (place.kind) detail.kind = place.kind;
+        return { kind: "place", detail };
       }
     }
 
-    // Past the markers, everything below is about the DOT FIELD, and a land
-    // style without dots has none. Hit-testing it anyway made an outline
-    // globe paint a hover blob where no dot was drawn, change the cursor for
-    // it, and fire dotenter/dotclick for a thing that is not on the screen.
-    if (!parseLandStyle(this.o.land).dots) return null;
+    // Past the markers, everything below is about the DOT FIELD, and a
+    // figure style without dots has none. Hit-testing it anyway made an
+    // outline globe paint a hover blob where no dot was drawn, change the
+    // cursor for it, and fire dotenter/dotclick for a thing that is not on
+    // the screen.
+    if (!parseFigureStyle(this.o.figure).dots) return null;
 
     const X = (ux - cx) / R;
     const Y = -(uy - cy) / R;
@@ -450,20 +475,20 @@ export class GlobeRenderer {
     const lat = (Math.asin(y) * 180) / Math.PI;
     const lon = (Math.atan2(x, z) * 180) / Math.PI;
 
-    const [latMin, latMax] = this.o.latRange;
+    const [ latMin, latMax ] = this.o.latRange;
     if (lat < latMin || lat > latMax) return null;
     const cols = this.o.cols ?? 170; // auto: globes want density — foreshortening thins the limb
     const rows = Math.round((cols / 360) * (latMax - latMin));
     const col = Math.min(cols - 1, Math.max(0, Math.floor(((lon + 180) / 360) * cols)));
     const row = Math.min(rows - 1, Math.max(0, Math.floor(((latMax - lat) / (latMax - latMin)) * rows)));
     const c = cellCenter(col, row, { cols, rows, latRange: this.o.latRange });
-    if (!this._body.isLand(c.lat, c.lon)) return null;
+    if (!this._body.figure(c.lat, c.lon)) return null;
     return { kind: "dot", detail: { lat: c.lat, lon: c.lon, col, row, element: this.canvas } };
   }
 
   #dispatch(kind, phase, detail) {
     if (this.o.interactive === false) return;
-    const cb = this.o[`on${kind === "city" ? "City" : "Dot"}${phase}`];
+    const cb = this.o[`on${kind === "place" ? "Place" : "Dot"}${phase}`];
     if (cb) cb(detail);
     this.container.dispatchEvent(new CustomEvent(
       `mappo:${kind}${phase.toLowerCase()}`,
@@ -473,30 +498,28 @@ export class GlobeRenderer {
 
   _rebuildData() {
     const cols = this.o.cols ?? 170; // auto: globes want density — foreshortening thins the limb
-    this.points = buildGlobePoints(cols, this.o.latRange, false, this._body);
+    this.points = buildGlobePoints(cols, this.o.latRange, this._body);
     // The graticule is pure lat/lon geometry — built once per option change,
     // projected per frame. Cheap enough to rebuild unconditionally.
     this._graticule = this.o.graticule
       ? buildGraticule({ meridians: this.o.meridians, parallels: this.o.parallels })
       : null;
-    // Region highlight: flags parallel the land points (never reorder
+    // Region highlight: flags parallel the figure points (never reorder
     // geometry — annotate it).
     if (this.o.highlightPolygon?.length) {
       const normalized = normalizeRings(this.o.highlightPolygon);
-      this.highlightFlags = buildGlobeFlags(cols, this.o.latRange, (lat, lon) => pointInRings(lat, lon, normalized), false, this._body);
+      this.highlightFlags = buildGlobeFlags(cols, this.o.latRange, (lat, lon) => pointInRings(lat, lon, normalized), this._body);
     } else {
       this.highlightFlags = null;
     }
-    this.waterPoints = this.o.oceanColor && this.o.oceanColor !== "none"
-      ? buildGlobePoints(cols, this.o.latRange, true, this._body)
+    this.groundPoints = this.o.groundColor && this.o.groundColor !== "none"
+      ? buildGlobePoints(cols, this.o.latRange, this._body, true)
       : null;
     this.phases = this.o.animation && this.o.animation !== "none"
-      ? buildGlobePhases(cols, this.o.latRange, this.o.animation, false, this._body)
+      ? buildGlobePhases(cols, this.o.latRange, this.o.animation, this._body)
       : null;
-    const resolved = [ ...(this.o.cities || []), ...(this.o.markers || []) ]
-      .map((c) => (typeof c === "string" ? resolveCity(c) : resolveCity(c)))
-      .filter(Boolean);
-    this.cityData = resolved.map((c) => ({ name: c.name, lat: c.lat, lon: c.lon, p: latLonToXYZ(c.lat, c.lon) }));
+    this.placeData = resolvePlaces(this.o.places, this._body)
+      .map((p) => ({ ...p, p: latLonToXYZ(p.lat, p.lon) }));
     this.canvas.style.cursor = this.o.interactive === false ? "" : "grab";
     if (this.o.dotShape !== "circle" && this.o.dotShape !== "square" &&
         this.o.dotShape !== "triangle" && !this._shapeWarned) {
@@ -542,248 +565,159 @@ export class GlobeRenderer {
     });
   }
 
-  // One transformed, culled, depth-faded pass over a point buffer — land
-  // and water share it; only color, size and alpha band differ.
-  // One place that knows how a lat/lon becomes a pixel on this sphere.
-  // The dot loop keeps its own inlined copy (it runs tens of thousands of
-  // times a frame and every property read shows up); everything else —
-  // graticule, DOM overlays, future arcs — goes through here so there is a
-  // single definition of the transform to keep correct.
-  // @param radius [Number] distance from the centre of the Earth, in Earth
-  //   radii — 1 is the surface, 1.086 is Starlink. Everything the renderer
-  //   itself draws sits on the surface; the parameter exists for locate().
-  #project(lat, lon, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo = 0, cosRo = 1 }, radius = 1) {
+  // One place that knows how a unit-sphere point becomes a pixel on this
+  // sphere: spin about the polar axis, lean by the axial tilt, then roll in
+  // the screen plane. Writes [sx, sy, depth] into `out` and returns whether
+  // the point faces the viewer. Allocation-free — this is the per-vertex
+  // hot path for figure quads, contours and vector outlines. (The dot loop
+  // keeps its own inlined copy; it runs tens of thousands of times a frame
+  // and every property read shows up.)
+  #projectXYZ(x, y, z, T, out) {
+    const x1 = x * T.cosR + z * T.sinR;
+    const z1 = -x * T.sinR + z * T.cosR;
+    const y2 = y * T.cosT - z1 * T.sinT;
+    const z2 = y * T.sinT + z1 * T.cosT;
+    const dx = x1 * T.R, dy = -y2 * T.R;
+    out[0] = T.cx + dx * T.cosRo - dy * T.sinRo;
+    out[1] = T.cy + dx * T.sinRo + dy * T.cosRo;
+    out[2] = z2;
+    return z2 > 0.01;
+  }
+
+  // The same transform for a lat/lon, as an object — graticule, overlays,
+  // locate(). @param radius [Number] distance from the body's centre, in body
+  // radii: 1 is the surface, 1.086 is Starlink when the body is Earth.
+  #project(lat, lon, T, radius = 1) {
     const p = latLonToXYZ(lat, lon);
     const px = p.x * radius, py = p.y * radius, pz = p.z * radius;
-    const x1 = px * cosR + pz * sinR;
-    const z1 = -px * sinR + pz * cosR;
-    const y2 = py * cosT - z1 * sinT;
-    const z2 = py * sinT + z1 * cosT;
-    const dx = x1 * R, dy = -y2 * R;
+    const x1 = px * T.cosR + pz * T.sinR;
+    const z1 = -px * T.sinR + pz * T.cosR;
+    const y2 = py * T.cosT - z1 * T.sinT;
+    const z2 = py * T.sinT + z1 * T.cosT;
+    const dx = x1 * T.R, dy = -y2 * T.R;
     return {
-  sx: cx + dx * cosRo - dy * sinRo,
-  sy: cy + dx * sinRo + dy * cosRo,
-  z: z2,
-  // A point ON the sphere is visible when it faces us. A point ABOVE it is
-  // hidden only when the Earth is actually in the way, which it can only be
-  // inside the disc — so something in orbit over the far side still shows,
-  // standing off the limb, which is exactly where you would see it from here.
-  front: z2 > 0.01 || (radius > 1 && Math.hypot(x1, y2) > 1)
+      sx: T.cx + dx * T.cosRo - dy * T.sinRo,
+      sy: T.cy + dx * T.sinRo + dy * T.cosRo,
+      z: z2,
+      // A point ON the sphere is visible when it faces us. A point ABOVE it is
+      // hidden only when the body is actually in the way, which it can only be
+      // inside the disc — so something in orbit over the far side still shows,
+      // standing off the limb, which is exactly where you would see it from here.
+      front: z2 > 0.01 || (radius > 1 && Math.hypot(x1, y2) > 1)
     };
   }
 
-  // Vector land on the sphere: real coastlines, clipped to the visible hemisphere.
-  //
-  // Stroking is easy — break the polyline whenever it turns away, exactly like
-  // the graticule. FILLING is the hard part, and the reason a naive version
-  // looks broken: in an orthographic projection the far side of the world folds
-  // onto the near side, so feeding a whole ring to fill() paints a mirrored
-  // ghost across the disc. Culling the back points instead leaves the ring open,
-  // and an open ring fills to a straight chord — slicing a bite out of every
-  // continent that touches the limb.
-  //
-  // The fix is to CLOSE each ring along the limb: walk the ring, keep the runs
-  // that face us, and join consecutive runs with an arc of the sphere's own
-  // silhouette. That is what the eye expects, because it is what the horizon
-  // actually is.
-  #drawVectorLand(T, style, rings, { fill, stroke, width, alphaScale = 1 }) {
-    const ctx = this.ctx;
-    const { cx, cy, R } = T;
-
-    if (fill) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, R, 0, Math.PI * 2);
-      ctx.clip();                       // nothing may paint outside the planet
-      ctx.fillStyle = fill;
+  // Precomputed xyz for a batch of rings, projected this frame into the
+  // point lists #strokeBanded wants. Trig happened once, at build time.
+  #projectRings(xyz, T) {
+    const out = new Array(xyz.length);
+    const s = this._scratch;
+    for (let r = 0; r < xyz.length; r++) {
+      const ring = xyz[r];
+      const pts = new Array(ring.length / 3);
+      for (let i = 0, j = 0; i < ring.length; i += 3, j++) {
+        const front = this.#projectXYZ(ring[i], ring[i + 1], ring[i + 2], T, s);
+        pts[j] = { sx: s[0], sy: s[1], z: s[2], front };
+      }
+      out[r] = pts;
     }
-
-    for (const ring of rings) {
-      const pts = ring.map(([ lat, lon ]) => this.#project(lat, lon, T));
-      // Fill is deliberately NOT drawn from these rings. Clipping a spherical
-      // polygon to the visible hemisphere analytically is a genuinely hard
-      // problem, and every cheap rule for rejoining the clipped runs along the
-      // limb was measured painting open ocean: the shorter arc closes a wide
-      // run around the wrong side; the exit tangent sends a single-run ring the
-      // long way round the disc; one constant direction per ring inverts the
-      // whole thing. (A pixel probe over 24 rotations scored them: 38, 35 and
-      // 98 ocean samples wrongly filled.) The globe therefore fills from the
-      // mask — see #drawLand — which culls cell by cell and cannot fail that
-      // way, and these rings draw the coastline on top.
-
-      // Depth-banded, for the same reason the graticule is: a single stroke()
-      // can only carry one alpha, so a per-point globalAlpha silently paints
-      // each coastline at the tone of its final vertex.
-      if (stroke) this.#strokeBanded([ pts ], stroke, width, 1, alphaScale);
-    }
-
-    if (fill) ctx.restore();
-    ctx.globalAlpha = 1;
+    return out;
   }
 
-  // Fill one ring, clipped to the visible hemisphere.
+  // Vector outlines on the sphere: real coastlines, stroked and broken at
+  // the limb exactly like the graticule.
   //
-  // The rule that makes this correct: when you clip a polygon to a disc and
-  // keep the INSIDE, the disc's boundary is always traversed in ONE direction
-  // for that polygon — the same direction the polygon itself is wound. Deciding
-  // it per crossing (from the exit tangent) is what sent single-run rings the
-  // long way round and filled open ocean; so the direction is settled once, for
-  // the whole ring, from the ring's own orientation, and every bridge obeys it.
-  //
-  // Runs are then joined exit → NEXT ENTRY BY ANGLE in that direction, never in
-  // array order: Afro-Eurasia crosses the silhouette fourteen times in a single
-  // ring, and those crossings do not arrive in the order they sit around the
-  // limb.
-  #fillClippedRing(ring, pts, T, alphaScale) {
-    const ctx = this.ctx;
-    const { cx, cy, R } = T;
-    const n = pts.length;
-    const TAU = Math.PI * 2;
-    if (!pts.some((p) => p.front)) return;
+  // FILLING them is deliberately not attempted. In an orthographic projection
+  // the far side of the world folds onto the near side, so feeding a whole
+  // ring to fill() paints a mirrored ghost across the disc, and culling the
+  // back points leaves the ring open, which fills to a straight chord.
+  // Closing each visible run along the limb is the correct construction, but
+  // every cheap rule for choosing the arc was measured painting open ocean (a
+  // pixel probe over 24 rotations scored the candidates at 38, 35 and 98
+  // wrongly filled samples). Until a proper hemisphere clip exists, the globe
+  // fills from the grid — see #drawFigure — which culls cell by cell and
+  // cannot fail that way, and these rings draw the edge on top.
+  #strokeVector(rings, T, { stroke, width, alphaScale = 1 }) {
+    this.#strokeBanded(this.#projectRings(xyzRings(rings), T), stroke, width, 1, alphaScale);
+  }
 
-    const paint = (depth) => {
-      ctx.globalAlpha = (0.4 + 0.6 * depth) * alphaScale;
-      ctx.fill();
-    };
-
-    if (pts.every((p) => p.front)) {
-      ctx.beginPath();
-      ctx.moveTo(pts[0].sx, pts[0].sy);
-      for (let i = 1; i < n; i++) ctx.lineTo(pts[i].sx, pts[i].sy);
-      ctx.closePath();
-      paint(pts[0].z);
-      return;
-    }
-
-    const crossing = (i, j) => {
-      const t = pts[i].z / (pts[i].z - pts[j].z);
-      let lon0 = ring[i][1], lon1 = ring[j][1];
-      if (lon1 - lon0 > 180) lon1 -= 360; else if (lon0 - lon1 > 180) lon1 += 360;
-      return this.#project(ring[i][0] + (ring[j][0] - ring[i][0]) * t,
-                           lon0 + (lon1 - lon0) * t, T);
-    };
-
-    let startAt = 0;
-    for (let i = 0; i < n; i++) {
-      if (pts[i].front && !pts[(i - 1 + n) % n].front) { startAt = i; break; }
-    }
-
-    const runs = [];
-    let current = null;
-    let signed = 0;                      // shoelace over the VISIBLE geometry
-    for (let k = 0; k < n; k++) {
-      const i = (startAt + k) % n;
-      const prev = (i - 1 + n) % n;
-      if (pts[i].front) {
-        if (!current) current = [ crossing(i, prev) ];
-        current.push(pts[i]);
-      } else if (current) {
-        current.push(crossing(prev, i));
-        for (let m = 0; m < current.length - 1; m++) {
-          signed += (current[m].sx - cx) * (current[m + 1].sy - cy)
-                  - (current[m + 1].sx - cx) * (current[m].sy - cy);
-        }
-        runs.push(current);
-        current = null;
+  // Grid geometry for the figure — the same figure.js geometry the flat map
+  // uses — as unit-sphere coordinates, built once per option change:
+  //   quads  Float32Array, 12 floats (4 corners) per figure cell
+  //   loops  one Float32Array per boundary contour
+  #figureGeometry(grid) {
+    if (this._figureGeom) return this._figureGeom;
+    // wrapX: on a globe there is no edge at the antimeridian, only more world.
+    const { cells, loops } = buildFigure(grid, { wrapX: true, body: this._body });
+    const quads = new Float32Array(cells.length * 12);
+    let k = 0;
+    for (const [ col, row ] of cells) {
+      for (const [ c, r ] of [ [ col, row ], [ col + 1, row ], [ col + 1, row + 1 ], [ col, row + 1 ] ]) {
+        const g = cellCorner(c, r, grid);
+        const p = latLonToXYZ(g.lat, g.lon);
+        quads[k++] = p.x; quads[k++] = p.y; quads[k++] = p.z;
       }
     }
-    if (current) runs.push(current);
-    if (!runs.length) return;
-
-    // One direction for the whole ring, taken from its own winding on screen.
-    const dir = signed >= 0 ? 1 : -1;
-    const angleOf = (p) => Math.atan2(p.sy - cy, p.sx - cx);
-    for (const r of runs) {
-      r.inAngle = angleOf(r[0]);
-      r.outAngle = angleOf(r[r.length - 1]);
-      r.used = false;
-    }
-    const sweep = (from, to) => {
-      let d = dir > 0 ? to - from : from - to;
-      d = ((d % TAU) + TAU) % TAU;
-      return dir > 0 ? d : -d;
-    };
-
-    for (const seed of runs) {
-      if (seed.used) continue;
-      ctx.beginPath();
-      ctx.moveTo(seed[0].sx, seed[0].sy);
-      let run = seed, guard = 0;
-      while (run && !run.used && guard++ <= runs.length) {
-        run.used = true;
-        for (let i = 1; i < run.length; i++) ctx.lineTo(run[i].sx, run[i].sy);
-        let next = null, bestGap = Infinity;
-        for (const r of runs) {
-          if (r.used) continue;
-          const gap = Math.abs(sweep(run.outAngle, r.inAngle));
-          if (gap < bestGap) { bestGap = gap; next = r; }
-        }
-        const target = next ?? seed;
-        ctx.arc(cx, cy, R, run.outAngle, run.outAngle + sweep(run.outAngle, target.inAngle),
-                sweep(run.outAngle, target.inAngle) < 0);
-        if (!next) break;
-        run = next;
+    const loopXYZ = loops.map((loop) => {
+      const a = new Float32Array(loop.length * 3);
+      for (let i = 0; i < loop.length; i++) {
+        const g = cellCorner(loop[i][0], loop[i][1], grid);
+        const p = latLonToXYZ(g.lat, g.lon);
+        a[i * 3] = p.x; a[i * 3 + 1] = p.y; a[i * 3 + 2] = p.z;
       }
-      ctx.closePath();
-      paint(seed[0].z);
-    }
+      return a;
+    });
+    return (this._figureGeom = { quads, loops: loopXYZ });
   }
 
-
-  // Land as shape on the sphere — the same land.js geometry the flat map uses.
+  // The figure as shape on the sphere.
   //
   // The two halves are drawn differently ON PURPOSE, because a sphere is not a
   // plane:
   //
-  //   fill    — per-cell quads. A closed coastline loop that crosses the limb
-  //             cannot be filled correctly (half of it is on the far side and
-  //             the ring is no longer closed in screen space). Projected quads
-  //             tile edge-to-edge into the same landmass and cull individually,
-  //             so the limb is handled by simply not drawing what faces away.
+  //   fill    — per-cell quads. A closed contour that crosses the limb cannot
+  //             be filled correctly (half of it is on the far side and the ring
+  //             is no longer closed in screen space). Projected quads tile
+  //             edge-to-edge into the same landmass and cull individually, so
+  //             the limb is handled by simply not drawing what faces away.
   //   outline — the contour loops, stroked and broken at the limb, exactly like
-  //             the graticule. A coastline is a line, so it has no such problem.
+  //             the graticule. An edge is a line, so it has no such problem.
   //
   // Same source geometry, same option names, same result to the eye.
-  #drawLand(T, style) {
+  #drawFigure(T, style) {
     const o = this.o;
     const ctx = this.ctx;
-    // Vector source: real outlines, no grid involved.
-    const vector = landRings(o.landSource, this._body);
-    // A FILLED globe stays on the grid, even when vector data is asked for.
-    //
-    // Not a preference — a consistency requirement. The vector coastline is
-    // 1/32° detailed; the mask the fill comes from is 512×256. Drawing one
-    // inside the other leaves white slivers all down the European coast,
-    // because they are the same geography at twenty-five times the detail.
-    // Until vector fills can be clipped to the hemisphere properly (see
-    // #drawVectorLand), a filled globe draws BOTH fill and coast from the
-    // grid, where they agree by construction. `land="outline"` with vector is
-    // unaffected and is the sharpest the globe gets.
-    if (vector && !style.fill) {
-      this.#drawVectorLand(T, style, vector, {
-        fill: null,
-        stroke: style.stroke ? this._c(o.landStroke ?? o.landColor ?? o.dotColor) : null,
-        width: o.landStrokeWidth ?? 1
-      });
-      if (o.borders) {
-        this.#drawVectorLand(T, { fill: false, stroke: true }, borderRings(this._body), {
-          fill: null,
-          stroke: this._c(o.bordersColor ?? o.landStroke ?? o.dotColor),
+    const vector = figureOutlines(o.figureSource, this._body);
+    const strokeColor = this._c(o.figureStroke ?? o.figureColor);
+    const drawBorders = () => {
+      const borders = o.borders ? figureBorders(this._body) : null;
+      if (borders?.length) {
+        this.#strokeVector(borders, T, {
+          stroke: this._c(o.bordersColor ?? o.figureStroke ?? o.figureColor),
           width: o.bordersWidth ?? 0.5,
           alphaScale: o.bordersOpacity ?? 0.55
         });
       }
+    };
+
+    // Vector source without a fill: real outlines, no grid involved. This is
+    // the sharpest the globe gets.
+    if (vector && !style.fill) {
+      if (style.stroke) this.#strokeVector(vector, T, { stroke: strokeColor, width: o.figureStrokeWidth ?? 1 });
+      drawBorders();
       return;
     }
-    // Borders are lines, so they clip cleanly and can ride any fill.
-    if (o.borders && vector) {
-      this.#drawVectorLand(T, { fill: false, stroke: true }, borderRings(this._body), {
-        fill: null,
-        stroke: this._c(o.bordersColor ?? o.landStroke ?? o.dotColor),
-        width: o.bordersWidth ?? 0.5,
-        alphaScale: o.bordersOpacity ?? 0.55
-      });
-    }
+
+    // A FILLED globe stays on the grid, even when vector data is asked for.
+    //
+    // Not a preference — a consistency requirement. The vector outline is
+    // 1/32° detailed; the mask the fill comes from is 512×256. Drawing one
+    // inside the other leaves white slivers all down the European coast,
+    // because they are the same geography at twenty-five times the detail.
+    // Until vector fills can be clipped to the hemisphere properly, a filled
+    // globe draws BOTH fill and edge from the grid, where they agree by
+    // construction. Borders are lines, so they clip cleanly and can ride any fill.
+    if (vector) drawBorders();
     // Resolution stays at `cols`, deliberately. Sampling the fill finer than
     // the dot grid does buy smoother coastlines, but it multiplies the quads
     // projected every frame — measured as visible stutter on a page carrying
@@ -791,14 +725,12 @@ export class GlobeRenderer {
     // knob with `cols` if a particular map wants the detail and can pay.
     const cols = o.cols ?? 170;
     const rows = Math.round((cols / 360) * (o.latRange[1] - o.latRange[0]));
-    const grid = { cols, rows, latRange: o.latRange };
-    // wrapX: on a globe there is no edge at the antimeridian, only more world.
-    this._land ??= buildLand(grid, { wrapX: true, body: this._body });
+    const geom = this.#figureGeometry({ cols, rows, latRange: o.latRange });
 
     if (style.fill) {
       // Batched by depth band, NOT one fill() per cell.
       //
-      // The land is a few thousand quads; issuing a beginPath/fill for each
+      // The figure is a few thousand quads; issuing a beginPath/fill for each
       // was measured at ~13 ms per globe, which turns a page carrying several
       // of them into a slideshow. Path construction is nearly free — it is the
       // fill calls that cost — so the quads are accumulated into a handful of
@@ -806,29 +738,24 @@ export class GlobeRenderer {
       // picture, BANDS draw calls instead of thousands.
       const BANDS = 6;
       const paths = Array.from({ length: BANDS }, () => new Path2D());
+      const q = geom.quads;
+      const A = this._scratch, B = this._scratchB, C = this._scratchC, D = this._scratchD;
       let any = false;
-      for (const [ col, row ] of this._land.cells) {
-        const a = cellCorner(col, row, grid);
-        const pa = this.#project(a.lat, a.lon, T);
-        if (!pa.front) continue;
-        const b = cellCorner(col + 1, row, grid);
-        const c = cellCorner(col + 1, row + 1, grid);
-        const d = cellCorner(col, row + 1, grid);
-        const pb = this.#project(b.lat, b.lon, T);
-        const pc = this.#project(c.lat, c.lon, T);
-        const pd = this.#project(d.lat, d.lon, T);
-        if (!pb.front || !pc.front || !pd.front) continue;
-        const band = Math.min(BANDS - 1, Math.floor(pa.z * BANDS));
-        const path = paths[band];
-        path.moveTo(pa.sx, pa.sy);
-        path.lineTo(pb.sx, pb.sy);
-        path.lineTo(pc.sx, pc.sy);
-        path.lineTo(pd.sx, pd.sy);
+      for (let i = 0; i < q.length; i += 12) {
+        if (!this.#projectXYZ(q[i], q[i + 1], q[i + 2], T, A)) continue;
+        if (!this.#projectXYZ(q[i + 3], q[i + 4], q[i + 5], T, B)) continue;
+        if (!this.#projectXYZ(q[i + 6], q[i + 7], q[i + 8], T, C)) continue;
+        if (!this.#projectXYZ(q[i + 9], q[i + 10], q[i + 11], T, D)) continue;
+        const path = paths[Math.min(BANDS - 1, Math.floor(A[2] * BANDS))];
+        path.moveTo(A[0], A[1]);
+        path.lineTo(B[0], B[1]);
+        path.lineTo(C[0], C[1]);
+        path.lineTo(D[0], D[1]);
         path.closePath();
         any = true;
       }
       if (any) {
-        ctx.fillStyle = this._c(o.landColor ?? o.dotColor);
+        ctx.fillStyle = this._c(o.figureColor);
         for (let i = 0; i < BANDS; i++) {
           ctx.globalAlpha = 0.35 + 0.65 * ((i + 0.5) / BANDS);   // the fade the dots wear
           ctx.fill(paths[i]);
@@ -837,24 +764,9 @@ export class GlobeRenderer {
     }
 
     if (style.stroke) {
-      ctx.strokeStyle = this._c(o.landStroke ?? o.landColor ?? o.dotColor);
-      ctx.lineWidth = o.landStrokeWidth ?? 1;
-      ctx.lineJoin = "round";
-      for (const loop of this._land.loops) {
-        let drawing = false;
-        for (const [ col, row ] of loop) {
-          const g = cellCorner(col, row, grid);
-          const p = this.#project(g.lat, g.lon, T);
-          if (!p.front) {
-            if (drawing) { ctx.stroke(); drawing = false; }
-            continue;
-          }
-          if (!drawing) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); drawing = true; }
-          else ctx.lineTo(p.sx, p.sy);
-          ctx.globalAlpha = 0.3 + 0.7 * p.z;
-        }
-        if (drawing) ctx.stroke();
-      }
+      // Contours are stroked per depth band like everything else: a single
+      // stroke() can only carry one alpha.
+      this.#strokeBanded(this.#projectRings(geom.loops, T), strokeColor, o.figureStrokeWidth ?? 1, 1);
     }
     ctx.globalAlpha = 1;
   }
@@ -869,9 +781,8 @@ export class GlobeRenderer {
   #drawGraticule(T) {
     const o = this.o;
     if (!o.graticule || !this._graticule) return;
-    const ctx = this.ctx;
-    const color = this._c(o.graticuleColor ?? o.dotColor);
-    const equator = this._c(o.equatorColor ?? o.graticuleColor ?? o.dotColor);
+    const color = this._c(o.graticuleColor ?? o.figureColor);
+    const equator = this._c(o.equatorColor ?? o.graticuleColor ?? o.figureColor);
 
     const project = (lines) => lines.map((line) => line.map(([ lat, lon ]) => this.#project(lat, lon, T)));
     this.#strokeBanded(project(this._graticule.meridians), color, 1, o.graticuleOpacity);
@@ -918,20 +829,11 @@ export class GlobeRenderer {
     ctx.globalAlpha = 1;
   }
 
-  // Position host-supplied DOM against the sphere.
-  //
-  // mappo writes ONE thing per element — a translate3d on the element that
-  // carries data-lat/data-lon — and publishes depth as a custom property.
-  // It deliberately does not touch scale, opacity or transition: those belong
-  // to the host's own stylesheet, and an element whose position is rewritten
-  // every frame must not also carry an eased transform, or the two fight.
-  // The documented pattern is therefore a positioned root with a freely
-  // styled child inside it.
   // Where a point on — or above — the globe lands on screen, in CSS pixels
   // from the top-left of the element. This is the same projection the frame
   // was drawn with, so anything positioned by it is registered to the pixel.
   //
-  // Returns null before the first frame. `front` is false only when the Earth
+  // Returns null before the first frame. `front` is false only when the body
   // is between you and the point.
   locate(lat, lon, radius = 1) {
     if (!this._T) return null;
@@ -944,8 +846,19 @@ export class GlobeRenderer {
     };
   }
 
+  // Position host-supplied DOM against the sphere.
+  //
+  // mappo writes ONE thing per element — a translate3d on the element that
+  // carries data-lat/data-lon — and publishes depth as a custom property.
+  // It deliberately does not touch scale, opacity or transition: those belong
+  // to the host's own stylesheet, and an element whose position is rewritten
+  // every frame must not also carry an eased transform, or the two fight.
+  // The documented pattern is therefore a positioned root with a freely
+  // styled child inside it.
   #placeOverlays(T) {
-    if (this.o.overlays === false || !this._overlayEls) return;
+    if (!this._overlayLayer) return;
+    this._overlayLayer.hidden = this.o.overlays === false;
+    if (this.o.overlays === false) return;
     for (const el of this._overlayEls) {
       const lat = Number(el.dataset.lat);
       const lon = Number(el.dataset.lon);
@@ -992,10 +905,10 @@ export class GlobeRenderer {
           else lift = (anim.heightPx * bump) / R;
         }
       }
-    const k = 1 + lift;
-    const dx = x1 * R * k, dy = -y2 * R * k;
-    const sx = cx + dx * cosRo - dy * sinRo;
-    const sy = cy + dx * sinRo + dy * cosRo;
+      const k = 1 + lift;
+      const dx = x1 * R * k, dy = -y2 * R * k;
+      const sx = cx + dx * cosRo - dy * sinRo;
+      const sy = cy + dx * sinRo + dy * cosRo;
       const s = base * (0.45 + 0.55 * z2) * sizeMul; // foreshortening at the limb
       ctx.globalAlpha = alphaLo + alphaHi * z2; // …and a depth fade
       if (shape === "circle") {
@@ -1013,6 +926,11 @@ export class GlobeRenderer {
       }
     }
   }
+
+  _scratch = new Float64Array(3);
+  _scratchB = new Float64Array(3);
+  _scratchC = new Float64Array(3);
+  _scratchD = new Float64Array(3);
 
   _draw() {
     const { ctx, side } = this;
@@ -1037,7 +955,7 @@ export class GlobeRenderer {
     if (o.globeRing !== false) {
       ctx.beginPath();
       ctx.arc(cx, cy, R * 1.08, 0, Math.PI * 2);
-      ctx.strokeStyle = this._c(o.dotColor);
+      ctx.strokeStyle = this._c(o.figureColor);
       ctx.globalAlpha = 0.35;
       ctx.lineWidth = 1;
       ctx.stroke();
@@ -1069,16 +987,16 @@ export class GlobeRenderer {
     const base = Math.max(0.75, (4 * R) / (o.cols ?? 170)) * o.dotSize * 1.6;
     const shape = o.dotShape === "circle" || o.dotShape === "triangle" ? o.dotShape : "square";
 
-    // Water first — smaller, dimmer, same transform — so land reads on top.
-    // Water never animates: the ocean is ground, the land is figure.
-    if (this.waterPoints) {
-      ctx.fillStyle = this._c(o.oceanColor);
-      this.#drawPoints(this.waterPoints, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, base: base * 0.62, shape, alphaLo: 0.15, alphaHi: 0.55 });
+    // Ground first — smaller, dimmer, same transform — so the figure reads on
+    // top. The ground never animates: it is ground, the figure is figure.
+    if (this.groundPoints) {
+      ctx.fillStyle = this._c(o.groundColor);
+      this.#drawPoints(this.groundPoints, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, base: base * 0.62, shape, alphaLo: 0.15, alphaHi: 0.55 });
     }
 
-    // The six animation modes on a sphere: the phase/amp fields decide when
-    // and how far each dot lifts RADIALLY off the surface (sparkle scales
-    // size instead) — the canvas twin of the flat renderer's translateY.
+    // The animation modes on a sphere: the phase/amp fields decide when and
+    // how far each dot lifts RADIALLY off the surface (sparkle scales size
+    // instead) — the canvas twin of the flat renderer's translateY.
     const anim = !this._static && o.animation && o.animation !== "none" && this.phases ? {
       mode: o.animation,
       cycle: ((this._time || 0) / o.animationPeriod) % 1,
@@ -1088,16 +1006,16 @@ export class GlobeRenderer {
       phases: this.phases
     } : null;
 
-    const landStyle = parseLandStyle(o.land);
-    if (landStyle.dots) {
-      ctx.fillStyle = this._c(o.dotColor);
+    const figureStyle = parseFigureStyle(o.figure);
+    if (figureStyle.dots) {
+      ctx.fillStyle = this._c(o.figureColor);
       this.#drawPoints(this.points, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, base, shape, alphaLo: 0.25, alphaHi: 0.75, anim,
-        flags: this.highlightFlags, baseColor: this._c(o.dotColor), hiColor: this._c(o.highlightColor) });
+        flags: this.highlightFlags, baseColor: this._c(o.figureColor), hiColor: this._c(o.highlightColor) });
     } else {
-      this.#drawLand(T, landStyle);
+      this.#drawFigure(T, figureStyle);
     }
 
-    // Hovered dot re-draws bigger in the hover color (cheap overdraw).
+    // Hovered dot re-draws bigger in the hover colour (cheap overdraw).
     if (this._hover?.kind === "dot") {
       const hp = latLonToXYZ(this._hover.detail.lat, this._hover.detail.lon);
       const x1 = hp.x * cosR + hp.z * sinR;
@@ -1105,29 +1023,31 @@ export class GlobeRenderer {
       const y2 = hp.y * cosT - z1 * sinT;
       const z2 = hp.y * sinT + z1 * cosT;
       if (z2 > 0.01) {
-        ctx.fillStyle = this._c(o.dotHoverColor) ?? hoverShade(this._c(o.dotColor));
+        ctx.fillStyle = this._c(o.dotHoverColor) ?? hoverShade(this._c(o.figureColor));
         ctx.globalAlpha = 1;
-    const s = base * (0.45 + 0.55 * z2) * o.dotHoverScale;
-    const hdx = x1 * R, hdy = -y2 * R;
-    this.#drawShape(cx + hdx * cosRo - hdy * sinRo, cy + hdx * sinRo + hdy * cosRo, s, shape);
+        const s = base * (0.45 + 0.55 * z2) * o.dotHoverScale;
+        const hdx = x1 * R, hdy = -y2 * R;
+        this.#drawShape(cx + hdx * cosRo - hdy * sinRo, cy + hdx * sinRo + hdy * cosRo, s, shape);
       }
     }
 
-    // City markers ride the same transform, drawn on top at full strength;
+    // Place markers ride the same transform, drawn on top at full strength;
     // the hovered one swells by markerHoverScale.
     ctx.fillStyle = this._c(o.markerColor);
-    for (const city of this.cityData) {
-      const x1 = city.p.x * cosR + city.p.z * sinR;
-      const z1 = -city.p.x * sinR + city.p.z * cosR;
-      const y2 = city.p.y * cosT - z1 * sinT;
-      const z2 = city.p.y * sinT + z1 * cosT;
+    const mshape = [ "circle", "square", "triangle", "pin" ].includes(o.markerShape) ? o.markerShape : "circle";
+    for (const place of this.placeData) {
+      const x1 = place.p.x * cosR + place.p.z * sinR;
+      const z1 = -place.p.x * sinR + place.p.z * cosR;
+      const y2 = place.p.y * cosT - z1 * sinT;
+      const z2 = place.p.y * sinT + z1 * cosT;
       if (z2 <= 0.01) continue;
-      const hovered = this._hover?.kind === "city" && this._hover.detail.name === city.name;
+      const hovered = this._hover?.kind === "place" && this._hover.detail.name === place.name;
       ctx.globalAlpha = 1;
+      if (place.color) ctx.fillStyle = this._c(place.color);
       const ms = base * o.markerScale * 0.6 * (hovered ? o.markerHoverScale : 1);
-    const mshape = ["circle", "square", "triangle", "pin"].includes(o.markerShape) ? o.markerShape : "circle";
-    const mdx = x1 * R, mdy = -y2 * R;
-    this.#drawShape(cx + mdx * cosRo - mdy * sinRo, cy + mdx * sinRo + mdy * cosRo, ms * 2, mshape);
+      const mdx = x1 * R, mdy = -y2 * R;
+      this.#drawShape(cx + mdx * cosRo - mdy * sinRo, cy + mdx * sinRo + mdy * cosRo, ms * 2, mshape);
+      if (place.color) ctx.fillStyle = this._c(o.markerColor);
     }
     ctx.globalAlpha = 1;
 
