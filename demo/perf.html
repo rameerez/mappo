@@ -16,7 +16,7 @@
     .fail { color: #b42318; font-weight: 700; }
     #stage { border: 1px solid #e5e9ef; border-radius: 12px; padding: 1rem; margin-top: 1.5rem; }
   </style>
-  <script type="module" src="../dist/mappo.js"></script>
+  <script type="module" src="../dist/all.js"></script>
 </head>
 <body>
 <main>
@@ -30,7 +30,7 @@
   <div id="stage"><mappo-world id="map" places="London, Lagos, Singapore, New York, Tokyo"></mappo-world></div>
 
   <script type="module">
-    import { Mappo } from "../dist/mappo.js";
+    import { Mappo } from "../dist/all.js";
     // Deep console mode: every internal decision logs as "[mappo] …",
     // every harness metric as "[mappo-perf] …" — filter the console by either.
     Mappo.debug = true;

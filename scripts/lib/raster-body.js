@@ -10,7 +10,7 @@
 // pick the wrong level.
 
 import { traceCells } from "../../src/figure.js";
-import { encodeRings, maskAt, packBits } from "./codec.js";
+import { encodeRings, maskAt, packBits, packMask } from "./codec.js";
 import { simplifyRing } from "./geometry.js";
 import { readImage } from "./image.js";
 
@@ -99,7 +99,7 @@ export function classifyRaster({
     .sort((a, b) => b.length - a.length);
 
   return {
-    mask: { width: maskWidth, height: maskHeight, bits, base64: packBits(bits) },
+    mask: { width: maskWidth, height: maskHeight, bits, base64: packBits(bits), rle: packMask(bits, maskWidth, maskHeight) },
     threshold,
     coverage: coverage(threshold),
     rings,

@@ -36,13 +36,12 @@
 // globes on one page is a first-class case.
 
 import { resolvePlaces } from "./body.js";
-import { stitchRings } from "./projections.js";
 import { cellCenter, cellCorner } from "./projection.js";
 import { normalizeRings, pointInRings } from "./highlight.js";
 import { noise2 } from "./noise.js";
 import { hoverShade, resolveColor, usesCssVars } from "./color.js";
 import { buildGraticule } from "./graticule.js";
-import { buildFigure, parseFigureStyle, figureOutlines, figureBorders } from "./figure.js";
+import { buildFigure, parseFigureStyle, figureOutlines, figureBorders, vectorFeature } from "./figure.js";
 
 const DEGREES = 180 / Math.PI;
 const GOLDEN = (1 + Math.sqrt(5)) / 2;
@@ -298,6 +297,11 @@ export class GlobeRenderer {
     this.#bindPointer();
     this._resize(); // sizes the canvas and draws the first frame
     if (!this._static) this._loop();
+  }
+
+  // The root element this renderer put in the container; Mappo labels it.
+  get element() {
+    return this.canvas;
   }
 
   // Options that only change how the existing geometry is PAINTED or POINTED.
@@ -864,7 +868,7 @@ export class GlobeRenderer {
   #strokeVector(rings, T, { stroke, width, alphaScale = 1 }) {
     // Stitched: the pack's cut at ±180° is a closure edge for a flat map, and
     // stroking it on a sphere drew a line down the antimeridian.
-    this.#strokeBanded(this.#projectRings(xyzRings(stitchRings(rings)), T), stroke, width, 1, alphaScale, T);
+    this.#strokeBanded(this.#projectRings(xyzRings(vectorFeature().stitchRings(rings)), T), stroke, width, 1, alphaScale, T);
   }
 
   // Grid geometry for the figure — the same figure.js geometry the flat map

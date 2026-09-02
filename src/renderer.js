@@ -56,18 +56,18 @@
 // - The tilt lives on a WRAPPER div around the svg — the svg itself stays
 //   untransformed so consumer getBoundingClientRect math keeps working.
 
-import { resolveBody, resolvePlaces, bodyLatRange, trackMap, untrackMap } from "./body.js";
+import { resolveBody, resolvePlaces, bodyLatRange, trackMap, untrackMap, rerenderLive, warnIfStillPending } from "./body.js";
 import { project, cellCenter } from "./projection.js";
-import { resolveProjection, projectionDefaultRange, stitchRings, projectRings, projectPolyline, signedArea } from "./projections.js";
+import { resolveProjection, hasProjection, projectionDefaultRange, projectPolyline, signedArea } from "./projections.js";
 import { normalizeRings, pointInRings } from "./highlight.js";
-import { buildFigure, parseFigureStyle, figureOutlines, figureBorders } from "./figure.js";
+import { buildFigure, parseFigureStyle, figureOutlines, figureBorders, vectorFeature } from "./figure.js";
 import { buildGraticule } from "./graticule.js";
 import { noise2 } from "./noise.js";
-import { GlobeRenderer } from "./globe.js";
 import { hoverShade } from "./color.js";
 
 export const DEFAULTS = {
-  // Shape of the world: "flat" (SVG plane) or "globe" (rotating canvas sphere).
+  // Shape of the world: "flat" (SVG plane) or "globe" (rotating canvas sphere,
+  // the opt-in module mappo/globe). Other renderers register by name.
   mode: "flat",
   // Which world. Earth unless a body pack has been registered and named; see
   // src/body.js. Takes a name or a body object.
@@ -206,6 +206,22 @@ const DEF_KEYS = new Set([ "dotShape", "dotSize", "markerShape", "markerScale", 
 const MARKER_KEYS = new Set([ "places", "markerPulse", "interactive" ]);
 const CALLBACK_KEYS = new Set([ "onDotClick", "onDotEnter", "onPlaceClick", "onPlaceEnter" ]);
 
+// Renderers other than the flat SVG map are opt-in modules (mappo/globe). A
+// mode with no renderer yet draws nothing, warns after a grace period, and is
+// drawn the moment its module registers — the doctrine of a body pack that
+// arrives after the page's maps did, applied to renderers. A renderer is a
+// class constructed as (container, options, body, overlays) with update(changed,
+// body), destroy(), locate(lat, lon, radius) and an `element`.
+const RENDERERS = new Map();
+export function registerRenderer(mode, Renderer) {
+  if (typeof mode !== "string" || !mode.trim() || mode === "flat") throw new TypeError('registerRenderer needs a mode name other than "flat"');
+  if (typeof Renderer !== "function") throw new TypeError(`registerRenderer("${mode}") needs a renderer class`);
+  RENDERERS.set(mode, Renderer);
+  rerenderLive((m) => m.options.mode === mode);
+  return Renderer;
+}
+export const knownRenderers = () => [ "flat", ...RENDERERS.keys() ];
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 const CELL = 10;        // internal SVG units per grid cell — never exposed
 
@@ -273,6 +289,8 @@ export class Mappo {
     this._overlayState = new Map(this._overlays.map((el) => [ el, captureOverlay(el) ]));
     this._dotsCache = new Map();    // projection|cols → { markup, dots }
     this._figureCache = new Map();  // figure paths have a different value shape
+    this._renderer = null;          // the non-flat renderer in charge, if any
+    this._pending = null;           // what this map is waiting for, if anything
     this.#applyLatRange();
     this.render();
     // Do not retain a half-constructed map if a host DOM or custom body throws
@@ -290,6 +308,23 @@ export class Mappo {
   // forward(lat, lon), inverse(x, y), aspect, outline() in unit-frame coordinates.
   get projection() {
     return this.grid?.projection ?? null;
+  }
+
+  // What this map is waiting for before it can draw — a body pack, a renderer
+  // module, a projection module — as a short description, or null. A waiting
+  // map draws nothing, on purpose.
+  get pending() {
+    return this._pending ?? (this._body.pending ? `body "${this._body.id}"` : null);
+  }
+
+  // Forget every geometry cache and draw again. What a module arriving late
+  // calls through rerenderLive(): the world may have gained rings, a renderer
+  // or a projection since this map last looked.
+  refresh() {
+    this._dotsCache.clear();
+    this._figureCache.clear();
+    this._cacheBytes = 0;
+    this.render();
   }
 
   // Swap the world under a map that has already drawn. Two things have to
@@ -315,7 +350,7 @@ export class Mappo {
   // answer ignores tilt/rotate/perspective — those are a CSS transform on top
   // of the box this reports in.
   locate(lat, lon, radius = 1) {
-    if (this._globe) return this._globe.locate(lat, lon, radius);
+    if (this._renderer) return this._renderer.locate(lat, lon, radius);
     // The LAYOUT box, computed rather than measured: the svg fills the
     // element's width and takes its height from the grid's aspect, and
     // getBoundingClientRect would fold the tilt transform into the answer.
@@ -363,7 +398,7 @@ export class Mappo {
     // makes the update atomic and also fingerprints mutable d3 projection
     // state, so a rotate()/clipAngle()/parallels() mutation cannot reuse stale
     // geometry merely because the function identity stayed the same.
-    const resolvedNext = nextMode === "flat"
+    const resolvedNext = nextMode === "flat" && hasProjection(nextProjection)
       ? resolveProjection(nextProjection, { latRange: nextRange, centerLon: nextCenter })
       : null;
     if (resolvedNext && this.grid?.projection && resolvedNext.key !== this.grid.projection.key && !changed.includes("projection")) {
@@ -392,6 +427,11 @@ export class Mappo {
       dbg("update: callbacks only", changed, "→ no work");
       return; // read at dispatch time
     }
+    // A waiting map has no scene to patch; whatever changed, look again.
+    if (this._pending) {
+      this.#scheduleRebuild();
+      return;
+    }
 
     // Globe mode sidesteps the SVG patch tiers entirely: the canvas redraws
     // every frame anyway, so any change is a cheap buffer/style refresh —
@@ -401,13 +441,13 @@ export class Mappo {
       this.#scheduleRebuild();
       return;
     }
-    if (this.options.mode === "globe") {
-      if (this._globe) {
-        this._globe.update(changed, this._body);
+    if (this.options.mode !== "flat") {
+      if (this._renderer) {
+        this._renderer.update(changed, this._body);
         // Canvas has no accessible descendants: keep its text alternative in
         // sync with runtime marker/body changes just as the flat SVG does.
-        this._globe.canvas.setAttribute("aria-label", this.#ariaLabel());
-        dbg("update:", changed, "→ globe refresh");
+        this._renderer.element?.setAttribute("aria-label", this.#ariaLabel());
+        dbg("update:", changed, `→ ${this.options.mode} refresh`);
       }
       else this.#scheduleRebuild();
       return;
@@ -440,8 +480,8 @@ export class Mappo {
   destroy() {
     untrackMap(this);
     clearTimeout(this._rebuildTimer);
-    this._globe?.destroy();
-    this._globe = null;
+    this._renderer?.destroy();
+    this._renderer = null;
     this.svg = null;
     this.styleEl = null;
     this._tiltWrap = null;
@@ -465,7 +505,7 @@ export class Mappo {
   // framing, or from the projection when it has an opinion (a polar map wants
   // a hemisphere, not Earth's −58…84).
   #rangeFor(body, override, projection, mode = this.options.mode) {
-    const inherited = mode === "globe" ? bodyLatRange(body) : projectionDefaultRange(projection, bodyLatRange(body));
+    const inherited = mode !== "flat" ? bodyLatRange(body) : projectionDefaultRange(projection, bodyLatRange(body));
     const range = [ override[0] ?? inherited[0], override[1] ?? inherited[1] ];
     const [ min, max ] = range;
     if (!Number.isFinite(min) || !Number.isFinite(max) || min < -90 || max > 90 || min >= max) {
@@ -525,19 +565,34 @@ export class Mappo {
       this.container.style.display = "block";
     }
 
-    if (o.mode === "globe") {
-      // Leaving the SVG scene: the canvas replaces the container's children,
+    if (o.mode !== "flat") {
+      const Renderer = RENDERERS.get(o.mode);
+      if (!Renderer) {
+        this.#drawPending(`renderer "${o.mode}"`,
+          `mode="${o.mode}": no renderer registered — import "mappo/${o.mode}". Waiting maps draw nothing.`);
+        return;
+      }
+      this._pending = null;
+      // Leaving the SVG scene: the renderer replaces the container's children,
       // so the persistent svg/style handles must not survive to be patched
       // while detached. Rebuilt from scratch on return to flat.
       if (this.svg) { this.svg = null; this.styleEl = null; this._tiltWrap = null; this._overlayLayer = null; }
       this.grid = null;
-      if (this._globe) this._globe.update(null, this._body);
-      else this._globe = new GlobeRenderer(this.container, this.options, this._body, this._overlays);
-      this._globe.canvas.setAttribute("role", "img");
-      this._globe.canvas.setAttribute("aria-label", this.#ariaLabel());
+      if (this._renderer) this._renderer.update(null, this._body);
+      else this._renderer = new Renderer(this.container, this.options, this._body, this._overlays);
+      this._renderer.element?.setAttribute("role", "img");
+      this._renderer.element?.setAttribute("aria-label", this.#ariaLabel());
       return;
     }
-    if (this._globe) { this._globe.destroy(); this._globe = null; }
+    if (this._renderer) { this._renderer.destroy(); this._renderer = null; }
+    if (!hasProjection(o.projection)) {
+      const named = typeof o.projection === "string" ? `projection "${o.projection}"` : "a custom projection";
+      this.#drawPending(named, typeof o.projection === "string"
+        ? `projection "${o.projection}" is not registered — import "mappo/projections". Waiting maps draw nothing.`
+        : 'custom and d3-geo projections need "mappo/projections". Waiting maps draw nothing.');
+      return;
+    }
+    this._pending = null;
 
     const projection = resolveProjection(o.projection, { latRange: o.latRange, centerLon: o.centerLon });
     const colsWanted = o.cols ?? 120; // auto default for the flat map
@@ -611,6 +666,21 @@ export class Mappo {
     dbg(`render: cols=${cols} rows=${rows} · ${projection.id} · build ${buildMs.toFixed(1)}ms · parse ${parseMs.toFixed(1)}ms · total ${this._lastRenderMs.toFixed(1)}ms · ${svg.querySelectorAll("*").length} nodes`);
     if (this._overlayLayer) this._overlayLayer.hidden = o.overlays === false;
     this.#placeOverlays();
+  }
+
+  // Draw nothing, on purpose, until what the map waits for registers; warn once
+  // after a grace period if it never does. Whatever renderer was in charge is
+  // torn down, so a later render starts clean. The host's overlay children are
+  // re-adopted on that first real render, as after any renderer switch.
+  #drawPending(what, hint) {
+    this._pending = what;
+    this._renderer?.destroy();
+    this._renderer = null;
+    this.svg = null; this.styleEl = null; this._tiltWrap = null; this._overlayLayer = null;
+    this.grid = null;
+    this.container.replaceChildren();
+    this.container.setAttribute?.("data-mappo-pending", what);
+    warnIfStillPending(what, () => this._pending === what, hint);
   }
 
   // Position adopted overlay children against the flat projection.
@@ -766,6 +836,9 @@ export class Mappo {
   // without touching this markup.
   #figureMarkup(grid, o) {
     const vector = figureOutlines(o.figureSource, this._body);
+    // Rings asked for and not available: grid contours are drawn meanwhile, and
+    // one warning names the module that would supply them.
+    if (o.figureSource === "vector" && !vector) this.#hintVector("figure-source=\"vector\"");
     // `borders` belongs in the key: the cached markup CONTAINS the borders
     // path, so leaving it out means turning borders off replays a cached scene
     // that still has them. The body is NOT in the key: the caches are dropped
@@ -775,9 +848,10 @@ export class Mappo {
     if (!geom) {
       const { cells, loops } = buildFigure(grid, { body: this._body });
       const borders = o.borders ? figureBorders(this._body) : null;
+      if (o.borders && !borders) this.#hintVector("borders");
       geom = { cells, fill: "", complements: [], edge: "", borders: "" };
       if (vector) {
-        const projected = projectRings(stitchRings(vector), grid.projection);
+        const projected = vectorFeature().projectRings(vectorFeature().stitchRings(vector), grid.projection);
         if (projected.complete !== false) {
           geom.fill = projected.fill.filter((p) => !p.complement).map((p) => this.#pathFrom(p.points, grid, true)).join("");
           // A ring whose interior holds the far pole of an azimuthal map is the
@@ -799,7 +873,7 @@ export class Mappo {
         geom.edge = d;
       }
       if (borders?.length) {
-        const projected = projectRings(stitchRings(borders), grid.projection);
+        const projected = vectorFeature().projectRings(vectorFeature().stitchRings(borders), grid.projection);
         if (projected.complete !== false) geom.borders = projected.edge.map((arc) => this.#pathFrom(arc, grid, false)).join("");
       }
       this._figureCache.set(key, geom);
@@ -813,6 +887,17 @@ export class Mappo {
       `<path class="mappo-figure-edge" d="${geom.edge}"/>` +
       (geom.borders ? `<path class="mappo-borders" d="${geom.borders}"/>` : "") +
       this.#figureHighlightMarkup(grid, o) + `</g>`;
+  }
+
+  // The module that would supply the rings a map asked for: the vector feature
+  // itself, or Earth's own rings. A body that simply has no rings gets no
+  // warning; that is what the grid fallback is for.
+  #hintVector(what) {
+    const module = !vectorFeature() ? "mappo/vector" : this._body.id === "earth" ? "mappo/bodies/earth-vector" : null;
+    if (!module) return;
+    warnIfStillPending(`vector:${module}:${this._body.id}`,
+      () => !vectorFeature() || (this._body.id === "earth" && !this._body.outlines?.()),
+      `${what} on ${this._body.name}: rings are not loaded — import "${module}" (grid contours are drawn meanwhile)`);
   }
 
   // The graticule on the flat map: the same lat/lon lines the globe draws,

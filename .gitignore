@@ -1,3 +1,6 @@
 node_modules/
 TODO
 .cache/
+
+# source maps are built, not versioned; npm publish builds them fresh
+dist/**/*.map

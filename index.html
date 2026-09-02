@@ -142,7 +142,7 @@
     }
   </style>
   <script type="module" src="./assets/theme.js"></script>
-  <script type="module" src="./dist/mappo.js"></script>
+  <script type="module" src="./dist/all.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -168,13 +168,14 @@
     coastlines</strong>, flat or as a leaning globe you can spin, with country borders,
     a graticule, and your own HTML pinned to places on it. No build step, no API key,
     no network calls — the whole planet ships in the file.</p>
-    <pre><code>&lt;script type="module" src="https://unpkg.com/mappo"&gt;&lt;/script&gt;
+    <pre><code>&lt;script type="module" src="https://unpkg.com/mappo/dist/all.js"&gt;&lt;/script&gt;
 
 &lt;mappo-world mode="globe"
   figure="solid outline" figure-source="vector"&gt;&lt;/mappo-world&gt;</code></pre>
-    <p class="note">That is the entire integration. <strong>79&nbsp;KB gzipped</strong> with the
-    whole Earth inside, zero dependencies, MIT. The Moon and Mars are opt-in packs; any world
-    you can describe as a function is a body too.</p>
+    <p class="note">That is the entire integration. The core is <strong>21.4&nbsp;KB gzipped</strong>
+    with the whole Earth inside, zero dependencies, MIT. The globe, real coastlines, the other
+    projections and other worlds are opt-in modules — or take everything at once in
+    <code>all.js</code>, 56&nbsp;KB. Any world you can describe as a function is a body too.</p>
   </div>
   <div class="hero-stage">
     <mappo-world id="hero" mode="globe" cols="170" rotate-speed="5"
@@ -439,7 +440,7 @@ import "mappo"</code></pre>
 <div class="reasons">
   <div>
     <h3>Two levels of detail of the same world</h3>
-    <p>A ~22&nbsp;KB packed land bitmask (Natural Earth, public domain) generates the dot
+    <p>A 3.6&nbsp;KB run-length land mask (Natural Earth, public domain) generates the dot
     grid at any resolution — resolution is a slider, not a redesign. Ask for
     <code>figure-source="vector"</code> instead and you get the real coastline, smooth at
     any size, plus borders that follow rivers.</p>
@@ -466,7 +467,7 @@ import "mappo"</code></pre>
   </div>
   <div>
     <h3>Any world, one interface</h3>
-    <p>Earth ships in the bundle; the Moon and Mars are opt-in packs of 8–11&nbsp;KB. A body
+    <p>Earth ships in the core; the Moon and Mars are opt-in packs of 7–10&nbsp;KB. A body
     is a small object — <code>figure(lat, lon)</code>, optional outlines, borders and places —
     so an invented planet for a game is a function, and <code>registerBody()</code> gives it
     a <code>&lt;mappo-yourworld&gt;</code> tag.</p>
@@ -582,7 +583,7 @@ import "mappo"</code></pre>
 <script type="module">
   import { bindThemeToggle } from "./assets/theme.js";
   import Coloris from "./demo/coloris.js";
-  import { registerBody } from "./dist/mappo.js";
+  import { registerBody } from "./dist/all.js";
   import { MOON } from "./dist/bodies/moon.js";
   import { MARS } from "./dist/bodies/mars.js";
 

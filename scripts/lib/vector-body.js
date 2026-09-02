@@ -4,7 +4,7 @@
 // the grid world and the vector world are the same world at two levels of
 // detail, by construction.
 
-import { encodeRings, packBits } from "./codec.js";
+import { encodeRings, packBits, packMask } from "./codec.js";
 import { ringArea, simplifyRing } from "./geometry.js";
 
 // Every polygon ring in the collection (outer rings AND holes), as [lat, lon].
@@ -49,7 +49,7 @@ export function rasterizeRings(rings, width, height) {
       }
     }
   }
-  return { width, height, bits, base64: packBits(bits) };
+  return { width, height, bits, base64: packBits(bits), rle: packMask(bits, width, height) };
 }
 
 // Simplified, size-filtered rings ready to encode. `minArea` (deg²) drops

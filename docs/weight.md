@@ -5,6 +5,30 @@ globe and d3 stream-adapter work), Node 22.22, esbuild 0.25.5 for the minified
 figures, `gzip -9` and brotli quality 11. The script that produced every
 number is `scripts/weight.mjs` (see section 9); rerun it after any change.
 
+## 0. What shipped
+
+The analysis below was written against the single 98 KB bundle; this is what
+the restructure it recommended produced, measured on the built `dist/`
+(`npm run build` prints the same table):
+
+| file | raw | gzip | brotli | what it is |
+|---|---|---|---|---|
+| `dist/mappo.js` | 54.2 KB | **21.4 KB** | 18.5 KB | the core: engine, Earth's mask and gazetteer, equirectangular |
+| `dist/globe.js` | 22.0 KB | 8.8 KB | 7.8 KB | `mode="globe"` |
+| `dist/projections.js` | 8.4 KB | 3.7 KB | 3.3 KB | Equal Earth, polar stereographic, custom and d3-geo adapters |
+| `dist/vector.js` | 3.6 KB | 1.8 KB | 1.6 KB | seam stitching and cutting for vector outlines |
+| `dist/bodies/earth-vector.js` | 38.8 KB | 22.0 KB | 19.3 KB | Earth's coastline and border rings |
+| `dist/bodies/moon.js` | 19.3 KB | 9.5 KB | 8.3 KB | the Moon pack |
+| `dist/bodies/mars.js` | 10.7 KB | 6.9 KB | 6.0 KB | the Mars pack |
+| `dist/all.js` | 125.3 KB | 55.8 KB | 48.0 KB | everything but the Moon and Mars, self-contained |
+
+Beyond the split and the minifier, two encodings changed: the mask is stored
+as run lengths (Earth's 16 KB of bits became 3.6 KB of text, 2.3 KB gzipped,
+from 3.5 KB as base64) and the gazetteer as one string. The remaining
+candidates in section 7 — a shared-arc topology for the borders, a coarser
+coastline tolerance — are still open. `test/package.test.js` fails when the
+core exceeds 22 KB gzipped.
+
 ## 1. Summary
 
 | what a page downloads today | raw | gzip | brotli |

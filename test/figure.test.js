@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildFigure, parseFigureStyle, cellCorner, cellCenter, EARTH, DEFAULTS } from "../dist/mappo.js";
+import "../dist/bodies/earth-vector.js";   // Earth's rings are an opt-in module
 
 const GRID = { cols: 120, rows: 47, latRange: [ -58, 84 ] };
 const earth = { body: EARTH };

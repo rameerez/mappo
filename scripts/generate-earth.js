@@ -5,7 +5,10 @@
 // (public domain, https://www.naturalearthdata.com/about/terms-of-use/), from
 // the natural-earth-vector repository at a pinned commit, verified by SHA-256.
 // The land polygons are rasterised into the 512×256 mask AND simplified into
-// the vector coastline; the country polygons become the borders.
+// the vector coastline; the country polygons become the borders. The mask and
+// the gazetteer ship in the core bundle (src/bodies/earth.js); the rings are a
+// module of their own (src/bodies/earth-vector.js, mappo/bodies/earth-vector),
+// because they are a third of the package and the default map never reads them.
 //
 // Run: npm run generate:earth   (network on first run; .cache/ after that)
 
@@ -14,7 +17,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchCached } from "./lib/fetch.js";
 import { maskAt } from "./lib/codec.js";
-import { renderBodyPack } from "./lib/pack.js";
+import { renderBodyPack, renderBodyVectorModule } from "./lib/pack.js";
 import { encodeRings, geoJsonRings, rasterizeRings, simplifiedRings } from "./lib/vector-body.js";
 import places from "./data/earth-places.js";
 
@@ -62,25 +65,39 @@ for (const [ name, lat, lon, expected ] of checks) {
 console.log(`outlines: ${outlines.length} rings, ${outlines.reduce((n, r) => n + r.length, 0)} points`);
 console.log(`borders:  ${borders.length} rings, ${borders.reduce((n, r) => n + r.length, 0)} points`);
 
-const source = renderBodyPack({
+const body = {
+  id: "earth",
+  name: "Earth",
+  radiusKm: 6371,
+  latRange: [ -58, 84 ],
+  terms: { figure: "land", ground: "ocean" }
+};
+const provenance = `Data: Natural Earth 110m land and admin-0 countries (public domain),
+natural-earth-vector @ ${COMMIT}, SHA-256 pinned in the generator.`;
+
+// The core body: the mask the dots sample and the gazetteer. No rings.
+writeFileSync(join(here, "..", "src", "bodies", "earth.js"), renderBodyPack({
   generatedBy: "generate-earth.js",
-  notes: `Earth. Data: Natural Earth 110m land and admin-0 countries (public domain),
-natural-earth-vector @ ${COMMIT}, SHA-256 pinned in the generator. The figure is
-land against ocean; the borders are national boundaries. Default framing cuts
-Antarctica and the arctic emptiness.`,
-  body: {
-    id: "earth",
-    name: "Earth",
-    radiusKm: 6371,
-    latRange: [ -58, 84 ],
-    terms: { figure: "land", ground: "ocean" }
-  },
+  notes: `Earth, the body that ships in the core bundle. ${provenance} The figure is
+land against ocean. Default framing cuts Antarctica and the arctic emptiness.
+The coastline and border rings are the opt-in module mappo/bodies/earth-vector.`,
+  body,
   mask,
-  outlines: encodeRings(outlines),
-  borders: encodeRings(borders),
+  outlines: null,
+  borders: null,
   placesNotes: "About 160 cities chosen for world coverage. Coordinates are city centres to one decimal.",
   places
-});
-
-writeFileSync(join(here, "..", "src", "bodies", "earth.js"), source);
+}));
 console.log("wrote src/bodies/earth.js");
+
+// The rings: coastline (the figure's edge) and national borders.
+writeFileSync(join(here, "..", "src", "bodies", "earth-vector.js"), renderBodyVectorModule({
+  generatedBy: "generate-earth.js",
+  notes: `${provenance} The outlines are the land polygons simplified to 0.08°, the
+borders the admin-0 boundaries simplified to 0.10°; both drop specks under
+0.35 deg².`,
+  body,
+  outlines: encodeRings(outlines),
+  borders: encodeRings(borders)
+}));
+console.log("wrote src/bodies/earth-vector.js");

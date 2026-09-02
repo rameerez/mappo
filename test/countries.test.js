@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EARTH } from "../dist/mappo.js";
+import "../dist/bodies/earth-vector.js";
 import { regions, region } from "../demo/countries.js";
 
 // The analytics demo's data module: every country as keyed rings plus an

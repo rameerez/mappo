@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   EARTH, project, cellCenter, resolvePlace, snapToFigure, DEFAULTS, Mappo, parseFigureStyle, resolveProjection
 } from "../dist/mappo.js";
+import "../dist/bodies/earth-vector.js";   // Earth's rings: an opt-in module, needed by the tests below that read them
 
 // The dist bundle is what ships — test THAT, not src/, so a build bug can
 // never pass the suite.
@@ -142,7 +143,7 @@ test("locate: the flat map answers in CSS pixels from its own corner", () => {
   const map = Object.create(Mappo.prototype);
   Object.assign(map, {
     container: box, options: { ...DEFAULTS, latRange: [ -90, 90 ] },
-    grid: { cols: 360, rows: 180, latRange: [ -90, 90 ], projection: resolveProjection("equirectangular", { latRange: [ -90, 90 ] }) }, _globe: null, svg: null
+    grid: { cols: 360, rows: 180, latRange: [ -90, 90 ], projection: resolveProjection("equirectangular", { latRange: [ -90, 90 ] }) }, _renderer: null, svg: null
   });
   assert.deepEqual(map.locate(90, -180), { x: 0, y: 0, depth: 1, front: true });
   assert.deepEqual(map.locate(-90, 180), { x: 360, y: 180, depth: 1, front: true });

@@ -8,7 +8,7 @@
 //   node scripts/weight.mjs              everything
 //   node scripts/weight.mjs --no-minify  skip the esbuild pass (no network)
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -23,15 +23,17 @@ const kb = (n) => `${(n / 1024).toFixed(1)} KB`.padStart(9);
 const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/\n\s*\n+/g, "\n");
 const row = (...cells) => console.log(cells.map((c, i) => (i ? String(c).padStart(11) : String(c).padEnd(64))).join(""));
 
-// The module list is the build's, so this cannot drift from what ships.
-const build = read("scripts/build.js");
-const modules = [ ...new Set([ ...build.matchAll(/"([\w/.-]+\.js)"/g) ].map((m) => m[1])) ]
-  .filter((m) => existsSync(join(ROOT, "src", m)));
+// Every source module, the entries and the packs included.
+const modules = [
+  ...readdirSync(join(ROOT, "src")).filter((f) => f.endsWith(".js")),
+  ...readdirSync(join(ROOT, "src", "entries")).map((f) => `entries/${f}`),
+  ...readdirSync(join(ROOT, "src", "bodies")).map((f) => `bodies/${f}`)
+].filter((m) => existsSync(join(ROOT, "src", m)));
 const src = Object.fromEntries(modules.map((m) => [ m, read(`src/${m}`) ]));
 const bundle = read("dist/mappo.js");
 const all = modules.map((m) => src[m]).join("\n");
 
-console.log(`dist/mappo.js  raw ${kb(bundle.length)}  gzip ${kb(gz(bundle))}  brotli ${kb(br(bundle))}\n`);
+console.log(`dist/mappo.js (the core)  raw ${kb(bundle.length)}  gzip ${kb(gz(bundle))}  brotli ${kb(br(bundle))}\n`);
 row("module", "raw", "stripped", "gzip", "marginal", "brotli");
 const rows = modules.map((m) => {
   const without = modules.filter((x) => x !== m).map((x) => src[x]).join("\n");

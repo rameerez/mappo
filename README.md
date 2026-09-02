@@ -6,9 +6,10 @@
 
 **Maps of any world as a zero-dependency web component.** A dot field or
 vector outlines, flat SVG or a rotating canvas globe, places by name, your own
-HTML positioned on the sphere. Earth ships in the file; the Moon and Mars are
-opt-in packs; a world of your own is a function. One ES module, no build step,
-no dependencies.
+HTML positioned on the sphere. The core is **21.4 KB gzipped with the whole
+Earth inside**; the globe, the other projections, real coastlines and other
+worlds are opt-in modules that register themselves. No build step, no
+dependencies, MIT.
 
 ```html
 <script type="module" src="https://unpkg.com/mappo"></script>
@@ -19,18 +20,28 @@ no dependencies.
 That's the whole integration.
 
 ```html
+<script type="module">
+  import "https://unpkg.com/mappo";                              // the core
+  import "https://unpkg.com/mappo/dist/globe.js";               // mode="globe"
+  import "https://unpkg.com/mappo/dist/vector.js";              // figure-source="vector"
+  import { registerBody } from "https://unpkg.com/mappo";
+  import { MOON } from "https://unpkg.com/mappo/dist/bodies/moon.js";
+  registerBody(MOON);
+</script>
+
 <mappo-moon mode="globe" figure="outline" figure-source="vector"
             places="Apollo 11, Shackleton"></mappo-moon>
 ```
 
-That's another world.
+That's another world, on a globe, with real outlines — three modules a hero
+section never downloads.
 
 ## Why this exists
 
 Every SaaS hero section eventually wants the dotted world with glowing city
 markers. The usual path is a designer's frozen SVG: thousands of hardcoded
 rectangles, cities placed by eye, one resolution forever. mappo derives the
-dots from a ~22 KB packed bitmask instead — so resolution, dot shape, framing
+dots from a 3.6 KB run-length land mask instead — so resolution, dot shape, framing
 and markers are all runtime parameters, and "add Nairobi" is typing `Nairobi`.
 
 Then it turned out that nothing in that engine was about the Earth. A map asks
@@ -46,18 +57,48 @@ whatever you say. Same options, same renderers, same events.
 npm install mappo
 ```
 
-Or skip npm entirely — it's one file:
+Or skip npm entirely — the core is one file:
 
 ```html
 <script type="module" src="https://unpkg.com/mappo"></script>
 ```
 
-Rails with importmaps:
+### What you download
+
+The bare import is the **core**: the flat map, Earth's land mask and
+gazetteer, the equirectangular projection. Everything else is a module you
+import when a page needs it. Each one imports the core by relative path and
+registers itself, so order does not matter and nothing is downloaded twice.
+
+| import | adds | gzipped | brotli |
+|---|---|---|---|
+| `mappo` | the core, with the whole Earth inside | **21.4 KB** | 18.5 KB |
+| `mappo/globe` | `mode="globe"` | 8.8 KB | 7.8 KB |
+| `mappo/projections` | `projection="equal-earth"`, the polar pair, your own or d3-geo projections | 3.7 KB | 3.3 KB |
+| `mappo/vector` | `figure-source="vector"` and `borders` for bodies that carry rings (the Moon and Mars packs do) | 1.8 KB | 1.6 KB |
+| `mappo/bodies/earth-vector` | Earth's coastline and border rings; implies `mappo/vector` | 22.0 KB | 19.3 KB |
+| `mappo/bodies/moon`, `mappo/bodies/mars` | other worlds, as packs you register | 9.5 KB, 6.9 KB | 8.3 KB, 6.0 KB |
+| `mappo/all` | everything above except the Moon and Mars, in one self-contained file | 55.8 KB | 48.0 KB |
+
+A map that asks for something whose module has not loaded **waits**: it draws
+nothing (grid contours, for the vector features), warns once after two seconds
+if the module never arrives, and draws the moment it registers. The numbers are
+measured by `npm run weight` and held by the test suite: the core cannot grow
+past 22 KB gzipped without a test failing.
+
+From a CDN, import the modules by their file paths; on unpkg the bare
+`https://unpkg.com/mappo` is the core and `https://unpkg.com/mappo/dist/all.js`
+is everything. Do not load `all.js` alongside the core or the other modules:
+two copies of the core would keep two registries.
+
+Rails with importmaps, vendoring `dist/`:
 
 ```ruby
 # config/importmap.rb
-pin "mappo", to: "mappo.js"                       # vendor dist/mappo.js
-pin "mappo/bodies/moon", to: "mappo/bodies/moon.js" # optional packs
+pin "mappo", to: "mappo/mappo.js"                            # the core
+pin "mappo/globe", to: "mappo/globe.js"                      # each module resolves ./mappo.js itself
+pin "mappo/bodies/earth-vector", to: "mappo/bodies/earth-vector.js"
+pin "mappo/bodies/moon", to: "mappo/bodies/moon.js"
 ```
 
 Node ≥ 22.22 is needed only to *develop* mappo (see Development); the
@@ -138,16 +179,18 @@ never touches geometry.
 | Source | What it is | Cost |
 |---|---|---|
 | `grid` | contours traced from the body's `figure()` on the dot grid — blocky by design, follows `cols` | free |
-| `vector` | the body's own outlines (Natural Earth 110m on Earth), quantised to 1/32° — smooth at any size, independent of `cols` | ~13 KB on Earth |
+| `vector` | the body's own outlines (Natural Earth 110m on Earth), quantised to 1/32° — smooth at any size, independent of `cols` | the `mappo/vector` module (1.8 KB); Earth's rings are `mappo/bodies/earth-vector` (22 KB) |
 
-A body without outlines silently falls back to the grid, so the option is
-always safe to set.
+A body without outlines falls back to the grid, and so does a map whose module
+has not loaded yet: it draws grid contours, warns once after two seconds if the
+module never arrives, and redraws with the rings the moment it does. The option
+is always safe to set.
 
-`borders` adds the body's region boundaries — national borders on Earth (~25
-KB, vector only: a 512×256 raster cannot express a border that follows a
-river) — with `borders-color`, `borders-width` and `borders-opacity`. Both
-datasets are decoded lazily: a map that never asks for them pays the bytes,
-never the parse.
+`borders` adds the body's region boundaries — national borders on Earth, in
+the same `earth-vector` module (vector only: a 512×256 raster cannot express a
+border that follows a river) — with `borders-color`, `borders-width` and
+`borders-opacity`. Both datasets are decoded lazily: a map that never asks for
+them pays the parse of nothing.
 
 ### One geometry, not three renderers
 
@@ -182,8 +225,8 @@ map never downloads it:
 
 ```js
 import { registerBody } from "mappo";
-import { MOON } from "mappo/bodies/moon";   // ~11 KB gzipped
-import { MARS } from "mappo/bodies/mars";   // ~8 KB gzipped
+import { MOON } from "mappo/bodies/moon";   // 9.5 KB gzipped
+import { MARS } from "mappo/bodies/mars";   // 6.9 KB gzipped
 
 registerBody(MOON);   // <mappo-moon> now exists, and so does body="moon"
 registerBody(MARS);
@@ -284,7 +327,12 @@ the coast looks broken). Deep-ocean coordinates render where they are.
 
 ## Projections
 
+Equirectangular is in the core; the others are the `mappo/projections` module
+(3.7 KB gzipped), which also accepts a projection of your own or a d3-geo one:
+
 ```html
+<script type="module">import "mappo"; import "mappo/projections";</script>
+
 <mappo-world projection="equal-earth" lat-min="-90" lat-max="90"></mappo-world>
 <mappo-moon projection="stereographic-south" lat-max="-60"
             places="Shackleton, Haworth"></mappo-moon>
@@ -386,9 +434,12 @@ and [docs/performance.md](https://github.com/rameerez/mappo/blob/main/docs/perfo
 
 ## Globe mode
 
-The same world, wrapped on a sphere and spinning:
+The same world, wrapped on a sphere and spinning. The globe is the
+`mappo/globe` module (8.8 KB gzipped); a page without it never pays for it:
 
 ```html
+<script type="module">import "mappo"; import "mappo/globe";</script>
+
 <mappo-world mode="globe" cols="170" tilt="18" rotate-speed="4"
              dot-shape="square" places="Madrid, Nairobi, Tokyo"></mappo-world>
 ```
@@ -673,8 +724,30 @@ are exported too — `buildFigure`, `snapToFigure`, `project`, `cellCenter`,
 `cellCorner`, `projectNormalized`, `buildGraticule`, `resolvePlace`,
 `resolveBody`, `knownBodies`, `onBodyRegistered` — if you want to build your
 own renderer on the same data. Everything Earth-specific is reached through
-`EARTH`: `EARTH.figure(lat, lon)`, `EARTH.outlines()`, `EARTH.borders()`,
-`EARTH.places`, `EARTH.latRange`.
+`EARTH`: `EARTH.figure(lat, lon)`, `EARTH.places`, `EARTH.latRange`, and
+once `mappo/bodies/earth-vector` has loaded, `EARTH.outlines()` and
+`EARTH.borders()`. `map.pending` says what a map is waiting for (a body pack,
+a renderer, a projection), or `null`.
+
+## Extending mappo
+
+The opt-in modules are built on five registrations, and so can yours:
+
+| call | what it adds | who calls it |
+|---|---|---|
+| `registerRenderer(mode, Renderer)` | a renderer for `mode="…"` — a class built as `(container, options, body, overlays)` with `update(changed, body)`, `destroy()`, `locate(lat, lon, radius)` and an `element` | `mappo/globe` |
+| `registerProjection(id, spec)` | a named projection: `{ kind, defaultLatRange(bodyRange), create({ latRange, centerLon }) }` | `mappo/projections` |
+| `registerProjectionAdapter(fn)` | `(value, latRange) → instance \| null` for projection values that are not names | `mappo/projections` |
+| `registerVector({ stitchRings, projectRings })` | the seam machinery vector outlines need | `mappo/vector` |
+| `extendBody(id, { outlines, borders, places, … })` | more data for a registered body; live maps redraw | `mappo/bodies/earth-vector` |
+
+Every registration redraws the live maps that were waiting for it, so a module
+can load in any order relative to the page's markup. A module imports what it
+needs from the core — `resolvePlaces`, `cellCenter`, `buildFigure`,
+`figureOutlines`, `vectorFeature`, `projectPolyline`, `wrapLon` and the
+rest of the names `src/index.js` exports — and the build refuses a module that
+imports anything else. `knownRenderers()` and `knownProjections()` list what
+has registered so far.
 
 ## Styling
 
@@ -776,9 +849,10 @@ physics fit.
 Rendering knows nothing about any particular world. The renderers ask a body
 `figure(lat, lon)` and, when they need them, `outlines()`, `borders()`,
 `places`, `latRange`, `terms`, and `radiusKm`. Earth is generated by the very
-same template and pipeline as the Moon and Mars; it is simply concatenated
-into the bundle. That is the test of the abstraction: adding a body changes no
-renderer code, and the body that ships in the box is not a special case.
+same template and pipeline as the Moon and Mars; it is simply bundled into the
+core, with its rings split off into a module by the same generator. That is
+the test of the abstraction: adding a body changes no renderer code, and the
+body that ships in the box is not a special case.
 
 ## Performance
 
@@ -828,7 +902,7 @@ be regenerated bit-for-bit from a fresh checkout:
 
 | Body | Source | Figure |
 |---|---|---|
-| Earth | [Natural Earth](https://www.naturalearthdata.com) 110m land and admin-0 countries (public domain), `natural-earth-vector` at commit `ca96624a` | land, rasterised into a 512×256 mask and simplified into outlines; countries become the borders |
+| Earth | [Natural Earth](https://www.naturalearthdata.com) 110m land and admin-0 countries (public domain), `natural-earth-vector` at commit `ca96624a` | land, rasterised into a 512×256 mask (in the core) and simplified into outlines; countries become the borders (both in `mappo/bodies/earth-vector`) |
 | Moon | Clementine UVVIS 750 nm global albedo mosaic (public domain, NASA/USGS) | the dark maria, thresholded to 16% of the sphere; the held-out near side comes out at 30%, matching the published figure |
 | Mars | MOLA global topography, colour-ramped (public domain, NASA/MGS) | the lowest third of the surface — the crustal dichotomy — checked at eight places of known height from Hellas to Olympus Mons |
 
@@ -859,9 +933,10 @@ each item with its evidence and sources.
 
 ```bash
 nvm use                         # Node 22 (see .nvmrc; package.json devEngines enforces the floor)
-npm ci                          # reproducible development dependencies (jsdom, pngjs, jpeg-js — dev only)
-npm run build                   # bundle src/ → dist/mappo.js + dist/bodies/*
-npm test                        # pure, DOM, packaging and generator tests, against dist/
+npm ci                          # reproducible development dependencies (esbuild, jsdom, pngjs, jpeg-js — dev only)
+npm run build                   # esbuild: dist/mappo.js (the core), the modules, dist/all.js, dist/bodies/*
+npm test                        # pure, DOM, packaging, weight-budget and generator tests, against dist/
+npm run weight                  # where the bytes are, per module and per Earth literal (docs/weight.md)
 
 npm run generate                # regenerate every body pack from the pinned sources
 npm run generate:earth          # or one at a time; sources are cached in .cache/
@@ -874,7 +949,9 @@ To add a body: write a generator (or a hand-written pack) that produces an
 object satisfying the interface above, put its gazetteer in
 `scripts/data/<id>-places.js`, add `"./bodies/<id>": "./dist/bodies/<id>.js"`
 to `package.json`'s `exports` — the build reads the list from there — and add
-its anchors to `test/body.test.js`. The renderers need no change.
+its anchors to `test/body.test.js`. The renderers need no change. To add a
+module, add `src/entries/<name>.js` and `"./<name>": "./dist/<name>.js"` the
+same way; it may import from the core only what `src/index.js` exports.
 
 ## License
 

@@ -10,6 +10,7 @@ import { simplifyRing } from "../scripts/lib/geometry.js";
 import { writePng } from "../scripts/lib/image.js";
 import { rasterizeRings, simplifiedRings } from "../scripts/lib/vector-body.js";
 import { resolveBody } from "../dist/mappo.js";
+import "../dist/bodies/earth-vector.js";
 
 // A synthetic world: the western half bright, the eastern half dark.
 function halfWorld(width, height) {

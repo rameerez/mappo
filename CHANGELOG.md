@@ -10,6 +10,46 @@ with a body parameter bolted on. Earth is now one body among others, the
 vocabulary is body-neutral, and every body is produced by one pipeline from
 pinned public data.
 
+### The core is 21.4 KB gzipped, with the whole Earth inside
+
+The bare import is now the **core**: the flat map, Earth's land mask and
+gazetteer, the equirectangular projection. Everything else is an opt-in module
+that imports the core by relative path and registers itself:
+
+| import | adds | gzipped |
+|---|---|---|
+| `mappo` | the core | 21.4 KB (18.5 KB brotli) |
+| `mappo/globe` | `mode="globe"` | 8.8 KB |
+| `mappo/projections` | Equal Earth, polar stereographic, custom and d3-geo projections | 3.7 KB |
+| `mappo/vector` | `figure-source="vector"` and `borders`, for bodies that carry rings | 1.8 KB |
+| `mappo/bodies/earth-vector` | Earth's coastline and border rings; implies `mappo/vector` | 22.0 KB |
+| `mappo/bodies/moon`, `mappo/bodies/mars` | as before | 9.5 KB, 6.9 KB |
+| `mappo/all` | everything but the Moon and Mars, one self-contained file | 55.8 KB |
+
+- **Breaking:** a page that uses `mode="globe"`, a projection other than
+  equirectangular, `figure-source="vector"` or `borders` imports the module
+  for it. Without it the map **waits**: it draws nothing (grid contours, for
+  the vector features), warns once after two seconds if the module never
+  arrives, and draws the moment the module registers — the rule body packs
+  already followed. Order does not matter. `map.pending` says what a map waits
+  for; `map.refresh()` redraws from scratch.
+- **Breaking:** `dist/` is built by esbuild, minified, with source maps; the
+  commented source stays in `src/`. `dist/mappo.js` was 98 KB gzipped with
+  everything in it.
+- The land mask is stored as run lengths (Earth: 3.6 KB of text from 21 KB of
+  base64, 2.3 KB gzipped from 3.5) and the gazetteer as one string; every pack
+  regenerates from the one codec, so the Moon pack is 9.5 KB gzipped from 11
+  and Mars 6.9 from 8.4.
+- New in the core, the seam the modules stand on: `registerRenderer`,
+  `knownRenderers`, `registerProjection`, `registerProjectionAdapter`,
+  `registerVector`, `extendBody`, and the helpers listed in README
+  "Extending". The build refuses a module that imports anything the core does
+  not export.
+- The test suite holds the headline: `dist/mappo.js` over 22 KB gzipped, a
+  module importing beyond the seam, or a source file bundled twice fails it.
+- `resolveProjection` with a name nobody has registered still throws; the
+  renderer asks `hasProjection()` first and waits instead.
+
 ### Breaking: the vocabulary is figure and ground
 
 Every map draws a **figure** on a **ground**. On Earth the figure is land and

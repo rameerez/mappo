@@ -54,6 +54,33 @@ const LIVE = new Set();
 export const trackMap = (m) => LIVE.add(m);
 export const untrackMap = (m) => LIVE.delete(m);
 
+// Draw every live map that `filter` selects again — the hook that lets a
+// module arriving after the page's maps were built (a body pack, a renderer,
+// a projection, the vector feature, a body's rings) take effect without
+// anyone re-mounting anything. Failures are contained per map, as in
+// registerBody: one map that cannot redraw must not stop the others.
+export function rerenderLive(filter = () => true) {
+  for (const m of LIVE) {
+    if (!filter(m)) continue;
+    try {
+      m.refresh();
+    } catch (error) {
+      console.error(`[mappo] could not redraw a live map: ${error?.message ?? String(error)}`);
+    }
+  }
+}
+
+// One warning per missing thing, after a grace period. Modules normally
+// register within the same script run, so the message should mean "you forgot
+// to import it", not "the module graph has not finished loading yet".
+const PENDING_WARNINGS = new Set();
+export function warnIfStillPending(key, stillPending, message) {
+  if (PENDING_WARNINGS.has(key) || typeof setTimeout !== "function") return;
+  PENDING_WARNINGS.add(key);
+  const timer = setTimeout(() => { if (stillPending()) console.warn(`[mappo] ${message}`); }, PENDING_GRACE_MS);
+  timer.unref?.();
+}
+
 // Hand a body over once, use it by name for ever after. Returns it, so the
 // call reads as a definition rather than a side effect. Registering the same
 // id again replaces the pack: maps that asked for it BY NAME follow the
@@ -107,18 +134,31 @@ function pendingBody(id) {
       figure: () => false, outlines: () => null, borders: () => null, places: Object.freeze([])
     });
     PENDING.set(id, body);
-    // Packs normally register within the same script run, so the warning
-    // waits: it should mean "you forgot to import the pack", not "the module
-    // graph has not finished loading yet".
-    if (typeof setTimeout === "function") {
-      const timer = setTimeout(() => {
-        if (!REGISTRY.has(id)) {
-          console.warn(`[mappo] body "${id}" was never registered — maps asking for it stay empty until registerBody() runs. Did you import its pack?`);
-        }
-      }, PENDING_GRACE_MS);
-      timer.unref?.();
-    }
+    warnIfStillPending(`body:${id}`, () => !REGISTRY.has(id),
+      `body "${id}" was never registered — maps asking for it stay empty until registerBody() runs. Did you import its pack?`);
   }
+  return body;
+}
+
+// Give a registered body more than its pack carried: the vector outlines and
+// borders that arrive as a module of their own (mappo/bodies/earth-vector),
+// or more places. The body object is changed in place, so every map already
+// drawing it keeps its identity and the caches for what did not change, and
+// is redrawn for what did. A frozen body cannot be extended.
+export function extendBody(id, patch) {
+  const body = REGISTRY.get(normalizeId(id));
+  if (!body) throw new RangeError(`extendBody: no body "${id}" is registered`);
+  if (!patch || typeof patch !== "object") throw new TypeError("extendBody needs a patch object");
+  const allowed = new Set([ "name", "radiusKm", "latRange", "terms", "outlines", "borders", "places" ]);
+  for (const key of Object.keys(patch)) {
+    if (!allowed.has(key)) throw new TypeError(`extendBody: "${key}" is not something a body can be given later`);
+  }
+  const merged = { ...body, ...patch };
+  if (patch.places) merged.places = [ ...(body.places ?? []), ...patch.places ];
+  validateBody(merged);
+  Object.assign(body, merged);
+  PLACE_INDEX.delete(body);
+  rerenderLive((m) => m.body === body);
   return body;
 }
 

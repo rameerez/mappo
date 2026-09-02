@@ -375,7 +375,7 @@ function layout() {
 layout();
 
 // mappo arrives now, after the children exist and the boxes have a size.
-const { registerBody } = await import("../dist/mappo.js");
+const { registerBody } = await import("../dist/all.js");
 // The graticule twin draws on a world with no figure at all.
 registerBody({ id: "void", name: "Void", latRange: [ -90, 90 ], figure: () => false });
 

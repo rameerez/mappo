@@ -19,6 +19,9 @@ and [`CHANGELOG.md`](../CHANGELOG.md) (what changed and what to write instead).
 | R3 | Publish 0.7.0: `npm publish` runs `prepublishOnly` (build + tests); tag `v0.7.0`; deploy the landing page. | S | open |
 | R4 | Migrate soupfestivals from the vendored 0.5: `<world-map>` → `<mappo-world>`, `dot-color` → `figure-color`, bump the vendored bundle and the import-map pin. Two edits plus the bundle. | S | open |
 | R5 | Fold the benchmark scenarios into `demo/perf.html` as budgets: per-globe frame cost by style, the many-globes budget, the flat colour-change cost, so the numbers in [performance.md](performance.md) are re-measured rather than remembered. | M | open |
+| R6 | **Packaging**: a 21.4 KB gzipped core with the whole Earth inside, and opt-in modules (`mappo/globe`, `mappo/projections`, `mappo/vector`, `mappo/bodies/earth-vector`, `mappo/all`) that register themselves; esbuild, minified, source maps; the mask as run lengths. Measured in [weight.md](weight.md), held by the test suite. | M | done |
+| R7 | **Lazy chunks for the bare import**: let the core `import()` the globe, the projections and Earth's rings the first time a page asks for them, so a single CDN URL stays 21 KB up front and needs no second import; the registries make it a few lines, the open question is chunk URLs behind import maps. | S | open |
+| R8 | **Borders on a shared-arc topology**, the data change [weight.md §3](weight.md) measured: 24% of border segments are second copies of a shared boundary and 43% repeat the coastline; regions (choropleths) become an arc index instead of another 23 KB of rings. | M | open |
 
 ## 2. Performance track
 

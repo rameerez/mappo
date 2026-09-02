@@ -28,6 +28,24 @@
 // same data at two levels of detail.
 
 import { cellCenter } from "./projection.js";
+import { rerenderLive } from "./body.js";
+
+// The VECTOR feature — stitching a body's rings across ±180° and cutting them
+// at a projection's seam — is the opt-in module mappo/vector, registered here.
+// Until it registers, every renderer draws the grid contours it can always
+// draw, and a map that asked for vectors is redrawn the moment it arrives.
+// Gating it here, where the renderers already ask for a body's rings, means
+// neither renderer has to know whether the feature exists.
+let VECTOR = null;
+export function registerVector(impl) {
+  if (typeof impl?.stitchRings !== "function" || typeof impl?.projectRings !== "function") {
+    throw new TypeError("registerVector needs { stitchRings, projectRings }");
+  }
+  VECTOR = impl;
+  rerenderLive((m) => m.options?.figureSource === "vector" || !!m.options?.borders);
+  return impl;
+}
+export const vectorFeature = () => VECTOR;
 
 // A body object is the geometry identity. IDs are human-facing registry keys
 // and may legitimately be re-registered during development; keying by the
@@ -143,9 +161,9 @@ export function parseFigureStyle(value) {
 //              independent of cols. A body without outlines falls back to the
 //              grid, so the option is always safe to set.
 export function figureOutlines(source, body) {
-  return source === "vector" ? (body.outlines?.() ?? null) : null;
+  return source === "vector" && VECTOR ? (body.outlines?.() ?? null) : null;
 }
 
 export function figureBorders(body) {
-  return body.borders?.() ?? null;
+  return VECTOR ? (body.borders?.() ?? null) : null;
 }

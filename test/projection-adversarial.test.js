@@ -6,7 +6,11 @@ import { EARTH } from "../src/bodies/earth.js";
 import { MARS } from "../src/bodies/mars.js";
 import { cellCenter, project, projectNormalized } from "../src/projection.js";
 import { snapToFigure } from "../src/renderer.js";
-import { projectPolyline, projectRings, resolveProjection, stitchRings } from "../src/projections.js";
+import { projectPolyline, resolveProjection } from "../src/projections.js";
+import { projectRings, stitchRings } from "../src/vector.js";
+import "../src/entries/projections.js";
+import "../src/entries/vector.js";
+import "../src/bodies/earth-vector.js";
 
 const FULL = [ -90, 90 ];
 const close = (a, b, epsilon = 1e-9) => Math.abs(a - b) <= epsilon;

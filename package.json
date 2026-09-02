@@ -6,6 +6,11 @@
   "main": "dist/mappo.js",
   "exports": {
     ".": "./dist/mappo.js",
+    "./all": "./dist/all.js",
+    "./globe": "./dist/globe.js",
+    "./projections": "./dist/projections.js",
+    "./vector": "./dist/vector.js",
+    "./bodies/earth-vector": "./dist/bodies/earth-vector.js",
     "./bodies/moon": "./dist/bodies/moon.js",
     "./bodies/mars": "./dist/bodies/mars.js"
   },
@@ -22,7 +27,8 @@
     "generate:earth": "node scripts/generate-earth.js",
     "generate:moon": "node scripts/generate-moon.js",
     "generate:mars": "node scripts/generate-mars.js",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm test",
+    "weight": "node scripts/weight.mjs"
   },
   "keywords": [
     "mappo",
@@ -71,6 +77,7 @@
   "devDependencies": {
     "d3-geo": "3.1.1",
     "d3-geo-projection": "4.0.0",
+    "esbuild": "0.25.5",
     "jpeg-js": "0.4.4",
     "jsdom": "30.0.1",
     "pngjs": "7.0.0"

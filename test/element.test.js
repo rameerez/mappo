@@ -12,6 +12,7 @@ assert.ok(major > 22 || (major === 22 && minor >= 12),
 
 let dom;
 let api;
+let globeModule;
 let MOON;
 let MARS;
 let canvasContext;
@@ -46,7 +47,13 @@ before(async () => {
     getComputedStyle: window.getComputedStyle.bind(window)
   });
 
-  api = await import("../dist/mappo.js?dom-regressions");
+  api = await import("../dist/mappo.js");
+  // The opt-in modules register themselves with the core they import — the
+  // same core instance, because they import it by relative path.
+  globeModule = await import("../dist/globe.js");
+  await import("../dist/projections.js");
+  await import("../dist/vector.js");
+  await import("../dist/bodies/earth-vector.js");
   ({ MOON } = await import("mappo/bodies/moon"));
   ({ MARS } = await import("mappo/bodies/mars"));
   api.registerBody(MOON);
@@ -405,12 +412,12 @@ test("globe boundaries render over fills for grid and vector figure sources", ()
 
 test("an unrelated attribute change does not re-aim a focused globe", () => {
   const globe = mount("mappo-world", { mode: "globe", cols: 24, "rotate-speed": 0, focus: "0,90" });
-  assert.equal(globe.map._globe.angle, 270, "facing 90°E means spinning by -90°");
-  globe.map._globe.angle = 123;           // the user dragged it
+  assert.equal(globe.map._renderer.angle, 270, "facing 90°E means spinning by -90°");
+  globe.map._renderer.angle = 123;           // the user dragged it
   globe.setAttribute("figure-color", "#ff0000");
-  assert.equal(globe.map._globe.angle, 123, "a colour change must not snap the globe back");
+  assert.equal(globe.map._renderer.angle, 123, "a colour change must not snap the globe back");
   globe.setAttribute("focus", "0,45");
-  assert.equal(globe.map._globe.angle, 315, "a real focus change re-aims");
+  assert.equal(globe.map._renderer.angle, 315, "a real focus change re-aims");
   unmount(globe);
 });
 
@@ -482,17 +489,27 @@ test("projection: a polar map is a disc — square frame, dots only inside it, o
   unmount(moon);
 });
 
-test("projection: default framing follows the projection, explicit bounds still win, bad values are refused atomically", () => {
+test("projection: default framing follows the projection, explicit bounds still win, bad values are refused atomically", async () => {
   const north = mount("mappo-world", { cols: 24, projection: "stereographic-north" });
   assert.deepEqual(north.map.options.latRange, [ 0, 90 ], "a hemisphere, not Earth's -58…84");
   north.setAttribute("lat-min", "30");
   assert.deepEqual(north.map.options.latRange, [ 30, 90 ]);
   north.setAttribute("projection", "equirectangular");
   assert.deepEqual(north.map.options.latRange, [ 30, 84 ], "back on a cylindrical map the body's own top bound returns");
-  assert.throws(() => north.map.update({ projection: "mercator" }), /unknown projection/);
   assert.throws(() => north.map.update({ projection: "stereographic-north", latMin: -90 }), /opposite pole/);
   assert.equal(north.map.options.projection, "equirectangular", "a rejected update changes nothing");
   assert.deepEqual(north.map.options.latRange, [ 30, 84 ]);
+  // A name nobody has registered is not an error but a wait — its module may
+  // still be loading. The map draws nothing and says what it waits for.
+  north.map.update({ projection: "mercator" });
+  await settle();
+  assert.match(north.map.pending, /projection "mercator"/);
+  assert.equal(north.querySelector("svg"), null, "a waiting map draws nothing");
+  assert.equal(north.getAttribute("data-mappo-pending"), 'projection "mercator"');
+  north.setAttribute("projection", "equirectangular");
+  await settle();
+  assert.equal(north.map.pending, null);
+  assert.ok(north.querySelector("svg"), "and draws again as soon as it can");
   unmount(north);
 });
 
@@ -621,7 +638,7 @@ test("a parked globe draws no frames; a spinning one does", async () => {
   let clears = 0;
   canvasContext.clearRect = () => clears++;
   try {
-    assert.ok(el.map._globe._raf !== null, "the loop is running");
+    assert.ok(el.map._renderer._raf !== null, "the loop is running");
     await settle(200);
     const parked = clears;
     await settle(300);
@@ -643,7 +660,7 @@ test("a parked globe draws no frames; a spinning one does", async () => {
 
 test("uniform tiles: the element rebuilds the dot field for distribution and dot-shape, and the flat map draws tiles as squares", () => {
   const el = mount("mappo-world", { mode: "globe", cols: 40, "rotate-speed": 0, distribution: "uniform", "dot-shape": "tile", "lat-min": -90, "lat-max": 90 });
-  const g = el.map._globe;
+  const g = el.map._renderer;
   const n = Math.round((40 * 40) / Math.PI);
   assert.ok(g.points.length / 3 > 0.25 * n && g.points.length / 3 < 0.33 * n, "about 29% of the lattice is land");
   assert.equal(g.tiles.length / 9, g.points.length / 3, "one tile per point");
@@ -657,4 +674,77 @@ test("uniform tiles: the element rebuilds the dot field for distribution and dot
   assert.equal(flat.querySelector("defs > :first-child").tagName.toLowerCase(), "rect", "a tile on a flat map is a square");
   assert.match(flat.querySelector("style").textContent, /\.mappo-graticule\s*\{[^}]*stroke-width: 1.2/, "graticule-width scales the hairline");
   unmount(flat);
+});
+
+test("a renderer module arriving after upgrade: the map waits, then draws with it, no re-mount", async () => {
+  class Orrery {
+    constructor(container, options, body, overlays) {
+      this.o = options; this.body = body; this.overlays = overlays;
+      this.element = document.createElement("canvas");
+      this.element.className = "orrery";
+      container.replaceChildren(this.element);
+    }
+    update() {}
+    destroy() { this.element.remove(); }
+    locate() { return { x: 1, y: 2, depth: 1, front: true }; }
+  }
+  const element = mount("mappo-world", { mode: "orrery", cols: 24 });
+  assert.equal(element.map.pending, 'renderer "orrery"');
+  assert.equal(element.children.length, 0, "a waiting map draws nothing");
+  assert.equal(element.getAttribute("data-mappo-pending"), 'renderer "orrery"');
+  assert.equal(element.map.locate(0, 0), null);
+  api.registerRenderer("orrery", Orrery);
+  assert.equal(element.map.pending, null);
+  assert.ok(element.querySelector("canvas.orrery"), "registered: drawn at once");
+  assert.equal(element.querySelector("canvas.orrery").getAttribute("role"), "img");
+  assert.match(element.querySelector("canvas.orrery").getAttribute("aria-label"), /Earth map/);
+  assert.deepEqual(element.map.locate(0, 0), { x: 1, y: 2, depth: 1, front: true });
+  assert.deepEqual(api.knownRenderers(), [ "flat", "globe", "orrery" ]);
+  element.setAttribute("mode", "flat");
+  await settle();
+  assert.ok(element.querySelector("svg"), "back to the flat map");
+  assert.equal(element.querySelector("canvas.orrery"), null, "the renderer was torn down");
+  assert.throws(() => api.registerRenderer("flat", Orrery), /other than "flat"/);
+  unmount(element);
+});
+
+test("a projection module arriving after upgrade: the map waits, then draws with it", () => {
+  const element = mount("mappo-world", { cols: 24, projection: "plate-carree" });
+  assert.equal(element.map.pending, 'projection "plate-carree"');
+  assert.equal(element.querySelector("svg"), null);
+  api.registerProjection("plate-carree", {
+    kind: "cylindrical",
+    defaultLatRange: (range) => range,
+    create({ latRange: [ lat0, lat1 ] }) {
+      const span = lat1 - lat0;
+      return {
+        aspect: 360 / span,
+        forwardShifted: (lat, lonS) => ({ x: (lonS + 180) / 360, y: (lat1 - lat) / span }),
+        inverse: (x, y) => (x < 0 || x > 1 || y < 0 || y > 1) ? null : { lat: lat1 - y * span, lonS: -180 + x * 360 },
+        outline: () => [ [ [ 0, 0 ], [ 1, 0 ], [ 1, 1 ], [ 0, 1 ], [ 0, 0 ] ] ]
+      };
+    }
+  });
+  assert.equal(element.map.pending, null);
+  assert.ok(element.querySelector("svg"));
+  assert.equal(element.map.projection.id, "plate-carree");
+  assert.ok(api.knownProjections().includes("plate-carree"));
+  assert.ok(element.map._dotCount > 0);
+  unmount(element);
+});
+
+test("extendBody: rings arriving after the map drew are drawn at once, and the figure caches are dropped", () => {
+  const id = "late-rings";
+  api.registerBody({ id, name: "Late rings", latRange: [ -90, 90 ], terms: { figure: "a", ground: "b" }, figure: (lat, lon) => lat > 0 && lon > 0 });
+  const element = mount(`mappo-${id}`, { cols: 24, figure: "solid outline", "figure-source": "vector" });
+  const gridEdge = element.querySelector(".mappo-figure-edge").getAttribute("d");
+  assert.ok(gridEdge.length > 0, "grid contours meanwhile");
+  assert.equal(element.map.body.outlines, undefined);
+  api.extendBody(id, { outlines: () => [ [ [ 10, 10 ], [ 80, 10 ], [ 80, 170 ], [ 10, 170 ], [ 10, 10 ] ] ] });
+  assert.equal(element.map.body.outlines().length, 1);
+  const vectorEdge = element.querySelector(".mappo-figure-edge").getAttribute("d");
+  assert.notEqual(vectorEdge, gridEdge, "redrawn from the rings");
+  assert.throws(() => api.extendBody("nobody", {}), /no body/);
+  assert.throws(() => api.extendBody(id, { figure: () => true }), /not something a body can be given later/);
+  unmount(element);
 });

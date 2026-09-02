@@ -24,7 +24,11 @@ before(async () => {
     matchMedia: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }),
     getComputedStyle: window.getComputedStyle.bind(window)
   });
-  ({ Mappo } = await import("../src/renderer.js?projection-dom-adversarial"));
+  ({ Mappo } = await import("../src/renderer.js"));
+  await import("../src/entries/globe.js");
+  await import("../src/entries/projections.js");
+  await import("../src/entries/vector.js");
+  await import("../src/bodies/earth-vector.js");
 });
 
 after(() => {
@@ -49,13 +53,17 @@ test("dot glyphs are clipped to curved projection frames", () => {
   container.remove();
 });
 
-test("a globe ignores projection defaults and invalid projection values until flat mode needs them", () => {
+test("a globe ignores projection defaults and invalid projection values until flat mode needs them", async () => {
   const container = host();
   const map = new Mappo(container, { mode: "globe", projection: "not-a-map", rotateSpeed: 0 });
   assert.deepEqual(map.options.latRange, [ -58, 84 ], "the globe keeps the body's latitude range");
   assert.doesNotThrow(() => map.update({ figureColor: "#123456" }));
-  assert.throws(() => map.update({ mode: "flat" }), /unknown projection/);
-  assert.equal(map.options.mode, "globe", "the rejected renderer switch is atomic");
+  assert.equal(map.pending, null, "a globe never waits for a flat projection");
+  map.update({ mode: "flat" });
+  await settle();
+  assert.equal(map.options.mode, "flat");
+  assert.match(map.pending, /projection "not-a-map"/, "flat mode waits for the projection instead of failing");
+  assert.equal(container.querySelector("svg"), null, "and draws nothing meanwhile");
   map.destroy();
   container.remove();
 

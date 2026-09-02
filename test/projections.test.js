@@ -4,7 +4,10 @@ import { geoEquirectangular } from "d3-geo";
 import {
   EARTH, resolveProjection, knownProjections, projectNormalized, buildFigure, snapToFigure, cellCenter, project
 } from "../dist/mappo.js";
-import { stitchRings, projectRings, projectPolyline, wrapLon, projectionDefaultRange } from "../src/projections.js";
+import "../dist/projections.js";
+import { stitchRings, projectRings } from "../dist/vector.js";
+import "../dist/bodies/earth-vector.js";
+import { projectPolyline, wrapLon, projectionDefaultRange } from "../dist/mappo.js";
 import { MARS } from "mappo/bodies/mars";
 import { MOON } from "mappo/bodies/moon";
 

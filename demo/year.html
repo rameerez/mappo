@@ -190,13 +190,13 @@
   <div id="scalenote">Sun ×9 · Earth ×430 · the orbit itself is to scale</div>
 </div>
 
-<script type="module" src="../dist/mappo.js"></script>
+<script type="module" src="../dist/all.js"></script>
 <script type="module">
 import { earthAt, seasonOf, solarLongitudeCrossing, apsis, AU_KM, EARTH_R_KM, SUN_R_KM } from "./astro.js";
 import { withClocks, solarElevation } from "./clocks.js";
 import { createClock } from "./timectl.js";
 import { gmst } from "./astro.js";
-import { EARTH } from "../dist/mappo.js";
+import { EARTH } from "../dist/all.js";
 
 const $ = (id) => document.getElementById(id);
 const TAU = Math.PI * 2, RAD = Math.PI / 180;

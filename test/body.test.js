@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   EARTH, knownBodies, registerBody, resolveBody, onBodyRegistered, resolvePlace, buildFigure
 } from "../dist/mappo.js";
+import "../dist/bodies/earth-vector.js";
 import { MOON } from "mappo/bodies/moon";
 import { MARS } from "mappo/bodies/mars";
 import { buildGlobeFlags, buildGlobePhases, buildGlobePoints } from "../src/globe.js";
