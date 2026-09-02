@@ -77,22 +77,32 @@
   .ghstar .count:hover::after{border-right-color:var(--gh-bg-hi)}
 
   /* ── hero ─────────────────────────────────────────────────────────────── */
-  /* Split hero: copy on the left half, globe on the right. The three dials
-     below are the whole composition, so they are named and kept together.
-     --globe-x/y is where the sphere's CENTRE sits in the header, which is what
-     lets it bleed past the right edge and under the band while the copy stays
-     inside the text column. */
-  .hero{--globe-size:min(74vw,1060px);--globe-x:74%;--globe-y:55%;
-    position:relative;min-height:94vh;display:flex;flex-direction:column;
-    overflow:hidden}
+  /* Split hero: copy on the left half, globe on the right, the two sharing a
+     vertical centre. The three dials below are the whole composition, so they
+     are named and kept together. --globe-x/y is where the sphere's CENTRE
+     sits, which is what lets it bleed past the right edge and under the band
+     while the copy stays inside the text column.
+     min-height is the viewport LESS the nav, so the hero and the band it is
+     cut by both fit on the first screen instead of the band hanging below. */
+  .hero{--globe-size:min(70vw,980px);--globe-x:88%;--globe-y:50%;
+    position:relative;min-height:calc(100vh - 74px);display:flex;
+    flex-direction:column;overflow:hidden}
   .hero-in{position:relative;z-index:2;flex:1;width:100%;max-width:1180px;
     margin:0 auto;padding:0 28px;display:grid;align-items:center;
-    grid-template-columns:minmax(0,1.02fr) minmax(0,1fr)}
+    grid-template-columns:minmax(0,1.02fr) minmax(0,1fr);
+    /* The row is only a frame. It must not swallow drags meant for the globe
+       behind it, so it lets pointer events through and the copy takes its
+       own back below. */
+    pointer-events:none}
+  /* Positioned against .hero-in, NOT .hero. .hero also contains the band, so a
+     percentage of it puts the sphere ~130px below the copy it is meant to line
+     up with: the same 50%, measured in two different boxes. The band still
+     paints over it, because .band carries a higher z-index than this row. */
   .hero-globe{position:absolute;left:var(--globe-x);top:var(--globe-y);
     transform:translate(-50%,-50%);width:var(--globe-size);aspect-ratio:1;
-    pointer-events:none;z-index:0}
+    pointer-events:auto;z-index:0}
   .hero-globe mappo-world{display:block;width:100%}
-  .hero-copy{position:relative;z-index:2;text-align:left}
+  .hero-copy{position:relative;z-index:2;text-align:left;pointer-events:auto}
   h1{margin:0 0 18px;font-size:clamp(40px,5vw,64px);line-height:1.01;
     letter-spacing:-.035em;font-weight:680}
   .hero-copy p{margin:0 0 26px;color:var(--muted);font-size:clamp(16px,1.4vw,18.5px);
@@ -109,14 +119,17 @@
   .cta a.primary:hover{filter:brightness(1.08)}
 
   /* Under 980px the two halves stop being halves: the copy centres and the
-     globe goes back to sitting under it, full width, cut by the band. */
+     globe goes back to sitting under it, full width, cut by the band.
+     --globe-y:100% puts the sphere's centre ON the band, so its top half
+     rises behind the copy and the rest is cut away. Same centre-based model
+     as the split layout, which is why no bottom/transform override is
+     needed here: an offset written against .hero would now be measured
+     against .hero-in and ride up over the buttons. */
   @media (max-width:980px){
-    .hero{--globe-size:min(1040px,128vw);--globe-x:50%;--globe-y:auto;
+    .hero{--globe-size:min(960px,120vw);--globe-x:50%;--globe-y:100%;
       min-height:auto;padding-top:12vh}
     .hero-in{grid-template-columns:1fr;justify-items:center;
       padding-bottom:min(52vw,420px)}
-    .hero-globe{top:auto;bottom:calc(-1 * var(--globe-size) * 0.42);
-      transform:translateX(-50%)}
     .hero-copy{text-align:center;max-width:42ch}
     .hero-copy p{margin-left:auto;margin-right:auto}
     .cta{justify-content:center}
@@ -201,27 +214,26 @@
 </nav>
 
 <header class="hero">
-  <div class="hero-globe">
-    <!-- graticule-opacity is a literal, not a custom property: mappo resolves
-         var() for COLOURS, and Number("var(--x)") is NaN — silently, with a
-         fallback. So the theme difference lives in the colour, which resolves,
-         and the opacity stays a number. -->
-    <!-- The hero is the Cloudflare composition: a uniform lattice of tangent
-         squares, a graticule at 4% and a fog that takes the far side toward the
-         page. Four attributes on one element; the land is mappo's own mask. -->
-    <mappo-world id="hero" mode="globe" cols="380" lat-min="-90" lat-max="90"
-      distribution="uniform" dot-shape="tile" dot-size="0.38"
-      figure="dots" figure-color="var(--globe-dot)"
-      distance="2.42" fog="-0.62 1.02"
-      rotate-speed="1.6" interactive="false" background="none"
-      graticule meridians="24" parallels="23"
-      graticule-color="var(--globe-grid)" equator-color="var(--globe-grid)"
-      graticule-opacity="0.18" equator-opacity="0.18" graticule-width="0.5"></mappo-world>
-  </div>
-
-  <!-- The globe above is absolutely placed, so this grid only has to hold the
-       copy in its left column and leave the right one for the sphere. -->
   <div class="hero-in">
+    <!-- Inside the row, not beside it: that is what makes --globe-y measure
+         the same box the copy is centred in. -->
+    <div class="hero-globe">
+      <!-- graticule-opacity is a literal, not a custom property: mappo resolves
+           var() for COLOURS, and Number("var(--x)") is NaN — silently, with a
+           fallback. So the theme difference lives in the colour, which resolves,
+           and the opacity stays a number. -->
+      <!-- The hero is the Cloudflare composition: a uniform lattice of tangent
+           squares, a graticule at 4% and a fog that takes the far side toward the
+           page. Four attributes on one element; the land is mappo's own mask. -->
+      <mappo-world id="hero" mode="globe" cols="380" lat-min="-90" lat-max="90"
+        distribution="uniform" dot-shape="tile" dot-size="0.38"
+        figure="dots" figure-color="var(--globe-dot)"
+        distance="2.42" fog="-0.62 1.02"
+        rotate-speed="1.6" background="none"
+        graticule meridians="24" parallels="23"
+        graticule-color="var(--globe-grid)" equator-color="var(--globe-grid)"
+        graticule-opacity="0.18" equator-opacity="0.18" graticule-width="0.5"></mappo-world>
+    </div>
     <div class="hero-copy">
       <h1>F*ck ugly geo maps</h1>
       <p>A world map as a web component. Dots or coastlines, flat or a rotating
