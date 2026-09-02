@@ -59,19 +59,36 @@
      sitting on a table. A uniform aura reads as depth without claiming a sun.
      Everything scales off the grid pitch. */
   .city-dot{position:absolute;border-radius:50%;background:var(--day);
-    transform:translate(-50%,-50%);pointer-events:none;
+    transform:translate(-50%,-50%);border:0;padding:0;appearance:none;
+    cursor:pointer;transition:background .18s ease,transform .18s ease;
     box-shadow:0 0 var(--near-b,5px) var(--near-s,2px) rgba(0,0,0,1),
                0 0 var(--far-b,17px) var(--far-s,3px) rgba(0,0,0,1)}
-  .city-dot.here{background:var(--red)}
+  /* The city the face is reading grows and goes full red; hovering shows the
+     same thing, because hover IS a preview of the selection. Red alone was too
+     quiet a cue at this size — #ff against #d4 is nothing across nine pixels —
+     so size carries it. Home is told apart by its own larger radius, set in
+     JS, which is a separate axis and so never collides with this one. */
+  .city-dot.on,.city-dot:hover{background:var(--red);
+    transform:translate(-50%,-50%) scale(1.15)}
+  .city-dot:focus-visible{outline:2px solid var(--red);outline-offset:4px}
 
   /* The terminator covers the whole stage, not the map box: the curve runs off
      the bottom of the frame and that overshoot is part of the picture. */
   .term{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 
-  .place{position:absolute;left:5.9%;bottom:10.5%;color:var(--red);line-height:1}
-  .place .city{font-size:5.8vh;font-weight:590;letter-spacing:-.015em;margin-bottom:.34em}
-  .place .clock{font-size:20.5vh;font-weight:700;letter-spacing:-.045em;
-    font-variant-numeric:tabular-nums}
+  .place{position:absolute;left:5.9%;bottom:10.5%;color:var(--red);line-height:1;
+    display:block;text-align:left;font:inherit;background:none;border:0;padding:0;
+    appearance:none;
+    /* Inert until there is somewhere to come back FROM: a control that does
+       nothing should not offer a cursor, a focus stop, or a hit area. */
+    cursor:default;pointer-events:none}
+  .place.away{cursor:pointer;pointer-events:auto;transition:opacity .18s ease}
+  .place.away:hover,.place.away:focus-visible{opacity:.7}
+  .place .city{display:block;font-size:5.8vh;font-weight:590;
+    letter-spacing:-.015em;margin-bottom:.34em}
+  .place .clock{display:block;font-size:20.5vh;font-weight:700;
+    letter-spacing:-.045em;font-variant-numeric:tabular-nums}
+  .place:focus-visible{outline:2px solid var(--red);outline-offset:8px;border-radius:4px}
 
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -113,10 +130,10 @@
     <g id="termline" fill="none" stroke="url(#linefade)" stroke-linecap="round"></g>
   </svg>
 
-  <div class="place">
-    <div class="city" id="cityname">&nbsp;</div>
-    <div class="clock" id="bigclock">--:--</div>
-  </div>
+  <button type="button" class="place" id="place">
+    <span class="city" id="cityname">&nbsp;</span>
+    <span class="clock" id="bigclock">--:--</span>
+  </button>
 </div>
 
 <script type="module">
@@ -150,15 +167,28 @@ const here = known ?? {
   lat: 25, tz
 };
 
-document.getElementById("cityname").textContent = here.name;
-
 // "1:24", not "1:24 AM": the face shows the period nowhere, so the parts get
-// assembled by hand rather than trusting a locale to leave it out.
-const parts = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", timeZone: tz });
-const hhmm = { format: (d) => parts.formatToParts(d)
-  .filter((p) => p.type === "hour" || p.type === "literal" || p.type === "minute")
-  .map((p) => (p.type === "literal" ? ":" : p.value)).join("").replace(/:+$/, "") };
+// assembled by hand rather than trusting a locale to leave it out. One
+// formatter per zone, built on demand and then kept — they are expensive to
+// construct and free to reuse, and the face can now be asked for any of a
+// dozen zones.
+const clockFor = (() => {
+  const cache = new Map();
+  return (zone) => {
+    let fmt = cache.get(zone);
+    if (!fmt) {
+      const p = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", timeZone: zone });
+      fmt = (d) => p.formatToParts(d)
+        .filter((x) => x.type === "hour" || x.type === "literal" || x.type === "minute")
+        .map((x) => (x.type === "literal" ? ":" : x.value)).join("").replace(/:+$/, "");
+      cache.set(zone, fmt);
+    }
+    return fmt;
+  };
+})();
 const bigclock = document.getElementById("bigclock");
+const cityname = document.getElementById("cityname");
+const placeBtn = document.getElementById("place");
 
 // ── city dots ───────────────────────────────────────────────────────────────
 // These are not mappo overlay children: those are harvested once at upgrade,
@@ -166,11 +196,34 @@ const bigclock = document.getElementById("bigclock");
 // terminator uses, so one function places every mark.
 const stage = document.querySelector(".stage");
 const dots = [ ...CLOCK_CITIES.filter((c) => c.tz !== here.tz), here ].map((c) => {
-  const el = document.createElement("i");
-  el.className = "city-dot" + (c.tz === here.tz ? " here" : "");
+  const el = document.createElement("button");
+  el.type = "button";
+  el.className = "city-dot" + (c === here ? " here" : "");
+  el.setAttribute("aria-label", `Show the time in ${c.name}`);
+  el.addEventListener("click", () => select(c));
   stage.appendChild(el);
   return { el, c };
 });
+
+// Which city the face is reading. The MAP does not follow it: the terminator
+// is the real sky at this instant and does not care who is looking at it, so
+// picking a city changes two lines of text and nothing else. That is also why
+// the answer is honest — read Tokyo from Lisbon and the dot you tapped really
+// is in daylight or really is not.
+let selected = here;
+const showClock = () => { bigclock.textContent = clockFor(selected.tz)(nowish()); };
+
+function select(city) {
+  selected = city;
+  cityname.textContent = city.name;
+  const away = city !== here;
+  placeBtn.classList.toggle("away", away);
+  placeBtn.setAttribute("aria-label",
+    away ? `Showing ${city.name}. Back to ${here.name}.` : here.name);
+  for (const d of dots) d.el.classList.toggle("on", d.c === city);
+  showClock();
+}
+placeBtn.addEventListener("click", () => select(here));
 
 // ── projection ──────────────────────────────────────────────────────────────
 // One source of truth: the map's own box. Latitudes outside latRange
@@ -232,20 +285,15 @@ function paint(now = nowish()) {
   line.innerHTML = glow.innerHTML = `<path d="${d}"/>`;
 
   placeDots(b);
-
-  const t = hhmm.format(now);
-  bigclock.textContent = t;
+  showClock();
 }
 
-// The clock changes every second and costs nothing; the terminator costs a
+// The clock changes every second and costs almost nothing; the terminator costs a
 // few hundred points of trigonometry and moves a quarter of a degree a minute.
 // So they tick apart: the digits every second, the sky every half minute.
-function clockOnly() {
-  const t = hhmm.format(nowish());
-  bigclock.textContent = t;
-}
 addEventListener("resize", () => paint());
 customElements.whenDefined("mappo-world").then(() => requestAnimationFrame(() => paint()));
+select(here);
 paint();
-if (!AT) { setInterval(clockOnly, 1000); setInterval(paint, 30000); }
+if (!AT) { setInterval(showClock, 1000); setInterval(paint, 30000); }
 </script>
