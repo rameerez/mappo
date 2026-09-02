@@ -1,0 +1,193 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geographic distribution — mappo</title>
+<link rel="icon" href="../favicon/favicon-32x32.png">
+<style>
+  :root{
+    --bg:#fff; --card:#fff; --ink:#0f172a; --muted:#64748b; --faint:#aeb4bf;
+    --nodata:#eef2f7;                 /* land nobody came from */
+    --ramp-lo:#dfe7f0; --ramp-hi:#1e293b;
+    --seam:#ffffff;                   /* borders read as gaps between fills */
+    --track:#f3f4f6; --bar:#62748d; --hover:#0ea5e9;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0b1220; --card:#0e1626; --ink:#e2e8f0; --muted:#94a3b8; --faint:#64748b;
+      --nodata:#1a2436; --ramp-lo:#22304a; --ramp-hi:#cbd5e1;
+      --seam:#0e1626; --track:#1b2436; --bar:#94a3b8; --hover:#38bdf8;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0b1220; --card:#0e1626; --ink:#e2e8f0; --muted:#94a3b8; --faint:#64748b;
+    --nodata:#1a2436; --ramp-lo:#22304a; --ramp-hi:#cbd5e1;
+    --seam:#0e1626; --track:#1b2436; --bar:#94a3b8; --hover:#38bdf8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.5 -apple-system,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .card{max-width:1240px;margin:0 auto;padding:40px 32px 64px}
+  h1{font-size:22px;font-weight:640;letter-spacing:-.02em;margin:0 0 6px}
+  .sub{color:var(--muted);font-size:15px;margin:0 0 28px}
+
+  .split{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,1fr);
+    gap:40px;align-items:start}
+  @media (max-width:880px){.split{grid-template-columns:minmax(0,1fr);gap:28px}}
+
+  /* Three layers on one grid: mappo draws the land and, on top, the borders;
+     the fills go between them. All three share cols and latRange, so they
+     register cell for cell without anyone measuring anything. */
+  .map{position:relative}
+  .map mappo-world{display:block;width:100%}
+  .map .over{position:absolute;inset:0}
+  .choro{position:absolute;inset:0;width:100%;height:100%}
+  .choro path{stroke:var(--seam);stroke-width:.6;stroke-linejoin:round;
+    transition:fill .15s ease}
+  .choro path.lit{fill:var(--hover)!important}   /* beats the inline fill */
+
+  .rows{display:flex;flex-direction:column;gap:2px}
+  .row{display:grid;grid-template-columns:34px 1fr 44px 120px 42px;gap:14px;
+    align-items:center;padding:7px 8px;border:0;background:none;border-radius:7px;
+    font:inherit;color:inherit;text-align:left;cursor:default;width:100%}
+  .row:hover,.row:focus-visible{background:var(--track);outline:none}
+  .row .iso{color:var(--faint);font-size:13px;letter-spacing:.02em;
+    font-variant-numeric:tabular-nums}
+  .row .name{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .pct{color:var(--muted);font-size:13.5px;text-align:right;
+    font-variant-numeric:tabular-nums}
+  .row .n{text-align:right;font-size:15px;font-variant-numeric:tabular-nums}
+  .meter{height:7px;border-radius:99px;background:var(--track);overflow:hidden}
+  .meter i{display:block;height:100%;border-radius:99px;background:var(--bar)}
+  .row.other .name,.row.other .iso{color:var(--muted)}
+
+  .note{margin:34px 0 0;padding-top:20px;border-top:1px solid var(--track);
+    color:var(--muted);font-size:13.5px;max-width:68ch}
+  .note code{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.92em;
+    background:var(--track);padding:.1em .35em;border-radius:4px}
+  a{color:inherit}
+</style>
+
+<div class="card">
+  <h1>Geographic Distribution</h1>
+  <p class="sub">Where your users are located</p>
+
+  <div class="split">
+    <div class="map" id="map">
+      <!-- 1. the land, in the colour of "nobody from here" -->
+      <mappo-world id="base" mode="flat" cols="300" lat-min="-56" lat-max="84"
+        figure="solid" figure-color="var(--nodata)" figure-source="vector"
+        ground-color="none" background="none" interactive="false"></mappo-world>
+
+      <!-- 2. the fills, between land and borders -->
+      <svg class="choro" id="choro" viewBox="0 0 1000 1000"
+           preserveAspectRatio="none" aria-hidden="true"></svg>
+
+      <!-- 3. the borders, on top, so every country keeps its edge -->
+      <div class="over">
+        <mappo-world id="lines" mode="flat" cols="300" lat-min="-56" lat-max="84"
+          figure="solid" figure-color="transparent" figure-source="vector"
+          borders borders-color="var(--seam)" borders-width="0.5" borders-opacity="1"
+          ground-color="none" background="none" interactive="false"
+          overlays="false"></mappo-world>
+      </div>
+    </div>
+
+    <div class="rows" id="rows"></div>
+  </div>
+
+  <p class="note" id="note"></p>
+</div>
+
+<script type="module">
+import "../dist/mappo.js";
+import { countryRings, countryName } from "./countries.js";
+
+// The numbers behind the picture. Percentages are derived, never typed twice.
+const DATA = [
+  [ "US", 80 ], [ "AU", 7 ], [ "GB", 7 ], [ "CA", 6 ], [ "BR", 5 ],
+  [ "FR", 4 ], [ "MX", 4 ], [ "IL", 3 ], [ "CH", 3 ], [ "PT", 3 ]
+];
+const OTHER = 42;
+const total = DATA.reduce((n, [ , v ]) => n + v, 0) + OTHER;
+const max = Math.max(...DATA.map(([ , v ]) => v));
+
+const LAT_RANGE = [ -56, 84 ];
+const VB = 1000;
+const nx = (lon) => ((lon + 180) / 360) * VB;
+const ny = (lat) => ((LAT_RANGE[1] - lat) / (LAT_RANGE[1] - LAT_RANGE[0])) * VB;
+
+// One country's rings as one path. fill-rule evenodd rather than nonzero:
+// Natural Earth does not promise a winding direction, and evenodd punches
+// holes — Lesotho out of South Africa, the Vatican out of Italy — without
+// anyone having to trust the source's ring order.
+const pathFor = (iso) => (countryRings(iso) ?? [])
+  .map((ring) => "M" + ring.map(([ lat, lon ]) =>
+    `${nx(lon).toFixed(1)} ${ny(lat).toFixed(1)}`).join("L") + "Z").join("");
+
+// The ramp. NOT linear: at 80 against 7 a linear scale renders every country
+// but the top one indistinguishable from empty, which is exactly the failure
+// the original avoids — read off it, the 7s sit at 0.18 of the way up, which
+// is (7/80)^0.7. So the exponent is measured rather than picked.
+// The mixing is left to CSS, deliberately. Interpolating two hex values in JS
+// means reading the tokens at paint time, which means re-painting whenever the
+// theme changes — and then remembering every way a theme can change. It cannot
+// be only `prefers-color-scheme`, because this page also honours a `data-theme`
+// attribute, and an attribute change fires no media query. color-mix keeps the
+// fill a live expression of the tokens, so both paths just work and there is
+// no repaint to forget.
+const shade = (v) => v > 0
+  ? `color-mix(in oklab, var(--ramp-hi) ${(Math.pow(v / max, 0.7) * 100).toFixed(1)}%, var(--ramp-lo))`
+  : null;
+
+// ── the map layer ───────────────────────────────────────────────────────────
+const choro = document.getElementById("choro");
+const paths = new Map();
+function paint() {
+  choro.innerHTML = "";
+  for (const [ iso, v ] of DATA) {
+    const d = pathFor(iso);
+    if (!d) continue;
+    const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    el.setAttribute("d", d);
+    el.setAttribute("fill-rule", "evenodd");
+    el.style.fill = shade(v);
+    choro.appendChild(el);
+    paths.set(iso, el);
+  }
+}
+paint();
+
+// ── the list ────────────────────────────────────────────────────────────────
+const rows = document.getElementById("rows");
+const pct = (v) => Math.round((v / total) * 100);
+const line = ({ iso, name, v, other = false }) => {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.className = "row" + (other ? " other" : "");
+  el.innerHTML = `<span class="iso">${iso}</span><span class="name">${name}</span>` +
+    `<span class="pct">${pct(v)}%</span>` +
+    `<span class="meter"><i style="width:${Math.max(2, (v / total) * 100)}%"></i></span>` +
+    `<span class="n">${v}</span>`;
+  if (!other) {
+    const lit = (on) => paths.get(iso)?.classList.toggle("lit", on);
+    el.addEventListener("pointerenter", () => lit(true));
+    el.addEventListener("pointerleave", () => lit(false));
+    el.addEventListener("focus", () => lit(true));
+    el.addEventListener("blur", () => lit(false));
+  }
+  return el;
+};
+for (const [ iso, v ] of DATA) {
+  rows.appendChild(line({ iso, name: countryName(iso) ?? iso, v }));
+}
+rows.appendChild(line({ iso: "···", name: "Other", v: OTHER, other: true }));
+
+document.getElementById("note").innerHTML =
+  `mappo draws the land and the borders; the fills between them come from ` +
+  `<code>demo/countries.js</code> — 177 countries keyed by ISO, 15.6 KB gzipped, ` +
+  `traced from the same pinned Natural Earth data the borders are. ` +
+  `The library does not ship that yet: it has country borders as one flat list ` +
+  `of anonymous rings, which is enough to draw Brazil's edge and not enough to ` +
+  `fill it in. <a href="./">More demos</a>.`;
+</script>
