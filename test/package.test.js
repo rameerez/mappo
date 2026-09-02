@@ -26,7 +26,7 @@ test("the root export surface is explicit, minimal and contains no bundled inter
     // worlds
     "EARTH", "registerBody", "resolveBody", "knownBodies", "onBodyRegistered", "resolvePlace",
     // geometry for hosts building their own layers
-    "project", "cellCenter", "cellCorner", "projectNormalized", "buildGraticule",
+    "project", "cellCenter", "cellCorner", "projectNormalized", "resolveProjection", "knownProjections", "buildGraticule",
     "buildFigure", "parseFigureStyle", "snapToFigure", "noise2",
     // colour helpers
     "hoverShade", "resolveColor", "usesCssVars"

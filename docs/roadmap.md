@@ -56,27 +56,29 @@ that touches the body seam.
 
 ## 4. Projections track
 
-Today the flat map is equirectangular only, hard-coded in `src/projection.js`
-(cell centres are the inverse projection of a screen grid; markers, overlays,
-`locate()` and vector paths use the forward mapping), and the globe is a
-rotating orthographic sphere. That is one flat projection, and for a library
-whose stated purpose includes mission planning it is the wrong one at the
-poles: an equirectangular map smears the Artemis candidate regions at −85° to
-−88° across most of a row, and NASA and USGS publish polar products in polar
-stereographic for exactly that reason (the [MEGDR page](https://pds-geosciences.wustl.edu/missions/mgs/megdr.html)
-lists separate polar maps). Global scientific maps of other bodies are most
-often simple cylindrical (what mappo has) or an equal-area projection.
+**Shipped in 0.7.0.** The flat map has a projection seam
+(`src/projections.js`): an instance is `{ forward(lat, lon) → { x, y } | null,
+inverse(x, y) → { lat, lon } | null, aspect, outline() }`, the dot grid samples
+the body at the inverse projection of every screen cell, and markers,
+overlays, `locate()`, `projectNormalized`, borders, highlights and the graticule
+use the forward mapping. What was planned, and what it became:
 
-The architecture already has the seam; it is simply closed. The plan opens it
-without changing the renderers' contract:
+| # | Item | Status | Where |
+|---|---|---|---|
+| J1 | A projection interface with equirectangular as the default and no behaviour change | done; the one deliberate change is that points outside the map now answer `null` instead of coordinates outside 0…1 | `src/projections.js`, `src/projection.js`, `test/projections.test.js` |
+| J2 | Polar stereographic (north, south) and Equal Earth as built-ins | done: `projection="equirectangular \| equal-earth \| stereographic-north \| stereographic-south"`; formulas, scale tables and measured round trips in [docs/precision.md §3.7](precision.md) | Šavrič, Patterson & Jenny, [*The Equal Earth map projection*](https://doi.org/10.1080/13658816.2018.1504949), IJGIS 2019; Snyder, [USGS PP 1395](https://pubs.usgs.gov/pp/1395/report.pdf) pp. 154–163 |
+| J3 | Accept a d3-geo projection object | done: a function with `.invert` is wrapped; the frame is found by sampling the sphere, off-world points by d3's own inverse failing to round-trip | `adaptD3` in `src/projections.js` |
+| J4 | Vector outlines under other projections | done: rings are stitched into whole rings once per body (`stitchRings`, which also removes the 180° line the globe drew) and cut at the current projection's seam (`projectRings`); fills get closed pieces, edges get open arcs, a ring enclosing the far pole of a polar map is filled as a complement | `src/projections.js`; the seam-safe `.mappo-figure-fill` / `.mappo-figure-edge` split in `src/renderer.js` |
+| J5 | A central meridian, `center-lon` | done, for the built-ins; cylindrical maps move their seam and re-cut, polar maps rotate | `shift()` in every built-in instance |
+
+What remains:
 
 | # | Item | Why | First step | Size |
 |---|---|---|---|---|
-| J1 | **A projection interface**: `{ forward(lat, lon) → { x, y } in 0…1 or null, inverse(x, y) → { lat, lon } or null, aspect }`, with the current equirectangular mapping as the default implementation and no behaviour change. | the dot grid is "sample the figure at the inverse projection of each screen cell", so every projection with an inverse gets a uniform dot field, grid contours and highlight for free; the flat renderer's `#vectorPath`, `#placeOverlays`, `locate()` and `projectNormalized` are the only forward callers | extract `projection.js` into an object, thread it through `Mappo` and the flat renderer, pass the existing tests | M |
-| J2 | **Polar stereographic (north and south)** and **Equal Earth** as built-ins, selected with `projection="equirectangular \| stereographic-north \| stereographic-south \| equal-earth"`. | polar views are the scientific must-have for the Moon and Mars; Equal Earth is the modern equal-area standard for global thematic maps | both have closed-form forward and inverse; Equal Earth: Šavrič, Patterson & Jenny, *The Equal Earth map projection*, IJGIS 2019, as implemented in [d3-geo](https://github.com/d3/d3-geo#geoEqualEarth); formulas for stereographic in Snyder, *Map Projections: A Working Manual*, [USGS PP 1395](https://pubs.usgs.gov/pp/1395/report.pdf) | S each, after J1 |
-| J3 | **Accept a d3-geo projection object** as `projection` in JavaScript (`forward` from `projection([lon, lat])`, `inverse` from `projection.invert`). | forty projections without bundling any; mappo stays zero-dependency | an adapter that detects the d3 shape | S |
-| J4 | **Vector outlines under other projections.** Rings are cut at ±180°; on a cylindrical projection centred at 0° that is the frame edge, on a polar view it appears as a line along the 180° meridian, and under a rotated central meridian rings must be re-cut. | grid-source outlines are immune (they are traced in screen space); vector needs a clipper | stitch the seam-split rings back into whole rings at generation time and keep a per-projection clipping step (d3-geo's stream pipeline is the reference design) | M |
-| J5 | **A central meridian** (`center-lon`) for cylindrical projections: Pacific-centred maps. | a long-standing request in `TODO` (`lonRange`) | trivial for the grid once J1 exists; depends on J4 for vector | S after J4 |
+| J6 | **More built-ins**: Web Mercator (EPSG:3857) so a mappo layer can register to tile maps; Lambert azimuthal equal-area for area-true polar maps (the [NSIDC EASE-Grid 2.0](https://nsidc.org/data/user-resources/help-center/guide-ease-grids) polar products); Mollweide and Robinson for the classic global look; orthographic as a *flat* projection, for a fixed hemisphere without the globe's canvas | each is a page of closed-form or well-known series mathematics with a known inverse ([Snyder 1987](https://pubs.usgs.gov/pp/1395/report.pdf); Robinson has no closed form and is interpolated from its table, as [d3-geo-projection](https://github.com/d3/d3-geo-projection) does) | add to `BUILTINS` with `kind` and `defaultLatRange`; the test file's round-trip and frame checks are generic and pick new ids up automatically | S each |
+| J7 | **Seam handling for custom and d3 projections.** They draw rings as the packs store them (cut at ±180°), correct for a projection centred on 0° and wrong under a rotated one; `center-lon` is ignored for them | a general clipper needs to know where a projection's cuts are | expose a `seam` description on the projection object (`{ kind: "cylindrical", centerLon }` reuses today's cutter; d3 rotations map onto it) and fall back to d3's own stream clipping when a d3 projection has `.rotate()` — the [d3-geo clipping design](https://github.com/d3/d3-geo#projection_clipAngle) is the reference | M |
+| J8 | **Graticule labels** (latitude and longitude values along the frame or the equator) | a scientific map without labelled coordinates is a picture | positions come from `projectPolyline` today; the renderer would add `<text>` at the frame intersections, style-tier | S |
+| J9 | **Cells per frame under a projection.** `cols` is cells across the frame, so a polar map at `cols="120"` samples 120 × 120 = 14,400 cells for a hemisphere where an equirectangular map samples 120 × 60; the cost model in [docs/performance.md §3](performance.md) is per cell | make the trade explicit in the docs (done) and consider a `cells` budget option that picks `cols` from the aspect | S |
 
 The globe keeps its single orthographic projection: it is a physical view, not
 a map projection, and the rotation is the point.

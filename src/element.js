@@ -24,6 +24,9 @@ const ATTR_MAP = {
   "cols":               [ "cols", Number ],
   "lat-min":            [ "latMin", Number ],
   "lat-max":            [ "latMax", Number ],
+  // The flat map's projection and central meridian; the globe ignores both.
+  "projection":         [ "projection", (v) => v.trim().toLowerCase() ],
+  "center-lon":         [ "centerLon", Number ],
   // The figure and the ground
   "figure":             [ "figure", String ],
   "figure-color":       [ "figureColor", String ],

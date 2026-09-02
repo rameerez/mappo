@@ -47,7 +47,7 @@ function figureAt(col, row, grid, wrapX, body) {
     c = ((c % grid.cols) + grid.cols) % grid.cols;
   }
   const p = cellCenter(c, row, grid);
-  return body.figure(p.lat, p.lon);
+  return p !== null && body.figure(p.lat, p.lon);   // null: the cell is off the world
 }
 
 // Chain directed boundary edges into rings. Each edge is stored under its
@@ -109,7 +109,7 @@ export function buildFigure(grid, { body, wrapX = false } = {}) {
   if (!body) throw new TypeError("buildFigure needs a body — pass { body: EARTH } or another registered body");
   let perBody = cache.get(body);
   if (!perBody) cache.set(body, perBody = new Map());
-  const key = `${grid.cols}|${grid.rows}|${grid.latRange[0]}|${grid.latRange[1]}|${wrapX}`;
+  const key = `${grid.cols}|${grid.rows}|${grid.latRange[0]}|${grid.latRange[1]}|${wrapX}|${grid.projection?.key ?? ""}`;
   const hit = perBody.get(key);
   if (hit) return hit;
 

@@ -282,6 +282,97 @@ Coastal coordinates snap to the nearest figure dot at the current resolution
 (harbours sit in sea cells on a coarse grid, and a marker floating just off
 the coast looks broken). Deep-ocean coordinates render where they are.
 
+## Projections
+
+```html
+<mappo-world projection="equal-earth" lat-min="-90" lat-max="90"></mappo-world>
+<mappo-moon projection="stereographic-south" lat-max="-60"
+            places="Shackleton, Haworth"></mappo-moon>
+<mappo-world center-lon="150" places="Tokyo, Sydney, Honolulu"></mappo-world>
+```
+
+A sphere does not fit on a rectangle, and every way of forcing it lies about
+something. mappo lets you choose the lie. Four projections ship:
+
+| `projection` | kind | true to | frame |
+|---|---|---|---|
+| `equirectangular` (default) | cylindrical | latitude and longitude as straight lines | 360° wide by the latitude band |
+| `equal-earth` | pseudocylindrical, equal-area | area, everywhere | 2.05 : 1 for the whole sphere; the corners are off the world |
+| `stereographic-north` | azimuthal, conformal | shape; the north pole at the centre | a square holding a disc |
+| `stereographic-south` | azimuthal, conformal | shape; the south pole at the centre | a square holding a disc |
+
+Equal Earth is the equal-area projection of Šavrič, Patterson and Jenny
+(*International Journal of Geographical Information Science*, 2019), the
+modern standard for global thematic maps. Polar stereographic is what NASA
+and USGS print the poles in, and the only honest way to show the Artemis
+candidate regions at 85° south, which an equirectangular map smears across
+most of a row.
+
+**Polar maps read `lat-min`/`lat-max` as the band you see**: the far bound is
+the rim of the disc, the near bound is normally the pole. `lat-max="-60"` on a
+south polar map shows 60°S to the pole; a near bound short of the pole makes
+an annulus. Unset, a polar map shows its hemisphere. Longitude 90°E is to the
+right in both aspects, so 0° points down on a north map and up on a south one,
+the convention planetary polar products are printed in.
+
+**`center-lon`** sets the central meridian, in degrees east: `150` gives a
+Pacific-centred map. Cylindrical maps move their seam with it, and the vector
+coastlines are re-cut at the new seam rather than the old one; polar maps
+rotate. The globe ignores both `projection` and `center-lon`: it is a physical
+view, not a map projection.
+
+Everything else is the same code with a projection plugged in. Dots are
+sampled at the inverse projection of every screen cell, so the dot field is
+uniform on screen whatever the projection; grid contours, highlights, markers,
+overlays, `locate()`, `projectNormalized`, borders and the graticule follow the
+forward mapping. Vector outlines are stitched into whole rings once per body
+and cut at *this* map's seam, with the fill closed and the edge never stroked
+along a seam — not along the frame of a cylindrical map, and not along the
+180° meridian of a polar one.
+
+A point with **no place on the map** — the far hemisphere of a polar map, a
+latitude outside the band — is not drawn: places are skipped, overlays are
+parked off-screen with `data-mappo-behind` (the same attribute the globe uses
+for its far side), and `locate()`, `projectNormalized`, `project`, `cellCenter`
+and `snapToFigure` return `null`.
+
+### Your own projection
+
+`projection` also takes an object, or a d3-geo projection:
+
+```js
+const sinusoidal = {
+  aspect: 2,
+  forward: (lat, lon) => ({ x: 0.5 + lon * Math.cos(lat * RAD) / 360, y: (90 - lat) / 180 }),
+  inverse: (x, y) => {                       // null means "this frame point is off the world"
+    const lat = 90 - y * 180, lon = (x - 0.5) * 360 / Math.cos(lat * RAD);
+    return Math.abs(lon) <= 180 ? { lat, lon } : null;
+  },
+  outline: () => [ ring ]                     // optional: the clip, in unit-frame coordinates
+};
+new Mappo(el, { projection: sinusoidal, latRange: [-90, 90] });
+
+import { geoMollweide } from "d3-geo-projection";
+new Mappo(el, { projection: geoMollweide(), latRange: [-90, 90] });   // recognised by its .invert
+```
+
+`forward(lat, lon)` returns a point in the unit frame (0…1 across, 0…1 down)
+or `null`; `inverse(x, y)` returns `{ lat, lon }` or `null`. The dot field,
+contours and highlights come from the inverse alone. For a d3 projection the
+frame is the bounding box of the sphere as it draws it, found by sampling, and
+a frame point is off the world when d3's inverse does not round-trip. A
+projection of your own draws vector rings as the body stores them, cut at
+±180°, which is right for anything centred on 0°; `center-lon` applies to the
+built-ins only.
+
+`map.projection` is the resolved instance the flat map is drawing with —
+`id`, `aspect`, `forward`, `inverse`, `outline()` — and `null` on the globe.
+`resolveProjection(name | object, { latRange, centerLon })` and
+`knownProjections()` are exported for hosts that want the same mapping without
+a map. The projection formulas, their accuracy and their measured cost are in
+[docs/precision.md](https://github.com/rameerez/mappo/blob/main/docs/precision.md)
+and [docs/performance.md](https://github.com/rameerez/mappo/blob/main/docs/performance.md).
+
 ## Globe mode
 
 The same world, wrapped on a sphere and spinning:
@@ -382,9 +473,11 @@ makes a graticule readable rather than noisy:
   double-draws the equator at double opacity and reads as a bug.
   `parallels="23"` therefore yields 22 lines plus the equator.
 
-Lines break at the limb and fade with depth, so the near and far side of the
-same circle never flatten into one ellipse. Globe mode today; the geometry
-(`buildGraticule`) is renderer-agnostic and exported.
+On the globe, lines break at the limb and fade with depth, so the near and far
+side of the same circle never flatten into one ellipse. On the flat map they
+are projected and broken wherever they leave the world or cross the seam, so a
+polar map gets its radial meridians and concentric parallels from the same
+option. The geometry (`buildGraticule`) is renderer-agnostic and exported.
 
 ## Colours from CSS variables
 
@@ -463,7 +556,10 @@ but `latRange`, and map straight onto CSS percentages. `latRange` is required:
 it is the one thing that differs between Earth's default framing, a
 full-sphere Moon and your own crop, and a silent default would put another
 world's labels in the wrong place. A live map's range is
-`map.options.latRange`.
+`map.options.latRange`. A map with a projection or a central meridian needs
+those too — `projectNormalized(lat, lon, { latRange, projection: "equal-earth", centerLon: 150 })` —
+and the answer is `null` for a point the map has no place for (a latitude
+outside the band, the far hemisphere of a polar map).
 
 ## `locate()` — drawing your own layer
 
@@ -487,8 +583,10 @@ const s = map.locate(lat, lon, 1 + altitudeKm / map.body.radiusKm);
 
 `depth` runs 0 at the limb to 1 facing you, the same fade the dots wear, so a
 point can be dimmed with the geometry rather than against it. On the flat map
-`front` is always true and the answer is the untransformed layout box —
-`tilt`/`rotate`/`perspective` are a CSS transform applied on top of it.
+`front` is always true, the answer follows the map's projection and central
+meridian, it is `null` for a point the projection has no place for, and the
+box is the untransformed layout box — `tilt`/`rotate`/`perspective` are a CSS
+transform applied on top of it.
 
 [The Starlink demo](https://rameerez.github.io/mappo/demo/satellites.html) is
 ten thousand of these calls a frame.
@@ -541,8 +639,8 @@ own renderer on the same data. Everything Earth-specific is reached through
 ## Styling
 
 The component renders into light DOM with plain classes (`.mappo-dot`,
-`.mappo-marker`, `.mappo-figure-path`, `.mappo-borders`, `.mappo-svg`,
-`.mappo-tilt`) — your stylesheet wins. The built-in styles are defaults, not
+`.mappo-marker`, `.mappo-figure-fill`, `.mappo-figure-edge`, `.mappo-borders`,
+`.mappo-graticule`, `.mappo-equator`, `.mappo-svg`, `.mappo-tilt`) — your stylesheet wins. The built-in styles are defaults, not
 law, and they are scoped to each instance. `prefers-reduced-motion` disables
 all animation automatically.
 
@@ -712,9 +810,8 @@ seam small enough to survive the next body.
 ## Roadmap
 
 What comes next — the performance work with its measured gains, the precision
-work toward research-grade data, flat projections beyond equirectangular
-(polar stereographic and Equal Earth first), regions with identities, and
-more bodies — is in
+work toward research-grade data, more projections and seam handling for custom
+ones, regions with identities, and more bodies — is in
 [docs/roadmap.md](https://github.com/rameerez/mappo/blob/main/docs/roadmap.md),
 each item with its evidence and sources.
 

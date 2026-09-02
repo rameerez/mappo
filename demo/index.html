@@ -236,6 +236,23 @@ label.classList.toggle("is-night", solarElevation(lat, lon, dec, sunLon) &lt; 0)
     </div>
   </div>
 
+<!-- ─────────────────────── PROJECTIONS ─────────────────────── -->
+<h2>Four ways to flatten a sphere <span>— equirectangular, Equal Earth, the poles, and your own</span></h2>
+<div class="card">
+  <div class="meta">
+    <h3><a href="./projections.html">Projections →</a></h3>
+    <p>The same Earth as the straight-lined equirectangular map and as Equal Earth, where areas
+    are true and the corners are not part of the world. A Pacific-centred map with the seam
+    moved and the coastlines re-cut. The lunar south pole in polar stereographic with the
+    Artemis regions labelled, the Arctic as one ocean, Mars from above its north pole. And a
+    sinusoidal projection written in eight lines, handed in as a plain object.</p>
+    <span class="tag">projection="equal-earth"</span><span class="tag">projection="stereographic-south"</span><span class="tag">center-lon="150"</span><span class="tag">lat-max="-80"</span><span class="tag">{ forward, inverse }</span><span class="tag">graticule</span>
+    <pre><code>&lt;mappo-moon projection="stereographic-south" lat-max="-80" figure="solid" figure-source="vector" graticule&gt;
+  &lt;a data-lat="-89.7" data-lon="129.2"&gt;Shackleton&lt;/a&gt;   &lt;!-- the pole is the centre --&gt;
+&lt;/mappo-moon&gt;</code></pre>
+  </div>
+</div>
+
 <!-- ─────────────────────── SATELLITES ─────────────────────── -->
 <h2>Ten thousand satellites <span>— the whole Starlink constellation, live</span></h2>
 <div class="card">

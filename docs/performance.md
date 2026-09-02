@@ -121,6 +121,31 @@ per frame (12 fps); sixteen did not complete a dozen frames in ninety
 seconds. **Animate one flat map per viewport, at cols ≤ 120–170, or animate
 on the globe, where it costs 0.2 µs per dot.**
 
+### Projections
+
+A projection changes what a cell costs to *sample*, not what it costs to
+render: the SVG node count, the style patches and the animation gate are all
+functions of the dot count as before. The sampling cost is one inverse
+projection per cell plus the body lookup. Measured in Node 22 on the reference
+machine at `cols="260"`, the flat maximum, with the cell count each frame
+implies (`rows = round(cols / aspect)`):
+
+| projection | cells at cols=260 | inverse of every cell | full `buildFigure` (inverse + figure lookup) | `projectRings` of Earth's 117 stitched outlines |
+|---|---|---|---|---|
+| equirectangular, Earth's band | 260 × 103 = 26,780 | 0.26 ms | 5.6 ms | 0.95 ms |
+| equal-earth, whole sphere | 260 × 127 = 33,020 | 3.5 ms | 10.6 ms | 1.2 ms |
+| stereographic-south, 60°S to the pole | 260 × 260 = 67,600 | 3.2 ms | 16.3 ms | 0.44 ms |
+
+Equal Earth's inverse is a Newton solve (3–5 iterations) at ~0.1 µs per cell;
+polar stereographic's is closed-form. Both are far below the DOM cost of the
+same map (section 3), so a projection is not a performance decision — but a
+polar map is square, and a square frame at the same `cols` holds two to three
+times the cells of an equirectangular one. Budget by cells, not by `cols`, when
+you go polar: `cols="120"` on a hemisphere is 14,400 cells, roughly what
+`cols="170"` is on the default Earth frame. Stitching the outlines runs once
+per body (0.16 ms for Earth) and is memoised on the pack's rings array; the
+per-projection cut is memoised in the instance's figure cache.
+
 ## 4. Measured: one globe
 
 500 px canvas, `rotate-speed="30"`, Earth, default framing. Per-frame draw

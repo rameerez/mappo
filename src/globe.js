@@ -23,6 +23,7 @@
 // paths. Several globes on one page is a first-class case.
 
 import { resolvePlaces } from "./body.js";
+import { stitchRings } from "./projections.js";
 import { cellCenter, cellCorner } from "./projection.js";
 import { normalizeRings, pointInRings } from "./highlight.js";
 import { noise2 } from "./noise.js";
@@ -215,7 +216,9 @@ export class GlobeRenderer {
     "figureColor", "figureStroke", "figureStrokeWidth", "dotHoverColor", "dotHoverScale",
     "bordersColor", "bordersWidth", "bordersOpacity",
     "graticuleColor", "equatorColor", "graticuleOpacity", "equatorOpacity",
-    "markerColor", "markerScale", "markerHoverScale", "highlightColor", "overlays"
+    "markerColor", "markerScale", "markerHoverScale", "highlightColor", "overlays",
+    // Flat-map concerns the globe ignores entirely.
+    "projection", "centerLon"
   ]);
 
   // @param changed [Array|null] option keys that actually changed. Omit it and
@@ -638,7 +641,9 @@ export class GlobeRenderer {
   // fills from the grid — see #drawFigure — which culls cell by cell and
   // cannot fail that way, and these rings draw the edge on top.
   #strokeVector(rings, T, { stroke, width, alphaScale = 1 }) {
-    this.#strokeBanded(this.#projectRings(xyzRings(rings), T), stroke, width, 1, alphaScale);
+    // Stitched: the pack's cut at ±180° is a closure edge for a flat map, and
+    // stroking it on a sphere drew a line down the antimeridian.
+    this.#strokeBanded(this.#projectRings(xyzRings(stitchRings(rings)), T), stroke, width, 1, alphaScale);
   }
 
   // Grid geometry for the figure — the same figure.js geometry the flat map

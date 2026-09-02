@@ -4,77 +4,632 @@
 // Earth data: Natural Earth (public domain, naturalearthdata.com).
 // GENERATED from src/ by scripts/build.js — edit src/, not this file.
 
-// ══════════ src/projection.js ══════════
-// Equirectangular projection — the deliberate choice for a SYMBOLIC map:
-// linear lat/lon ↔ x/y, matching both the packed figure mask and everyone's
-// mental image of "the world map". Not area-accurate (Mercator-style debates
-// don't apply — nothing here encodes quantity by area).
+// ══════════ src/projections.js ══════════
+// Flat projections: how a latitude and longitude become a point in the frame.
 //
-// All renderer geometry flows through these functions, which is what makes
-// globe mode a renderer swap instead of an API change: callers speak lat/lon,
-// only the projection changes.
+// A projection is a small object, like a body is:
+//
+//   forward(lat, lon)  → { x, y } in the unit frame (0…1 across, 0…1 down),
+//                        or null when the point has no place on this map
+//   inverse(x, y)      → { lat, lon }, or null when the frame point is off the
+//                        world (the corners of an Equal Earth frame, outside a
+//                        polar disc)
+//   aspect             frame width / height
+//   outline()          the world's edge, as closed rings in unit-frame
+//                      coordinates; the map is clipped to it
+//
+// The flat renderer's dot grid is "sample the body at the inverse projection of
+// every screen cell", so any projection with an inverse gets a uniform dot
+// field, grid contours and highlights for free. Markers, overlays, locate()
+// and the vector outlines use the forward mapping.
+//
+// Four projections ship. Equirectangular is the default and the one every
+// version of mappo has drawn. Equal Earth (Šavrič, Patterson & Jenny, 2019) is
+// the modern equal-area standard for global thematic maps. Polar stereographic,
+// north and south, is what the planetary community uses for the poles — the
+// only honest way to show the Artemis candidate regions at 85° south, which an
+// equirectangular map smears across most of a row. Anything else can be handed
+// in as an object with the interface above, or as a d3-geo projection.
+//
+// THE SEAM. Every body's vector rings are cut at ±180° with closure edges along
+// the cut, because that is what a cylindrical map centred on 0° needs. Nothing
+// else needs it: a polar map has no seam there, and a map centred on 150° has
+// its seam somewhere else. So rings are STITCHED back into whole rings once per
+// body (the cut edges removed, the halves joined across ±180), and then cut
+// again per projection — at the projection's own seam for cylindrical
+// projections, not at all for azimuthal ones. Fills get closed pieces; the
+// edge stroke gets the open arcs, so no seam is ever stroked.
+
+const DEG = Math.PI / 180;
+const FULL = [ -90, 90 ];
+const EPS = 1e-9;
+
+// Longitude into [-180, 180).
+function wrapLon(lon) {
+  return ((((lon + 180) % 360) + 360) % 360) - 180;
+}
+
+// ── Equal Earth ─────────────────────────────────────────────────────────────
+// Šavrič, Patterson & Jenny, "The Equal Earth map projection", International
+// Journal of Geographical Information Science 33(3), 2019. The polynomial and
+// its constants are the published ones; the inverse is Newton's method on the
+// y polynomial, converging to 1e-13 rad in a handful of steps.
+const EE = { A1: 1.340264, A2: -0.081106, A3: 0.000893, A4: 0.003796, M: Math.sqrt(3) / 2 };
+const eeTheta = (latRad) => Math.asin(EE.M * Math.sin(latRad));
+const eeY = (t) => { const t2 = t * t, t6 = t2 * t2 * t2; return t * (EE.A1 + EE.A2 * t2 + t6 * (EE.A3 + EE.A4 * t2)); };
+const eeDy = (t) => { const t2 = t * t, t6 = t2 * t2 * t2; return EE.A1 + 3 * EE.A2 * t2 + t6 * (7 * EE.A3 + 9 * EE.A4 * t2); };
+const eeX = (lonRad, t) => (lonRad * Math.cos(t)) / (EE.M * eeDy(t));
+function eeThetaFromY(y) {
+  let t = y;
+  for (let i = 0; i < 25; i++) {
+    const step = (eeY(t) - y) / eeDy(t);
+    t -= step;
+    if (Math.abs(step) < 1e-13) break;
+  }
+  return t;
+}
+
+// ── the built-ins ───────────────────────────────────────────────────────────
+// Each has a `kind` the seam logic keys on, a `defaultLatRange` used when the
+// caller has not set bounds, and `create({ latRange, centerLon })` returning
+// the mapping functions in unit-frame coordinates. Longitudes arrive already
+// shifted by the central meridian (λ' = lon − centerLon) so a piece cut at the
+// seam can sit exactly on ±180 without being wrapped to the other edge.
+const BUILTINS = {
+  "equirectangular": {
+    kind: "cylindrical",
+    defaultLatRange: (bodyRange) => bodyRange,
+    create({ latRange: [ lat0, lat1 ] }) {
+      const span = lat1 - lat0;
+      return {
+        aspect: 360 / span,
+        forwardShifted: (lat, lonS) => ({ x: (lonS + 180) / 360, y: (lat1 - lat) / span }),
+        inverse: (x, y) => (x < -EPS || x > 1 + EPS || y < -EPS || y > 1 + EPS) ? null
+          : { lat: lat1 - y * span, lonS: -180 + x * 360 },
+        outline: () => [ [ [ 0, 0 ], [ 1, 0 ], [ 1, 1 ], [ 0, 1 ], [ 0, 0 ] ] ]
+      };
+    }
+  },
+  "equal-earth": {
+    kind: "cylindrical",
+    defaultLatRange: (bodyRange) => bodyRange,
+    create({ latRange: [ lat0, lat1 ] }) {
+      const yTop = eeY(eeTheta(lat1 * DEG)), yBottom = eeY(eeTheta(lat0 * DEG));
+      const xMax = eeX(Math.PI, 0);
+      const width = 2 * xMax, height = yTop - yBottom;
+      const forwardShifted = (lat, lonS) => {
+        const t = eeTheta(lat * DEG);
+        return { x: 0.5 + eeX(lonS * DEG, t) / width, y: (yTop - eeY(t)) / height };
+      };
+      return {
+        aspect: width / height,
+        forwardShifted,
+        inverse: (x, y) => {
+          const t = eeThetaFromY(yTop - y * height);
+          const s = Math.sin(t) / EE.M;
+          if (s < -1 - EPS || s > 1 + EPS) return null;
+          const lat = Math.asin(Math.max(-1, Math.min(1, s))) / DEG;
+          if (lat < lat0 - EPS || lat > lat1 + EPS) return null;
+          const lonS = ((x - 0.5) * width * EE.M * eeDy(t) / Math.cos(t)) / DEG;
+          if (lonS < -180 - EPS || lonS > 180 + EPS) return null;
+          return { lat, lonS };
+        },
+        outline: () => {
+          const ring = [];
+          const step = 2;
+          for (let lat = lat1; lat > lat0; lat -= step) ring.push(forwardShifted(lat, -180));
+          ring.push(forwardShifted(lat0, -180), forwardShifted(lat0, 180));
+          for (let lat = lat0 + step; lat < lat1; lat += step) ring.push(forwardShifted(lat, 180));
+          ring.push(forwardShifted(lat1, 180), forwardShifted(lat1, -180));
+          return [ ring.map((p) => [ p.x, p.y ]) ];
+        }
+      };
+    }
+  },
+  "stereographic-north": { kind: "azimuthal", pole: 1, defaultLatRange: () => [ 0, 90 ], create: (o) => polar(1, o) },
+  "stereographic-south": { kind: "azimuthal", pole: -1, defaultLatRange: () => [ -90, 0 ], create: (o) => polar(-1, o) }
+};
+
+// Polar stereographic on the unit sphere: ρ = 2·tan(c/2) for colatitude c from
+// the centre pole. Conformal; the scale factor is 2/(1 + cos c), so a screen
+// cell at the equator of a hemispheric map spans half the ground distance (a
+// quarter of the ground area) of one at the pole.
+// Convention (USGS/NASA planetary maps): 90°E to the right in both aspects,
+// which puts the central meridian at the bottom of a north polar map and at
+// the top of a south polar one.
+function polar(pole, { latRange: [ lat0, lat1 ] }) {
+  const rim = pole > 0 ? lat0 : lat1;      // the far bound: the edge of the disc
+  const inner = pole > 0 ? lat1 : lat0;    // the near bound: the pole itself, normally
+  const aspectName = pole > 0 ? "stereographic-north" : "stereographic-south";
+  if (pole * rim <= -90 + 1e-6) {
+    throw new RangeError(`${aspectName} cannot reach the opposite pole: keep ${pole > 0 ? "lat-min above -90" : "lat-max below 90"}`);
+  }
+  const rho = (lat) => 2 * Math.tan(((90 - pole * lat) / 2) * DEG);
+  const rhoMax = rho(rim), rhoMin = rho(inner);
+  const clampAt = 4 * rhoMax;              // finite, far outside the disc; the clip hides it
+  return {
+    aspect: 1,
+    farPole: -pole * 90,
+    forwardShifted: (lat, lonS) => {
+      let r = rho(lat);
+      if (!(r <= clampAt)) r = clampAt;    // NaN and Infinity land here too
+      const a = lonS * DEG;
+      return { x: 0.5 + (r * Math.sin(a)) / (2 * rhoMax), y: 0.5 + (pole * r * Math.cos(a)) / (2 * rhoMax) };
+    },
+    inverse: (x, y) => {
+      const dx = (x - 0.5) * 2 * rhoMax, dy = (y - 0.5) * 2 * rhoMax;
+      const r = Math.hypot(dx, dy);
+      if (r > rhoMax + EPS || r < rhoMin - EPS) return null;
+      return { lat: pole * (90 - (2 * Math.atan(r / 2)) / DEG), lonS: Math.atan2(dx, pole * dy) / DEG };
+    },
+    outline: () => {
+      const circle = (radius) => {
+        const ring = [];
+        for (let i = 0; i <= 180; i++) {
+          const a = (i / 180) * 2 * Math.PI;
+          ring.push([ 0.5 + radius * Math.cos(a), 0.5 + radius * Math.sin(a) ]);
+        }
+        return ring;
+      };
+      // An inner bound short of the pole makes an annulus; the hole is part of
+      // the outline so the clip (evenodd) cuts it out too.
+      return rhoMin > EPS ? [ circle(0.5), circle(0.5 * (rhoMin / rhoMax)) ] : [ circle(0.5) ];
+    }
+  };
+}
+
+function knownProjections() {
+  return Object.keys(BUILTINS);
+}
+
+// The latitude band a projection wants when the caller has not asked: the
+// body's own framing for cylindrical maps, a hemisphere for polar ones (Earth's
+// default −58…84 would put a north polar map's rim in the southern ocean).
+function projectionDefaultRange(value, bodyRange) {
+  const spec = typeof value === "string" ? BUILTINS[normalizeProjectionId(value)] : null;
+  return spec ? spec.defaultLatRange(bodyRange) : bodyRange;
+}
+
+function normalizeProjectionId(value) {
+  return String(value).trim().toLowerCase();
+}
+
+// One resolved projection instance per (id, latRange, centerLon); a small cache
+// keeps repeated renders and projectNormalized() calls from rebuilding tables.
+const INSTANCES = new Map();
+const CUSTOM_KEYS = new WeakMap();
+let customSeq = 0;
+
+// value: a built-in id, an object with forward/inverse, or a d3-geo projection
+// (a function of [lon, lat] with an .invert). Returns the instance the renderer
+// draws with.
+function resolveProjection(value, { latRange = FULL, centerLon = 0 } = {}) {
+  if (!Array.isArray(latRange) || latRange.length !== 2 || !latRange.every(Number.isFinite) || latRange[0] >= latRange[1]) {
+    throw new RangeError("a projection needs latRange [min, max] with min < max");
+  }
+  if (!Number.isFinite(centerLon)) throw new RangeError("centerLon must be a finite number of degrees");
+  // A longitude of exactly ±180 keeps its side: the right edge of a map centred
+  // on 0° is 180, not a wrap to −180. Only out-of-range input is wrapped.
+  const shift = (lon) => { const s = lon - centerLon; return s >= -180 && s <= 180 ? s : wrapLon(s); };
+
+  if (typeof value === "string" || value == null) {
+    const id = normalizeProjectionId(value ?? "equirectangular");
+    const spec = BUILTINS[id];
+    if (!spec) throw new RangeError(`unknown projection "${value}" — known: ${knownProjections().join(", ")}`);
+    const key = `${id}|${centerLon}|${latRange[0]}|${latRange[1]}`;
+    const hit = INSTANCES.get(key);
+    if (hit) return hit;
+    const built = spec.create({ latRange, centerLon });
+    const instance = Object.freeze({
+      id, kind: spec.kind, key, aspect: built.aspect, centerLon, latRange: [ ...latRange ],
+      farPole: built.farPole ?? null,
+      shift,
+      forwardShifted: built.forwardShifted,
+      // The public forward is STRICT: null for a point with no place on this map
+      // (off the disc of a polar map, outside the latitude band). The internal
+      // forwardShifted stays permissive so ring geometry never has holes.
+      forward: (lat, lon) => {
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+        const p = built.forwardShifted(lat, shift(lon));
+        return p && built.inverse(p.x, p.y) ? p : null;
+      },
+      inverse: (x, y) => {
+        const p = built.inverse(x, y);
+        return p ? { lat: p.lat, lon: wrapLon(p.lonS + centerLon) } : null;
+      },
+      outline: built.outline
+    });
+    if (INSTANCES.size > 64) INSTANCES.delete(INSTANCES.keys().next().value);
+    INSTANCES.set(key, instance);
+    return instance;
+  }
+
+  if (typeof value === "function" && typeof value.invert === "function") return adaptD3(value, latRange);
+  if (value && typeof value === "object" && typeof value.forward === "function" && typeof value.inverse === "function") {
+    return adaptCustom(value, latRange);
+  }
+  throw new TypeError("projection must be a known name, a { forward, inverse } object, or a d3-geo projection");
+}
+
+function customKey(value, latRange) {
+  let base = CUSTOM_KEYS.get(value);
+  if (!base) CUSTOM_KEYS.set(value, base = `custom-${++customSeq}`);
+  return `${base}|${latRange[0]}|${latRange[1]}`;
+}
+
+// Your own projection. The seam is yours too: rings are drawn as the body
+// stores them (cut at ±180°), which is right for any projection centred on 0°.
+function adaptCustom(value, latRange) {
+  const forward = (lat, lon) => {
+    const p = value.forward(lat, lon);
+    return p && Number.isFinite(p.x) && Number.isFinite(p.y) ? { x: p.x, y: p.y } : null;
+  };
+  return Object.freeze({
+    id: value.id ?? "custom", kind: "custom", key: customKey(value, latRange),
+    aspect: value.aspect ?? 2, centerLon: 0, latRange: [ ...latRange ], farPole: null,
+    shift: (lon) => lon,
+    forwardShifted: forward,
+    forward,
+    inverse: (x, y) => {
+      const p = value.inverse(x, y);
+      return p && Number.isFinite(p.lat) && Number.isFinite(p.lon) ? { lat: p.lat, lon: p.lon } : null;
+    },
+    outline: () => (typeof value.outline === "function" ? value.outline() : null) ??
+      [ [ [ 0, 0 ], [ 1, 0 ], [ 1, 1 ], [ 0, 1 ], [ 0, 0 ] ] ]
+  });
+}
+
+// A d3-geo projection: proj([lon, lat]) → [x, y] in its own pixel space, and
+// proj.invert([x, y]) → [lon, lat]. The frame is the bounding box of the whole
+// sphere as the projection draws it, found by sampling; a frame point is off
+// the world when the inverse does not round-trip, which is how d3 signals it.
+function adaptD3(proj, latRange) {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const see = (lon, lat) => {
+    const p = proj([ lon, lat ]);
+    if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) return;
+    if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
+    if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
+  };
+  for (let lon = -180; lon <= 180; lon += 1) { see(lon, latRange[0]); see(lon, latRange[1]); for (let lat = -90; lat <= 90; lat += 5) see(lon, lat); }
+  for (let lat = -90; lat <= 90; lat += 0.5) { see(-180, lat); see(180, lat); see(0, lat); }
+  if (!(maxX > minX && maxY > minY)) throw new RangeError("d3 projection produced no finite frame");
+  const width = maxX - minX, height = maxY - minY, tolerance = 1e-6 * Math.max(width, height);
+  const forward = (lat, lon) => {
+    const p = proj([ lon, lat ]);
+    return p && Number.isFinite(p[0]) && Number.isFinite(p[1]) ? { x: (p[0] - minX) / width, y: (p[1] - minY) / height } : null;
+  };
+  return Object.freeze({
+    id: "d3", kind: "custom", key: customKey(proj, latRange),
+    aspect: width / height, centerLon: 0, latRange: [ ...latRange ], farPole: null,
+    shift: (lon) => lon,
+    forwardShifted: forward,
+    forward,
+    inverse: (x, y) => {
+      const px = minX + x * width, py = minY + y * height;
+      const ll = proj.invert([ px, py ]);
+      if (!ll || !Number.isFinite(ll[0]) || !Number.isFinite(ll[1])) return null;
+      const back = proj(ll);
+      if (!back || Math.hypot(back[0] - px, back[1] - py) > tolerance) return null;
+      return { lat: ll[1], lon: ll[0] };
+    },
+    outline: () => [ [ [ 0, 0 ], [ 1, 0 ], [ 1, 1 ], [ 0, 1 ], [ 0, 0 ] ] ]
+  });
+}
+
+// ── rings across the seam ───────────────────────────────────────────────────
+
+const onSeam = (v) => Math.abs(Math.abs(v[1]) - 180) < 1e-9;
+const closeRing = (pts) => [ ...pts, [ pts[0][0], pts[0][1] ] ];
+const STITCHED = new WeakMap();
+
+// Undo the cut every pack makes at ±180°: remove the closure edges that run
+// along the seam and join the halves back into whole rings. A ring that never
+// touches the seam passes through unchanged. Memoised on the rings array, which
+// a body memoises in turn, so this runs once per body per page.
+function stitchRings(rings) {
+  const cached = STITCHED.get(rings);
+  if (cached) return cached;
+
+  const out = [];
+  const arcs = [];   // open arcs, seam vertex to seam vertex, with the ring they came from
+  rings.forEach((ring0, source) => {
+    let ring = ring0;
+    if (ring.length > 1 && ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]) ring = ring.slice(0, -1);
+    if (ring.length < 3) return;
+    const n = ring.length;
+    const seamEdge = (i) => onSeam(ring[i]) && onSeam(ring[(i + 1) % n]);
+    let firstSeamEdge = -1;
+    for (let i = 0; i < n; i++) if (seamEdge(i)) { firstSeamEdge = i; break; }
+    if (firstSeamEdge < 0) { out.push(closeRing(ring)); return; }
+    // Start just after a seam edge and collect arcs between seam edges.
+    let arc = [];
+    for (let k = 0; k < n; k++) {
+      const i = (firstSeamEdge + 1 + k) % n;
+      arc.push(ring[i]);
+      if (seamEdge(i)) {
+        if (arc.length >= 2) arcs.push({ pts: arc, source });
+        arc = [];
+      }
+    }
+  });
+
+  // Chain arcs across the seam: an arc leaving at (lat, +180) continues with
+  // the arc arriving at (lat, −180), and vice versa. The two latitudes need not
+  // be identical: a boundary that crosses the seam obliquely meets the raster's
+  // last column and its first column a few rows apart (Vastitas Borealis: 1/8°;
+  // a lunar mare: 0.7°), so the join is the nearest candidate on the other side
+  // within a degree, and when the two vertices differ the crossing edge between
+  // them is kept — the cut step interpolates the seam crossing on it.
+  const TOL = 1;
+  const used = new Set();
+  const failed = new Set();   // source rings whose arcs could not all be matched
+  for (const first of arcs) {
+    if (used.has(first)) continue;
+    const chain = [ ...first.pts ];
+    const members = [ first ];
+    used.add(first);
+    let cur = first;
+    let closed = false;
+    for (let guard = 0; guard <= arcs.length; guard++) {
+      const end = cur.pts[cur.pts.length - 1];
+      const endSide = Math.sign(end[1]);
+      const start = first.pts[0];
+      const closeGap = Math.sign(start[1]) === -endSide ? Math.abs(end[0] - start[0]) : Infinity;
+      let next = null, gap = TOL;
+      for (const a of arcs) {
+        if (used.has(a) || Math.sign(a.pts[0][1]) !== -endSide) continue;
+        const d = Math.abs(a.pts[0][0] - end[0]);
+        if (d < gap) { gap = d; next = a; }
+      }
+      if (closeGap < TOL && closeGap <= gap) { closed = true; break; }
+      if (!next) break;
+      used.add(next);
+      members.push(next);
+      chain.push(...(Math.abs(next.pts[0][0] - end[0]) < 1e-9 ? next.pts.slice(1) : next.pts));
+      cur = next;
+    }
+    if (closed) out.push(closeRing(chain));
+    else for (const m of members) failed.add(m.source);
+  }
+  // Anything that would not stitch is drawn as the pack stored it.
+  for (const source of failed) out.push(rings[source]);
+
+  STITCHED.set(rings, out);
+  return out;
+}
+
+// Continuous shifted longitudes for a closed ring: consecutive vertices never
+// jump by more than 180°, so the ring's total swing says whether it winds
+// around a pole (±360) or not (0).
+function unwrap(ring, shift) {
+  const n = ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1] ? ring.length - 1 : ring.length;
+  const seq = [];
+  let prev = null;
+  for (let i = 0; i < n; i++) {
+    let s = shift(ring[i][1]);
+    if (prev !== null) {
+      const d = s - prev;
+      if (d > 180) s -= 360 * Math.ceil((d - 180) / 360);
+      else if (d < -180) s += 360 * Math.ceil((-d - 180) / 360);
+    }
+    seq.push([ ring[i][0], s ]);
+    prev = s;
+  }
+  let dClose = seq[0][1] - prev;
+  while (dClose > 180) dClose -= 360;
+  while (dClose < -180) dClose += 360;
+  const total = prev + dClose - seq[0][1];
+  return { seq, total, winding: Math.round(total / 360) };
+}
+
+const meanLat = (pts) => pts.reduce((s, p) => s + p[0], 0) / pts.length;
+
+// Cut one unwrapped ring at the seam of a cylindrical projection (λ' = ±180 and
+// its 360° repeats). Returns pieces with shifted longitudes inside [−180, 180],
+// each tagged with how it must be closed.
+function cutAtSeam({ seq, total }) {
+  const band = (lon) => Math.floor((lon + 180) / 360);
+  const pieces = [];
+  let piece = [ seq[0] ];
+  for (let i = 0; i < seq.length; i++) {
+    let a = seq[i];
+    const b = i + 1 < seq.length ? seq[i + 1] : [ seq[0][0], seq[0][1] + total ];
+    let ba = band(a[1]);
+    const bb = band(b[1]);
+    while (ba !== bb) {
+      const dir = bb > ba ? 1 : -1;
+      const boundary = dir > 0 ? 180 + 360 * ba : -180 + 360 * ba;
+      const t = (boundary - a[1]) / (b[1] - a[1]);
+      const cross = [ a[0] + t * (b[0] - a[0]), boundary ];
+      piece.push(cross);
+      pieces.push(piece);
+      piece = [ cross ];
+      a = cross;
+      ba += dir;
+    }
+    if (i + 1 < seq.length) piece.push(b);
+  }
+  if (pieces.length === 0) return [ { pts: normalizePiece(piece), closure: "ring" } ];
+  // The last piece runs on to the first vertex — one full turn further round
+  // for a ring that winds a pole. Lifted by the ring's total swing, the first
+  // piece continues it exactly, so the two are one piece in one band.
+  pieces[0] = [ ...piece, ...pieces[0].slice(1).map(([ lat, lon ]) => [ lat, lon + total ]) ];
+  return pieces.map((pts) => {
+    const norm = normalizePiece(pts);
+    const startSide = Math.sign(norm[0][1]), endSide = Math.sign(norm[norm.length - 1][1]);
+    return { pts: norm, closure: startSide === endSide ? "seam" : "pole" };
+  });
+}
+
+// A piece lies within one 360° band; put it into [−180, 180] by its midpoint,
+// and drop the repeated vertices a cut exactly on a vertex leaves behind.
+function normalizePiece(pts) {
+  const lons = pts.map((p) => p[1]);
+  const mid = (Math.min(...lons) + Math.max(...lons)) / 2;
+  const k = Math.round(mid / 360);
+  const out = [];
+  for (const [ lat, lon ] of pts) {
+    const v = [ lat, lon - 360 * k ];
+    const last = out[out.length - 1];
+    if (!last || Math.abs(last[0] - v[0]) > 1e-12 || Math.abs(last[1] - v[1]) > 1e-12) out.push(v);
+  }
+  return out;
+}
+
+// Rings of [lat, lon] → what the flat renderer draws, in unit-frame
+// coordinates: `fill` pieces (closed; `complement` marks a ring whose interior
+// contains the far pole of an azimuthal map and must be filled outside-in) and
+// `edge` arcs (open, never along a seam).
+function projectRings(rings, projection) {
+  const fill = [], edge = [];
+  const toFrame = (pts) => pts.map(([ lat, lonS ]) => { const p = projection.forwardShifted(lat, lonS); return [ p.x, p.y ]; });
+
+  for (const ring of rings) {
+    if (ring.length < 4) continue;
+    if (projection.kind === "custom") {
+      const pts = [];
+      for (const [ lat, lon ] of ring) { const p = projection.forward(lat, lon); if (p) pts.push([ p.x, p.y ]); }
+      if (pts.length >= 3) { fill.push({ points: pts, complement: false }); edge.push(pts); }
+      continue;
+    }
+    const unwrapped = unwrap(ring, projection.shift);
+    if (projection.kind === "azimuthal") {
+      const pts = toFrame(unwrapped.seq);
+      const enclosedPole = unwrapped.winding !== 0 ? (meanLat(unwrapped.seq) >= 0 ? 90 : -90) : null;
+      fill.push({ points: pts, complement: enclosedPole !== null && enclosedPole === projection.farPole });
+      edge.push([ ...pts, pts[0] ]);
+      continue;
+    }
+    for (const { pts, closure } of cutAtSeam(unwrapped)) {
+      const frame = toFrame(pts);
+      if (closure === "ring") {
+        fill.push({ points: frame, complement: false });
+        edge.push([ ...frame, frame[0] ]);
+      } else {
+        edge.push(frame);
+        if (closure === "pole") {
+          const pole = meanLat(pts) >= 0 ? 90 : -90;
+          const last = pts[pts.length - 1], first = pts[0];
+          fill.push({ points: [ ...frame, ...toFrame([ [ pole, last[1] ], [ pole, first[1] ] ]) ], complement: false });
+        } else {
+          fill.push({ points: frame, complement: false });   // the seam edge closes it
+        }
+      }
+    }
+  }
+  return { fill, edge };
+}
+
+// A polyline of [lat, lon] (a graticule line) → unit-frame polylines, broken
+// wherever the line leaves the map or crosses a cylindrical seam.
+function projectPolyline(line, projection) {
+  const out = [];
+  let cur = [], prevS = null;
+  for (const [ lat, lon ] of line) {
+    const s = projection.shift(lon);
+    if (prevS !== null && projection.kind === "cylindrical" && Math.abs(s - prevS) > 180) {
+      if (cur.length > 1) out.push(cur);
+      cur = [];
+    }
+    const p = projection.kind === "custom" ? projection.forward(lat, lon) : projection.forwardShifted(lat, s);
+    if (!p) { if (cur.length > 1) out.push(cur); cur = []; prevS = null; continue; }
+    cur.push([ p.x, p.y ]);
+    prevS = s;
+  }
+  if (cur.length > 1) out.push(cur);
+  return out;
+}
+
+// Signed area of a unit-frame ring (shoelace); the sign is its orientation.
+function signedArea(points) {
+  let a = 0;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) a += points[j][0] * points[i][1] - points[i][0] * points[j][1];
+  return a / 2;
+}
+
+// ══════════ src/projection.js ══════════
+// The grid: how a lat/lon becomes a cell and a cell becomes a lat/lon.
+//
+// A grid is { cols, rows, latRange } and, on the flat map, a `projection`
+// instance from projections.js. Without one the grid is equirectangular —
+// linear lat/lon ↔ x/y, matching the packed figure mask and everyone's mental
+// image of "the world map" — which is what the globe samples the sphere with
+// and what the flat map draws by default. With one, cell centres are the
+// inverse projection of the screen grid, so the dot field is uniform on screen
+// whatever the projection, and a cell that lands off the world (the corners of
+// an Equal Earth frame) has no centre: it is null.
 //
 // Conventions, everywhere in mappo: latitude is positive north, longitude is
-// positive EAST and runs −180…180 with 0 at the centre of the frame. Bodies
-// whose native maps use another convention (Mars's 0–360°E) are converted
-// when their pack is generated, never at draw time.
+// positive EAST and runs −180…180 with 0 at the centre of the default frame.
+// Bodies whose native maps use another convention (Mars's 0–360°E) are
+// converted when their pack is generated, never at draw time.
 
-// Map a lat/lon to fractional grid coordinates in a cols×rows grid covering
-// latRange (north→south) across the full −180…180 longitude span.
-function project(lat, lon, { cols, rows, latRange }) {
-  const [ latMin, latMax ] = latRange;
+
+// Map a lat/lon to fractional grid coordinates, or null when the point has no
+// place on this map.
+function project(lat, lon, grid) {
+  if (grid.projection) {
+    const p = grid.projection.forward(lat, lon);
+    return p ? { x: p.x * grid.cols, y: p.y * grid.rows } : null;
+  }
+  const [ latMin, latMax ] = grid.latRange;
   return {
-    x: ((lon + 180) / 360) * cols,
-    y: ((latMax - lat) / (latMax - latMin)) * rows
+    x: ((lon + 180) / 360) * grid.cols,
+    y: ((latMax - lat) / (latMax - latMin)) * grid.rows
   };
 }
 
 // The centre lat/lon of a grid cell — where the figure is sampled and where a
-// dot is drawn.
-function cellCenter(col, row, { cols, rows, latRange }) {
-  const [ latMin, latMax ] = latRange;
+// dot is drawn — or null for a cell that is off the world.
+function cellCenter(col, row, grid) {
+  if (grid.projection) return grid.projection.inverse((col + 0.5) / grid.cols, (row + 0.5) / grid.rows);
+  const [ latMin, latMax ] = grid.latRange;
   return {
-    lat: latMax - ((row + 0.5) / rows) * (latMax - latMin),
-    lon: -180 + ((col + 0.5) / cols) * 360
+    lat: latMax - ((row + 0.5) / grid.rows) * (latMax - latMin),
+    lon: -180 + ((col + 0.5) / grid.cols) * 360
   };
 }
 
 // The lat/lon of a grid CORNER — where cell boundaries live, and therefore
-// where contour geometry lives. cellCenter answers for the middle of a cell;
-// contours are traced along its edges, so they need this. Same linear
-// mapping, no +0.5 offset.
-function cellCorner(col, row, { cols, rows, latRange }) {
-  const [ latMin, latMax ] = latRange;
+// where contour geometry lives. Same mapping as cellCenter, no +0.5 offset.
+function cellCorner(col, row, grid) {
+  if (grid.projection) return grid.projection.inverse(col / grid.cols, row / grid.rows);
+  const [ latMin, latMax ] = grid.latRange;
   return {
-    lat: latMax - (row / rows) * (latMax - latMin),
-    lon: -180 + (col / cols) * 360
+    lat: latMax - (row / grid.rows) * (latMax - latMin),
+    lon: -180 + (col / grid.cols) * 360
   };
 }
 
-// Normalized projection: lat/lon → {x, y} in 0…1 across the rendered box.
+// Normalized projection: lat/lon → {x, y} in 0…1 across the rendered box, or
+// null when the point is off the map.
 //
 // This is the one a HOST needs. `project` above answers in grid units, which
-// requires `rows` — and rows is derived internally from cols and latRange, so
+// requires `rows` — and rows is derived internally from cols and the frame, so
 // asking a consuming app for it forces that app to re-derive mappo's own
 // arithmetic (and to keep re-deriving it correctly forever). Normalized
-// coordinates need neither: the viewBox is linear in the grid, so 0…1 maps
-// straight onto CSS percentages, canvas pixels, or a server-rendered
-// `style="left:%"` in a template in any language.
+// coordinates need only what the map was told: its latRange and, if it has
+// one, its projection and central meridian. They map straight onto CSS
+// percentages, canvas pixels, or a server-rendered `style="left:%"`.
 //
 // latRange is REQUIRED. It is the one thing that differs between Earth's
 // default framing, a full-sphere Moon and your own crop, and a silent Earth
 // default here would put every other world's labels in the wrong place. The
 // range a live map uses is `map.options.latRange`; a body's default framing is
 // `body.latRange` (EARTH.latRange is [-58, 84]).
-function projectNormalized(lat, lon, { latRange } = {}) {
+function projectNormalized(lat, lon, { latRange, projection = "equirectangular", centerLon = 0 } = {}) {
   if (!Array.isArray(latRange) || latRange.length !== 2) {
     throw new TypeError("projectNormalized needs { latRange: [min, max] } — the map's own range, e.g. EARTH.latRange");
   }
-  const [ latMin, latMax ] = latRange;
-  return {
-    x: (lon + 180) / 360,
-    y: (latMax - lat) / (latMax - latMin)
-  };
+  if (projection === "equirectangular" && centerLon === 0) {
+    // The linear fast path: exact, and the same contract as every projection:
+    // null for a point outside the band this map shows.
+    const [ latMin, latMax ] = latRange;
+    if (!(lat >= latMin - 1e-9 && lat <= latMax + 1e-9) || !Number.isFinite(lon)) return null;
+    return { x: (lon + 180) / 360, y: (latMax - lat) / (latMax - latMin) };
+  }
+  return resolveProjection(projection, { latRange, centerLon }).forward(lat, lon);
 }
 
 // ══════════ src/graticule.js ══════════
@@ -665,7 +1220,7 @@ function figureAt(col, row, grid, wrapX, body) {
     c = ((c % grid.cols) + grid.cols) % grid.cols;
   }
   const p = cellCenter(c, row, grid);
-  return body.figure(p.lat, p.lon);
+  return p !== null && body.figure(p.lat, p.lon);   // null: the cell is off the world
 }
 
 // Chain directed boundary edges into rings. Each edge is stored under its
@@ -727,7 +1282,7 @@ function buildFigure(grid, { body, wrapX = false } = {}) {
   if (!body) throw new TypeError("buildFigure needs a body — pass { body: EARTH } or another registered body");
   let perBody = cache.get(body);
   if (!perBody) cache.set(body, perBody = new Map());
-  const key = `${grid.cols}|${grid.rows}|${grid.latRange[0]}|${grid.latRange[1]}|${wrapX}`;
+  const key = `${grid.cols}|${grid.rows}|${grid.latRange[0]}|${grid.latRange[1]}|${wrapX}|${grid.projection?.key ?? ""}`;
   const hit = perBody.get(key);
   if (hit) return hit;
 
@@ -1098,7 +1653,9 @@ class GlobeRenderer {
     "figureColor", "figureStroke", "figureStrokeWidth", "dotHoverColor", "dotHoverScale",
     "bordersColor", "bordersWidth", "bordersOpacity",
     "graticuleColor", "equatorColor", "graticuleOpacity", "equatorOpacity",
-    "markerColor", "markerScale", "markerHoverScale", "highlightColor", "overlays"
+    "markerColor", "markerScale", "markerHoverScale", "highlightColor", "overlays",
+    // Flat-map concerns the globe ignores entirely.
+    "projection", "centerLon"
   ]);
 
   // @param changed [Array|null] option keys that actually changed. Omit it and
@@ -1521,7 +2078,9 @@ class GlobeRenderer {
   // fills from the grid — see #drawFigure — which culls cell by cell and
   // cannot fail that way, and these rings draw the edge on top.
   #strokeVector(rings, T, { stroke, width, alphaScale = 1 }) {
-    this.#strokeBanded(this.#projectRings(xyzRings(rings), T), stroke, width, 1, alphaScale);
+    // Stitched: the pack's cut at ±180° is a closure edge for a flat map, and
+    // stroking it on a sphere drew a line down the antimeridian.
+    this.#strokeBanded(this.#projectRings(xyzRings(stitchRings(rings)), T), stroke, width, 1, alphaScale);
   }
 
   // Grid geometry for the figure — the same figure.js geometry the flat map
@@ -1946,14 +2505,21 @@ class GlobeRenderer {
 // ══════════ src/renderer.js ══════════
 // The renderer: one body in, one interactive <svg> out — or, in globe mode, a
 // canvas sphere (globe.js). This class owns the options, the body, the
-// overlay children and the differential update; the flat SVG scene is built
-// here and the globe is delegated.
+// projection, the overlay children and the differential update; the flat SVG
+// scene is built here and the globe is delegated.
 //
 // Design decisions worth knowing before changing things:
 //
 // - The FLAT map is SVG on purpose: dots stay real elements — CSS hover,
 //   focusable markers, restylable from outside. Sensible up to ~250 cols;
 //   beyond that a canvas renderer (same options object) is the plan.
+//
+// - THE FLAT MAP HAS A PROJECTION (projections.js). The grid is "sample the
+//   body at the inverse projection of every screen cell", so a polar
+//   stereographic or Equal Earth map gets a uniform dot field, grid contours
+//   and highlights from exactly the code that draws the equirectangular one.
+//   Markers, overlays, locate() and vector outlines use the forward mapping.
+//   The globe ignores the projection: it is a physical view, not a map.
 //
 // - POSITIONING: every dot/marker is `<g transform="translate(x,y)"><use/></g>`
 //   and ALL animation (hover, pulse, shimmer) transforms the INNER element,
@@ -1964,10 +2530,10 @@ class GlobeRenderer {
 //
 // - EVERY INSTANCE IS SELF-CONTAINED. The stylesheet is scoped to the host
 //   with a data-mappo attribute, @keyframes names carry the instance id, and
-//   so do the SVG ids the <use> elements and the ground pattern reference —
-//   `href="#id"` resolves against the whole document, so two maps sharing an
-//   id would both draw the FIRST map's dot shape and size. Many worlds on one
-//   page is a first-class case, not an edge case.
+//   so do the SVG ids the <use> elements, the ground pattern and the frame
+//   clip reference — `href="#id"` resolves against the whole document, so two
+//   maps sharing an id would both draw the FIRST map's dot shape and size.
+//   Many worlds on one page is a first-class case, not an edge case.
 //
 // - DIFFERENTIAL UPDATES — the crash lesson. Rebuilding the world per option
 //   change froze and eventually OOM-killed tabs: each rebuild parses
@@ -1980,7 +2546,7 @@ class GlobeRenderer {
 //     · def keys    (dotShape/dotSize/markerShape/markerScale/groundColor) →
 //       replace the <defs>; every <use> updates for free.
 //     · marker keys (places, markerPulse) → rebuild only the markers group.
-//     · geometry    (cols, latRange, figure, figureSource, borders…) → full
+//     · geometry    (cols, latRange, projection, figure, figureSource…) → full
 //       rebuild, but leading+trailing debounced to ≥150ms spacing, with an
 //       LRU cache of dot-markup strings per resolution.
 //     · body        → full rebuild, immediately, with caches dropped.
@@ -2005,10 +2571,19 @@ const DEFAULTS = {
   // Grid
   cols: null,                 // auto: 120 flat · 170 globe (hard max 260); set to override
   // Latitude bounds. null means "the body's own framing" (Earth cuts Antarctica
-  // and the arctic emptiness; the Moon and Mars show their poles). The
-  // effective range is always available as options.latRange.
+  // and the arctic emptiness; the Moon and Mars show their poles), or a
+  // hemisphere on a polar projection. The effective range is always available
+  // as options.latRange. On a polar map the far bound is the rim of the disc.
   latMin: null,
   latMax: null,
+  // The flat map's projection: "equirectangular" (default), "equal-earth",
+  // "stereographic-north", "stereographic-south", a { forward, inverse } object
+  // or a d3-geo projection. See src/projections.js. The globe ignores it.
+  projection: "equirectangular",
+  // The central meridian of the flat map, degrees east: 150 gives a
+  // Pacific-centred map. Cylindrical projections move their seam with it;
+  // polar ones rotate.
+  centerLon: 0,
   // The FIGURE — what the body classifies as drawn (land, maria, lowlands…) —
   // and how it is rendered. A space-separated token list, so combinations
   // read the way you would say them out loud. Identical on both renderers:
@@ -2027,7 +2602,7 @@ const DEFAULTS = {
   // The GROUND — everything that is not figure — as filler dots in their own
   // shade, e.g. "#e8eef5"; "none" leaves it empty. Draws under any figure style.
   groundColor: "none",
-  background: "none",         // a uniform fill behind everything (flat rect / globe disc)
+  background: "none",         // a uniform fill behind everything (the world's outline on a flat map / the globe disc)
   // Region boundaries (Earth: country borders), where the body has them.
   borders: false,
   bordersColor: null,         // defaults to the figure stroke
@@ -2053,8 +2628,8 @@ const DEFAULTS = {
   rotateSpeed: 4,             // spin, degrees per second (0 = still)
   roll: 0,                    // LEAN, in the plane of the screen (deg)
   globeRing: false,           // opt-in hairline halo around the globe
-  // Graticule — the meridian/parallel grid (globe mode). The equator is drawn
-  // separately so it can carry its own weight: it is the line a reader
+  // Graticule — the meridian/parallel grid, on both renderers. The equator is
+  // drawn separately so it can carry its own weight: it is the line a reader
   // orients against.
   graticule: false,
   meridians: 12,              // evenly spaced longitudes
@@ -2097,10 +2672,11 @@ const DEFAULTS = {
 const STYLE_KEYS = new Set([
   "figureColor", "figureStroke", "figureStrokeWidth", "dotHoverColor", "dotHoverScale",
   "bordersColor", "bordersWidth", "bordersOpacity", "highlightColor",
+  "graticuleColor", "equatorColor", "graticuleOpacity", "equatorOpacity",
   "markerColor", "markerHoverScale", "tilt", "rotate", "perspective",
   "animation", "animationPeriod", "animationHeight", "animationWidth", "cursor", "markerCursor",
-  // Backdrop knobs are pure stylesheet in flat mode: the bg rect and the
-  // pattern-filled ground rect always exist; only their fills change.
+  // Backdrop knobs are pure stylesheet in flat mode: the bg shape and the
+  // pattern-filled ground always exist; only their fills change.
   "background", "globeRing"
 ]);
 const DEF_KEYS = new Set([ "dotShape", "dotSize", "markerShape", "markerScale", "groundColor" ]);
@@ -2172,7 +2748,7 @@ class Mappo {
       ? Array.from(container.querySelectorAll("[data-lat][data-lon]"))
       : [];
     this._overlayState = new Map(this._overlays.map((el) => [ el, captureOverlay(el) ]));
-    this._dotsCache = new Map();    // "cols|latMin|latMax" → { markup, dots }
+    this._dotsCache = new Map();    // projection|cols → { markup, dots }
     this._figureCache = new Map();  // figure paths have a different value shape
     this.#applyLatRange();
     this.render();
@@ -2185,6 +2761,12 @@ class Mappo {
   // passed, or a pending placeholder while a named pack has not arrived.
   get body() {
     return this._body;
+  }
+
+  // The projection instance the flat map is drawing with (null on the globe):
+  // forward(lat, lon), inverse(x, y), aspect, outline() in unit-frame coordinates.
+  get projection() {
+    return this.grid?.projection ?? null;
   }
 
   // Swap the world under a map that has already drawn. Two things have to
@@ -2204,8 +2786,9 @@ class Mappo {
   //
   // `radius` is distance from the body's centre in body radii, and only means
   // anything on the globe: a flat map has no third dimension to leave.
-  // Returns null before the first frame, and { front: false } for a point the
-  // globe is currently hiding. On the flat map `front` is always true, and the
+  // Returns null before the first frame, null for a point the flat map's
+  // projection has no place for, and { front: false } for a point the globe
+  // is currently hiding. On the flat map `front` is always true, and the
   // answer ignores tilt/rotate/perspective — those are a CSS transform on top
   // of the box this reports in.
   locate(lat, lon, radius = 1) {
@@ -2215,13 +2798,10 @@ class Mappo {
     // getBoundingClientRect would fold the tilt transform into the answer.
     const w = this.container?.clientWidth ?? 0;
     if (!w || !this.grid) return null;
+    const p = this.grid.projection.forward(lat, lon);
+    if (!p) return null;
     const h = w * this.grid.rows / this.grid.cols;
-    const [ latMin, latMax ] = this.options.latRange;
-    return {
-      x: ((lon + 180) / 360) * w,
-      y: ((latMax - lat) / (latMax - latMin)) * h,
-      depth: 1, front: true
-    };
+    return { x: p.x * w, y: p.y * h, depth: 1, front: true };
   }
 
   // Differential update — see the header. Public contract: call with any
@@ -2248,7 +2828,12 @@ class Mappo {
       ? resolveBody(options.body)
       : typeof this.options.body === "string" ? resolveBody(this.options.body) : this._body;
     const bodyResolved = nextBody !== this._body;
-    const nextRange = this.#rangeFor(nextBody, nextOverride); // validate before mutating live state
+    // Validate the whole frame before mutating live state: the range, and the
+    // projection built on it (a north polar map cannot reach the south pole).
+    const nextProjection = "projection" in options ? options.projection : this.options.projection;
+    const nextCenter = "centerLon" in options ? options.centerLon : this.options.centerLon;
+    const nextRange = this.#rangeFor(nextBody, nextOverride, nextProjection);
+    resolveProjection(nextProjection, { latRange: nextRange, centerLon: nextCenter });
     this._latRangeOverride = nextOverride;
     Object.assign(this.options, options);
     this.options.latRange = nextRange;
@@ -2338,11 +2923,14 @@ class Mappo {
   }
 
   #applyLatRange() {
-    this.options.latRange = this.#rangeFor(this._body, this._latRangeOverride);
+    this.options.latRange = this.#rangeFor(this._body, this._latRangeOverride, this.options.projection);
   }
 
-  #rangeFor(body, override) {
-    const inherited = bodyLatRange(body);
+  // The band drawn: explicit bounds win; the rest comes from the body's own
+  // framing, or from the projection when it has an opinion (a polar map wants
+  // a hemisphere, not Earth's −58…84).
+  #rangeFor(body, override, projection) {
+    const inherited = projectionDefaultRange(projection, bodyLatRange(body));
     const range = [ override[0] ?? inherited[0], override[1] ?? inherited[1] ];
     const [ min, max ] = range;
     if (!Number.isFinite(min) || !Number.isFinite(max) || min < -90 || max > 90 || min >= max) {
@@ -2354,7 +2942,7 @@ class Mappo {
   #setBody(body) {
     const bodyChanged = body !== this._body;
     const oldRange = this.options.latRange;
-    const nextRange = this.#rangeFor(body, this._latRangeOverride);
+    const nextRange = this.#rangeFor(body, this._latRangeOverride, this.options.projection);
     this._body = body;
     this.options.latRange = nextRange;
     if (bodyChanged) {
@@ -2407,6 +2995,7 @@ class Mappo {
       // so the persistent svg/style handles must not survive to be patched
       // while detached. Rebuilt from scratch on return to flat.
       if (this.svg) { this.svg = null; this.styleEl = null; this._tiltWrap = null; this._overlayLayer = null; }
+      this.grid = null;
       if (this._globe) this._globe.update(null, this._body);
       else this._globe = new GlobeRenderer(this.container, this.options, this._body, this._overlays);
       this._globe.canvas.setAttribute("role", "img");
@@ -2415,11 +3004,14 @@ class Mappo {
     }
     if (this._globe) { this._globe.destroy(); this._globe = null; }
 
+    const projection = resolveProjection(o.projection, { latRange: o.latRange, centerLon: o.centerLon });
     const colsWanted = o.cols ?? 120; // auto default for the flat map
     const cols = Math.min(colsWanted, MAX_COLS);
     if (colsWanted > MAX_COLS) console.warn(`[mappo] cols capped at ${MAX_COLS} (asked for ${colsWanted}) — beyond that SVG interaction degrades (mode="globe" already renders on canvas; a flat canvas renderer is on the roadmap)`);
-    const rows = Math.round((cols / 360) * (o.latRange[1] - o.latRange[0]));
-    this.grid = { cols, rows, latRange: o.latRange };
+    // Cells are square on screen; the frame's aspect sets the row count. For
+    // equirectangular that is round(cols · Δφ / 360), as it always was.
+    const rows = Math.max(1, Math.round(cols / projection.aspect));
+    this.grid = { cols, rows, latRange: o.latRange, projection };
 
     // PERSISTENT scene (heap-growth lesson): svg, tilt wrapper, style element
     // and listeners are created ONCE and reused — a rebuild swaps viewBox +
@@ -2462,7 +3054,7 @@ class Mappo {
     svg.setAttribute("aria-label", this.#ariaLabel());
     // One parse for the whole scene — the fast path for full builds.
     const [ markup, buildMs ] = span("wm:build-markup", () =>
-      this.#defsMarkup(o) + this.#backdropMarkup(cols, rows) +
+      this.#defsMarkup(o, this.grid) + this.#backdropMarkup(this.grid) + this.#graticuleMarkup(this.grid, o) +
       (parseFigureStyle(o.figure).dots ? this.#dotsMarkup(this.grid) : this.#figureMarkup(this.grid, o)) +
       this.#markersMarkup(this.grid, o));
     const [ , parseMs ] = span("wm:parse-innerHTML", () => { svg.innerHTML = markup; });
@@ -2480,7 +3072,7 @@ class Mappo {
         dbg(`render calibrated: full frame cost ${this._lastRenderMs.toFixed(0)}ms → next spacing ${Math.min(1200, Math.max(REBUILD_MS, this._lastRenderMs * 8)).toFixed(0)}ms`);
       }));
     }
-    dbg(`render: cols=${cols} rows=${rows} · build ${buildMs.toFixed(1)}ms · parse ${parseMs.toFixed(1)}ms · total ${this._lastRenderMs.toFixed(1)}ms · ${svg.querySelectorAll("*").length} nodes`);
+    dbg(`render: cols=${cols} rows=${rows} · ${projection.id} · build ${buildMs.toFixed(1)}ms · parse ${parseMs.toFixed(1)}ms · total ${this._lastRenderMs.toFixed(1)}ms · ${svg.querySelectorAll("*").length} nodes`);
     if (this._overlayLayer) this._overlayLayer.hidden = o.overlays === false;
     this.#placeOverlays();
   }
@@ -2490,19 +3082,28 @@ class Mappo {
   // Percentages, not pixels: the SVG scales with its container, so a percent
   // stays correct through every resize without mappo having to watch for one.
   // Depth is published as 1 — a flat map has no limb — so a stylesheet
-  // written against --mappo-depth for the globe works here unchanged.
+  // written against --mappo-depth for the globe works here unchanged. A point
+  // the projection has no place for is parked off-screen and marked
+  // data-mappo-behind, exactly as the globe treats its far side.
   #placeOverlays() {
     if (this.options.overlays === false) return;
-    const latRange = this.options.latRange;
+    const projection = this.grid.projection;
     for (const el of this._overlays) {
       const lat = Number(el.dataset.lat);
       const lon = Number(el.dataset.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-      const p = projectNormalized(lat, lon, { latRange });
-      el.style.left = `${(p.x * 100).toFixed(3)}%`;
-      el.style.top = `${(p.y * 100).toFixed(3)}%`;
-      el.style.setProperty("--mappo-depth", "1");
-      el.removeAttribute("data-mappo-behind");
+      const p = projection.forward(lat, lon);
+      if (p) {
+        el.style.left = `${(p.x * 100).toFixed(3)}%`;
+        el.style.top = `${(p.y * 100).toFixed(3)}%`;
+        el.style.setProperty("--mappo-depth", "1");
+        el.removeAttribute("data-mappo-behind");
+      } else {
+        el.style.left = "-9999px";
+        el.style.top = "-9999px";
+        el.style.setProperty("--mappo-depth", "0");
+        el.setAttribute("data-mappo-behind", "");
+      }
     }
   }
 
@@ -2516,7 +3117,7 @@ class Mappo {
     // Wholesale swap via the one true builder — a hand-maintained subset
     // here is how the ground pattern got silently wiped by dot-shape patches.
     const defs = this.svg?.querySelector("defs");
-    if (defs) defs.outerHTML = this.#defsMarkup(this.options);
+    if (defs) defs.outerHTML = this.#defsMarkup(this.options, this.grid);
   }
 
   #patchMarkers() {
@@ -2534,15 +3135,18 @@ class Mappo {
     return `${name}-i${this._uid}`;
   }
 
-  #defsMarkup(o) {
+  #defsMarkup(o, grid) {
     // The ground is ONE pattern-filled rect, not thousands of nodes: the
     // pattern tiles the dot shape (at 0.62×) across every grid cell, and the
     // stylesheet shows or hides it — so groundColor stays a defs-tier knob
-    // even at max resolution.
+    // even at max resolution. The frame clip is the world's outline: the
+    // whole rectangle for equirectangular, a disc for a polar map, so nothing
+    // paints in the corners where there is no world.
     return `<defs>${
       this.#shapeMarkup(this.#id("mappo-dot-shape"), o.dotShape, o.dotSize)}${
       this.#shapeMarkup(this.#id("mappo-marker-shape"), o.markerShape, o.dotSize * o.markerScale)
-    }<pattern id="${this.#id("mappo-ground-pat")}" width="${CELL}" height="${CELL}" patternUnits="userSpaceOnUse">${this.#groundDotMarkup(o)}</pattern></defs>`;
+    }<pattern id="${this.#id("mappo-ground-pat")}" width="${CELL}" height="${CELL}" patternUnits="userSpaceOnUse">${this.#groundDotMarkup(o)}</pattern>` +
+    `<clipPath id="${this.#id("mappo-frame")}"><path clip-rule="evenodd" d="${this.#outlinePath(grid)}"/></clipPath></defs>`;
   }
 
   // A DIRECT shape with an inline fill — not <use>: CSS can't reliably reach
@@ -2564,12 +3168,19 @@ class Mappo {
     }
   }
 
+  // The world's edge in this map's units, as path data; `fill-rule`/`clip-rule`
+  // evenodd so an annulus keeps its hole.
+  #outlinePath(grid) {
+    return grid.projection.outline().map((ring) => this.#pathFrom(ring, grid, true)).join("");
+  }
+
   // Backdrop layers, always present so background/groundColor patch as pure
-  // style. Both sit under the dots and ignore the pointer.
-  #backdropMarkup(cols, rows) {
-    const w = cols * CELL, h = rows * CELL;
-    return `<rect class="mappo-bg" x="0" y="0" width="${w}" height="${h}"/>` +
-           `<rect class="mappo-ground" x="0" y="0" width="${w}" height="${h}" fill="url(#${this.#id("mappo-ground-pat")})"/>`;
+  // style. Both sit under the dots and ignore the pointer. The background is
+  // the world's outline (a rectangle, a disc), the way the globe's is a disc.
+  #backdropMarkup(grid) {
+    const w = grid.cols * CELL, h = grid.rows * CELL;
+    return `<path class="mappo-bg" fill-rule="evenodd" d="${this.#outlinePath(grid)}"/>` +
+           `<rect class="mappo-ground" x="0" y="0" width="${w}" height="${h}" fill="url(#${this.#id("mappo-ground-pat")})" clip-path="url(#${this.#id("mappo-frame")})"/>`;
   }
 
   // One reusable shape per role, centred on the local origin so inner-
@@ -2597,30 +3208,23 @@ class Mappo {
     }
   }
 
-  // lat/lon rings → SVG path data in this map's units. The same equirectangular
-  // mapping the dot grid uses, so vector outlines land exactly where grid ones do.
-  #vectorPath(rings, grid) {
-    const [ latMin, latMax ] = grid.latRange;
+  // Unit-frame points → SVG path data in this map's units.
+  #pathFrom(points, grid, close) {
     const w = grid.cols * CELL, h = grid.rows * CELL;
-    const parts = [];
-    for (const ring of rings) {
-      let d = "";
-      for (let i = 0; i < ring.length; i++) {
-        const x = ((ring[i][1] + 180) / 360) * w;
-        const y = ((latMax - ring[i][0]) / (latMax - latMin)) * h;
-        d += `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
-      }
-      parts.push(`${d}Z`);
+    let d = "";
+    for (let i = 0; i < points.length; i++) {
+      d += `${i ? "L" : "M"}${(points[i][0] * w).toFixed(1)} ${(points[i][1] * h).toFixed(1)}`;
     }
-    return parts.join("");
+    return d ? `${d}${close ? "Z" : ""}` : "";
   }
 
   // The figure as shape. `solid`, `outline` and `solid outline` are three
-  // renderings of ONE geometry: the closed boundary contours from figure.js.
-  // Because the loops are closed and consistently wound, the same `d` both
-  // fills (holes correct under fill-rule: nonzero) and strokes as a true
-  // edge — no internal cell edges, because a contour is only ever drawn where
-  // figure meets ground. Colours live in the stylesheet, so they patch
+  // renderings of ONE geometry: for the grid source, the closed contours from
+  // figure.js; for the vector source, the body's rings stitched into whole
+  // rings and then cut at THIS projection's seam. The fill takes the closed
+  // pieces; the edge takes the same vertices as open arcs, so a seam is never
+  // stroked — not the frame edge of a cylindrical map, and not the ±180°
+  // meridian of a polar one. Colours live in the stylesheet, so they patch
   // without touching this markup.
   #figureMarkup(grid, o) {
     const vector = figureOutlines(o.figureSource, this._body);
@@ -2628,24 +3232,57 @@ class Mappo {
     // path, so leaving it out means turning borders off replays a cached scene
     // that still has them. The body is NOT in the key: the caches are dropped
     // whenever the body changes, so a key can only ever hit its own world.
-    const key = `${o.figureSource}|${o.borders ? "b" : ""}|${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
+    const key = `${grid.projection.key}|${o.figureSource}|${o.borders ? "b" : ""}|${grid.cols}`;
     let geom = this._figureCache.get(key);
     if (!geom) {
       const { cells, loops } = buildFigure(grid, { body: this._body });
       const borders = o.borders ? figureBorders(this._body) : null;
-      geom = {
-        d: vector
-          ? this.#vectorPath(vector, grid)
-          : loops.map((loop) => `M${loop.map(([ x, y ]) => `${x * CELL} ${y * CELL}`).join("L")}Z`).join(""),
-        borders: borders?.length ? this.#vectorPath(borders, grid) : "",
-        cells
-      };
+      geom = { cells, fill: "", complements: [], edge: "", borders: "" };
+      if (vector) {
+        const { fill, edge } = projectRings(stitchRings(vector), grid.projection);
+        geom.fill = fill.filter((p) => !p.complement).map((p) => this.#pathFrom(p.points, grid, true)).join("");
+        // A ring whose interior holds the far pole of an azimuthal map is the
+        // OUTSIDE of its projected curve: fill it as the frame minus the ring,
+        // in its own path so the winding cannot interact with the others.
+        geom.complements = fill.filter((p) => p.complement).map((p) => {
+          const frame = signedArea(p.points) > 0
+            ? [ [ 0, 0 ], [ 0, 1 ], [ 1, 1 ], [ 1, 0 ] ]
+            : [ [ 0, 0 ], [ 1, 0 ], [ 1, 1 ], [ 0, 1 ] ];
+          return this.#pathFrom(frame, grid, true) + this.#pathFrom(p.points, grid, true);
+        });
+        geom.edge = edge.map((arc) => this.#pathFrom(arc, grid, false)).join("");
+      } else {
+        // Grid contours are traced in screen space, so they have no seam.
+        const d = loops.map((loop) => `M${loop.map(([ x, y ]) => `${x * CELL} ${y * CELL}`).join("L")}Z`).join("");
+        geom.fill = d;
+        geom.edge = d;
+      }
+      if (borders?.length) {
+        geom.borders = projectRings(stitchRings(borders), grid.projection).edge.map((arc) => this.#pathFrom(arc, grid, false)).join("");
+      }
       this._figureCache.set(key, geom);
       if (this._figureCache.size > 8) this._figureCache.delete(this._figureCache.keys().next().value);
     }
     this._dotCount = geom.cells.length;
-    const borders = geom.borders ? `<path class="mappo-borders" d="${geom.borders}"/>` : "";
-    return `<g class="mappo-figure"><path class="mappo-figure-path" d="${geom.d}"/>${borders}${this.#figureHighlightMarkup(grid, o)}</g>`;
+    const clip = `clip-path="url(#${this.#id("mappo-frame")})"`;
+    return `<g class="mappo-figure" ${clip}>` +
+      `<path class="mappo-figure-fill" d="${geom.fill}"/>` +
+      geom.complements.map((d) => `<path class="mappo-figure-fill mappo-figure-complement" d="${d}"/>`).join("") +
+      `<path class="mappo-figure-edge" d="${geom.edge}"/>` +
+      (geom.borders ? `<path class="mappo-borders" d="${geom.borders}"/>` : "") +
+      this.#figureHighlightMarkup(grid, o) + `</g>`;
+  }
+
+  // The graticule on the flat map: the same lat/lon lines the globe draws,
+  // projected and broken wherever they leave the map or cross the seam.
+  #graticuleMarkup(grid, o) {
+    if (!o.graticule) return "";
+    const g = buildGraticule({ meridians: o.meridians, parallels: o.parallels });
+    const draw = (lines) => lines.flatMap((line) => projectPolyline(line, grid.projection))
+      .map((pts) => this.#pathFrom(pts, grid, false)).join("");
+    return `<g class="mappo-graticule-group" clip-path="url(#${this.#id("mappo-frame")})">` +
+      `<path class="mappo-graticule" d="${draw(g.meridians) + draw(g.parallels)}"/>` +
+      `<path class="mappo-equator" d="${draw([ g.equator ])}"/></g>`;
   }
 
   // The highlight polygon in FLAT mode — the same ray-cast highlight.js does
@@ -2659,19 +3296,19 @@ class Mappo {
     const parts = [];
     for (const [ col, row ] of cells) {
       const c = cellCenter(col, row, grid);
-      if (!pointInRings(c.lat, c.lon, normalized)) continue;
+      if (!c || !pointInRings(c.lat, c.lon, normalized)) continue;
       parts.push(`M${col * CELL} ${row * CELL}h${CELL}v${CELL}h-${CELL}Z`);
     }
     if (!parts.length) return "";
     return `<path class="mappo-figure-highlight" d="${parts.join("")}"/>`;
   }
 
-  // Dot geometry depends ONLY on (cols, latRange) for a given body — colours,
+  // Dot geometry depends ONLY on (projection, cols) for a given body — colours,
   // shapes and animation all live elsewhere — so the markup string caches
   // perfectly per resolution. Both animation phases ship on every dot (~30
   // bytes each): that's what makes animation a style-only knob.
   #dotsMarkup(grid) {
-    const key = `${grid.cols}|${grid.latRange[0]}|${grid.latRange[1]}`;
+    const key = `${grid.projection.key}|${grid.cols}`;
     const cached = this._dotsCache.get(key);
     if (cached) { dbg(`dots cache HIT ${key}`); this._dotCount = cached.dots; return cached.markup; }
     dbg(`dots cache MISS ${key} — computing`);
@@ -2682,7 +3319,7 @@ class Mappo {
     for (let row = 0; row < grid.rows; row++) {
       for (let col = 0; col < grid.cols; col++) {
         const c = cellCenter(col, row, grid);
-        if (!this._body.figure(c.lat, c.lon)) continue;
+        if (!c || !this._body.figure(c.lat, c.lon)) continue;   // off the world, or ground
         dots++;
 
         // Every animation mode is a PHASE FIELD baked per dot; the stylesheet
@@ -2728,7 +3365,9 @@ class Mappo {
     const shape = this.#id("mappo-marker-shape");
     const parts = [ `<g class="mappo-markers">` ];
     for (const place of resolvePlaces(o.places, this._body)) {
-      const { col, row } = snapToFigure(place.lat, place.lon, grid, this._body);
+      const cell = snapToFigure(place.lat, place.lon, grid, this._body);
+      if (!cell) continue;   // no place for it on this projection (the far hemisphere of a polar map)
+      const { col, row } = cell;
       const fill = place.color ? ` style="fill:${escapeAttr(place.color)}"` : "";
       const kind = place.kind ? ` data-kind="${escapeAttr(place.kind)}"` : "";
       const label = place.name || `${place.lat}, ${place.lon}`;
@@ -2791,6 +3430,7 @@ class Mappo {
   #css(o) {
     const style = parseFigureStyle(o.figure);
     const stroke = o.figureStroke ?? o.figureColor;
+    const graticule = o.graticuleColor ?? o.figureColor;
     return `
       .mappo-bg { fill: ${o.background}; pointer-events: none; }
       .mappo-ground { display: ${o.groundColor === "none" ? "none" : "inline"}; pointer-events: none; }
@@ -2815,17 +3455,18 @@ class Mappo {
         transition: none;
         animation: none; /* a running animation transform would win otherwise */
       }` : ""}
-      .mappo-figure-path {
-        fill: ${style.fill ? o.figureColor : "none"};
-        stroke: ${style.stroke ? stroke : "none"};
-        stroke-width: ${o.figureStrokeWidth};
-        stroke-linejoin: round; fill-rule: nonzero;
+      .mappo-figure-fill { fill: ${style.fill ? o.figureColor : "none"}; stroke: none; fill-rule: nonzero; }
+      .mappo-figure-edge {
+        fill: none; stroke: ${style.stroke ? stroke : "none"};
+        stroke-width: ${o.figureStrokeWidth}; stroke-linejoin: round; stroke-linecap: round;
       }
       .mappo-borders {
         fill: none; stroke: ${o.bordersColor ?? stroke};
-        stroke-width: ${o.bordersWidth}; stroke-linejoin: round; opacity: ${o.bordersOpacity};
+        stroke-width: ${o.bordersWidth}; stroke-linejoin: round; stroke-linecap: round; opacity: ${o.bordersOpacity};
       }
       .mappo-figure-highlight { fill: ${o.highlightColor}; }
+      .mappo-graticule { fill: none; stroke: ${graticule}; stroke-width: 0.6; opacity: ${o.graticuleOpacity}; pointer-events: none; }
+      .mappo-equator { fill: none; stroke: ${o.equatorColor ?? graticule}; stroke-width: 0.6; opacity: ${o.equatorOpacity}; pointer-events: none; }
       .mappo-marker {
         fill: ${o.markerColor};
         cursor: ${o.markerCursor};
@@ -2965,6 +3606,7 @@ class Mappo {
       }
       const col = Number(pos.dataset.col), row = Number(pos.dataset.row);
       const c = cellCenter(col, row, this.grid);
+      if (!c) return null;
       return { kind: "dot", detail: { lat: c.lat, lon: c.lon, col, row, element: pos } };
     };
 
@@ -3010,10 +3652,13 @@ class Mappo {
 // Snap a lat/lon to the nearest FIGURE cell in the grid, searching outward a
 // few rings — coastal cities often sit in a sea cell at coarse resolutions
 // (harbours do that), and a marker floating just off the coast looks broken.
-// Pure function (exported for consumers doing their own math).
+// Returns null when the point has no place on the grid's projection. Pure
+// function (exported for consumers doing their own math).
 function snapToFigure(lat, lon, grid, body) {
   if (!body) throw new TypeError("snapToFigure needs a body — pass EARTH or another registered body");
-  const { x, y } = project(lat, lon, grid);
+  const p = project(lat, lon, grid);
+  if (!p) return null;
+  const { x, y } = p;
   const col0 = Math.min(grid.cols - 1, Math.max(0, Math.floor(x)));
   const row0 = Math.min(grid.rows - 1, Math.max(0, Math.floor(y)));
 
@@ -3025,7 +3670,7 @@ function snapToFigure(lat, lon, grid, body) {
         const col = col0 + dc, row = row0 + dr;
         if (col < 0 || col >= grid.cols || row < 0 || row >= grid.rows) continue;
         const c = cellCenter(col, row, grid);
-        if (!body.figure(c.lat, c.lon)) continue;
+        if (!c || !body.figure(c.lat, c.lon)) continue;
         const d = (col - x) ** 2 + (row - y) ** 2;
         if (!best || d < best.d) best = { col, row, d };
       }
@@ -3111,6 +3756,9 @@ const ATTR_MAP = {
   "cols":               [ "cols", Number ],
   "lat-min":            [ "latMin", Number ],
   "lat-max":            [ "latMax", Number ],
+  // The flat map's projection and central meridian; the globe ignores both.
+  "projection":         [ "projection", (v) => v.trim().toLowerCase() ],
+  "center-lon":         [ "centerLon", Number ],
   // The figure and the ground
   "figure":             [ "figure", String ],
   "figure-color":       [ "figureColor", String ],
@@ -3314,6 +3962,7 @@ export { MappoElement, register, defineBodyElement };
 export { EARTH };
 export { registerBody, resolveBody, knownBodies, onBodyRegistered, resolvePlace };
 export { project, cellCenter, cellCorner, projectNormalized };
+export { resolveProjection, knownProjections };
 export { buildGraticule };
 export { buildFigure, parseFigureStyle };
 export { noise2 };

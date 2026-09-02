@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Projections — mappo</title>
+<meta name="description" content="The same world, flattened four ways: equirectangular, Equal Earth, polar stereographic north and south, plus a central meridian of your choosing and a projection of your own.">
+<link rel="shortcut icon" href="../favicon/favicon.ico" type="image/x-icon">
+<style>
+ :root{ --ink:#e8eef7; --dim:#8b98ad; --faint:#4a5668; --line:#1b2634; --accent:#ffb454;
+        --sea:#0b1220; --land:#c9d3df; --edge:#e8eef7; --mare:#39424f; --regolith:#8e9aa8; }
+ *{box-sizing:border-box}
+ body{margin:0;background:#04060a;color:var(--ink);
+   font:14px/1.6 ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+ .wrap{max-width:1180px;margin:0 auto;padding:34px 26px 90px}
+ h1{font-size:25px;margin:0 0 8px;letter-spacing:-.015em}
+ .lede{color:var(--dim);max-width:72ch;margin:0}
+ .by{color:var(--faint);font-size:12.5px;margin:12px 0 0}
+ a{color:var(--accent)}
+ h2{font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:var(--dim);
+   margin:40px 0 6px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+ .note{color:var(--faint);font-size:12.5px;max-width:76ch;margin:0 0 16px}
+ .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:20px}
+ .row.three{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+ .card{background:rgb(9 14 22 / .8);border:1px solid var(--line);border-radius:16px;padding:15px}
+ .card h3{margin:0 0 3px;font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+   letter-spacing:.07em;text-transform:uppercase;color:var(--dim)}
+ .card p{margin:0 0 11px;color:var(--faint);font-size:12.5px}
+ mappo-world,mappo-moon,mappo-mars,mappo-earth{display:block;width:100%}
+ .disc{max-width:420px;margin:0 auto}
+ pre{margin:12px 0 0;background:#070b11;border:1px solid var(--line);border-radius:9px;
+   padding:11px 13px;overflow-x:auto;font:11.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;
+   color:#9fb2c6}
+ code{font:inherit;color:#c8d6e6}
+ .sites .pin{pointer-events:auto;text-decoration:none}
+ .sites .pin > i{position:absolute;left:0;top:0;width:6px;height:6px;margin:-3px 0 0 -3px;
+   border-radius:50%;background:#6fd3c5;box-shadow:0 0 0 3px rgb(111 211 197 / .2)}
+ .sites .pin > span{position:absolute;left:0;top:0;white-space:nowrap;
+   transform:translate(9px,-50%);font:600 9px/1 ui-monospace,monospace;letter-spacing:.11em;
+   text-transform:uppercase;color:#e8f0f8;text-shadow:0 1px 5px rgb(0 0 0 / .95)}
+ .sites .pin.left > span{transform:translate(-9px,-50%) translateX(-100%)}
+ .sites .pin.below > span{transform:translate(-50%,7px)}
+ .sites .pin.above > span{transform:translate(-50%,calc(-100% - 7px))}
+ .sites .pin[data-mappo-behind]{visibility:hidden}
+ .legend{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 0;font:11px/1.5 ui-monospace,monospace;color:var(--faint)}
+ .legend b{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Projections</h1>
+<p class="lede">A sphere does not fit on a rectangle, and every way of forcing it lies about
+something: shape, area, or distance. mappo now lets you choose the lie. Four projections
+ship, any central meridian, and a seam for your own — and every one of them gets the whole
+toolkit for free: the dot field, contours, vector coastlines, borders, places, overlays,
+<code>locate()</code> and the graticule are one code path with a projection plugged in.</p>
+<p class="by">A prototype · <a href="../index.html">mappo</a> ·
+<a href="./index.html">more demos</a> · <a href="./worlds.html">other worlds</a></p>
+
+<h2>Two ways to flatten the world</h2>
+<p class="note">Left, the equirectangular map every version of mappo has drawn: latitude and
+longitude as straight lines, areas stretched toward the poles (Greenland looks the size of
+Africa; it is a fourteenth). Right, Equal Earth (Šavrič, Patterson &amp; Jenny, 2019): areas
+are true everywhere, the meridians curve, and the corners of the frame are simply not part of
+the world. Same body, same data, same attributes but one.</p>
+<div class="row">
+  <div class="card">
+    <h3>projection="equirectangular"</h3>
+    <p>The default. The frame is 360° by the latitude band; the graticule is a grid of straight lines.</p>
+    <mappo-world cols="150" lat-min="-90" lat-max="90" figure="solid outline" figure-source="vector" borders
+                 figure-color="var(--land)" figure-stroke="var(--edge)" figure-stroke-width="0.6"
+                 background="var(--sea)" graticule graticule-color="#6f8196" graticule-opacity=".35"
+                 equator-color="var(--accent)" equator-opacity=".7"></mappo-world>
+  </div>
+  <div class="card">
+    <h3>projection="equal-earth"</h3>
+    <p>Equal-area. The frame is 2.05:1 for the whole sphere and the edge of the world is the
+    curve the clip follows.</p>
+    <mappo-world cols="150" lat-min="-90" lat-max="90" projection="equal-earth" figure="solid outline" figure-source="vector" borders
+                 figure-color="var(--land)" figure-stroke="var(--edge)" figure-stroke-width="0.6"
+                 background="var(--sea)" graticule graticule-color="#6f8196" graticule-opacity=".35"
+                 equator-color="var(--accent)" equator-opacity=".7"></mappo-world>
+  </div>
+</div>
+<pre><code>&lt;mappo-world projection="equal-earth" lat-min="-90" lat-max="90"
+             figure="solid outline" figure-source="vector" borders graticule&gt;&lt;/mappo-world&gt;</code></pre>
+
+<h2>The Pacific in the middle</h2>
+<p class="note">A map centred on 0° cuts the Pacific in half and puts Auckland and Los Angeles
+at opposite ends of the page. <code>center-lon</code> moves the central meridian; the seam moves
+with it, and the coastlines are re-cut at the new seam rather than at the old one — the
+Chukchi coast and Fiji are whole, the Atlantic is split, and nothing is stroked along the edge.</p>
+<div class="card">
+  <h3>center-lon="150"</h3>
+  <p>Dots, places and the equator, all through the same central meridian.</p>
+  <mappo-world cols="170" center-lon="150" figure-color="#7f93ab" ground-color="#111a26"
+               places="Tokyo, Sydney, Auckland, Los Angeles, Singapore, Vancouver, Manila"
+               marker-color="var(--accent)" marker-pulse graticule meridians="12" parallels="7"
+               graticule-color="#6f8196" graticule-opacity=".25" equator-color="var(--accent)" equator-opacity=".55"></mappo-world>
+</div>
+<pre><code>&lt;mappo-world center-lon="150" places="Tokyo, Sydney, Auckland, Los Angeles"&gt;&lt;/mappo-world&gt;</code></pre>
+
+<h2>The poles, honestly</h2>
+<p class="note">On an equirectangular map the whole Artemis landing region — a few hundred
+kilometres around the lunar south pole — is smeared across the bottom row. Polar stereographic
+puts the pole at the centre and keeps shapes true (it is conformal; the scale grows toward the
+rim, 2× at the equator of a hemisphere). On a polar map <code>lat-min</code>/<code>lat-max</code>
+name the band you see: the far bound is the rim of the disc. Longitude 90°E is to the right in
+both aspects, so 0° points down on a north map and up on a south one, the way NASA and USGS
+print them. Sites arrive as ordinary <code>data-lat</code>/<code>data-lon</code> children.</p>
+<div class="row three">
+  <div class="card">
+    <h3>&lt;mappo-moon projection="stereographic-south" lat-max="-80"&gt;</h3>
+    <p>The last ten degrees to the lunar south pole: highland almost entirely, so the disc is
+    regolith, and what this map is for is where things are — Shackleton at the centre, the Artemis
+    candidate regions around it, each an ordinary overlay child. On an equirectangular map all of
+    this is one row of dots.</p>
+    <div class="disc">
+      <mappo-moon cols="120" projection="stereographic-south" lat-max="-80"
+                  figure="solid" figure-source="vector" figure-color="var(--mare)" ground-color="none"
+                  background="var(--regolith)" graticule meridians="12" parallels="35" graticule-color="#1c232d" graticule-opacity=".55"
+                  equator-opacity="0" class="sites">
+        <!-- The Moon's own gazetteer south of 80°S, as overlay children: the
+             Artemis III candidate regions and the crater at the pole. -->
+        <a class="pin" data-lat="-89.7" data-lon="129.2" data-kind="feature" href="#"><i></i><span>Shackleton</span></a>
+        <a class="pin below" data-lat="-86"   data-lon="-2.7"  data-kind="artemis" href="#"><i></i><span>Malapert Massif</span></a>
+        <a class="pin" data-lat="-85.4" data-lon="31.5"  data-kind="artemis" href="#"><i></i><span>Nobile Rim 1</span></a>
+        <a class="pin left" data-lat="-87.5" data-lon="-5"    data-kind="artemis" href="#"><i></i><span>Haworth</span></a>
+        <a class="pin above" data-lat="-82.2" data-lon="-58"   data-kind="artemis" href="#"><i></i><span>Peak near Cabeus B</span></a>
+      </mappo-moon>
+    </div>
+  </div>
+  <div class="card">
+    <h3>&lt;mappo-world projection="stereographic-north" lat-min="45"&gt;</h3>
+    <p>The Arctic as one ocean, the way it is: Greenland, Svalbard and the Siberian coast around it, borders included.
+    Places come from the gazetteer or as <code>{ name, lat, lon }</code> records.</p>
+    <div class="disc">
+      <mappo-world id="arctic" cols="120" projection="stereographic-north" lat-min="45" figure="solid outline" figure-source="vector" borders
+                   figure-color="var(--land)" figure-stroke="var(--edge)" figure-stroke-width="0.6" background="var(--sea)"
+                   graticule meridians="12" parallels="17" graticule-color="#6f8196" graticule-opacity=".35" equator-opacity="0"
+                   places="Reykjavík" marker-color="var(--accent)" marker-scale="3"></mappo-world>
+    </div>
+  </div>
+  <div class="card">
+    <h3>&lt;mappo-mars projection="stereographic-north" lat-min="55"&gt;</h3>
+    <p>Mars from above the north pole: the lowlands of Vastitas Borealis as one basin, whole across the 180° meridian.</p>
+    <div class="disc">
+      <mappo-mars cols="120" projection="stereographic-north" lat-min="55" figure="solid outline" figure-source="vector"
+                  figure-color="#7a4b3a" figure-stroke="#d9a27f" figure-stroke-width="0.6" ground-color="#2a1a14" background="#0d0906"
+                  graticule meridians="12" parallels="17" graticule-color="#c9b6a8" graticule-opacity=".22" equator-opacity="0"></mappo-mars>
+    </div>
+  </div>
+</div>
+<pre><code>&lt;mappo-moon projection="stereographic-south" lat-max="-80" figure="solid" figure-source="vector" graticule&gt;
+  &lt;a class="pin" data-lat="-89.7" data-lon="129.2"&gt;Shackleton&lt;/a&gt;
+&lt;/mappo-moon&gt;
+
+// or in JavaScript — the same options, the same answers
+const map = new Mappo(el, { body: "moon", projection: "stereographic-south", latMax: -80 });
+map.projection.forward(-89.7, 129.2);   // → { x: 0.5..., y: 0.5... }  the pole is the centre
+map.locate(45, 0);                        // → null: the far hemisphere has no place on this map</code></pre>
+
+<h2>Bring your own</h2>
+<p class="note">A projection is a small object: <code>forward(lat, lon)</code> to a point in
+the unit frame (or <code>null</code>), <code>inverse(x, y)</code> back to a coordinate (or
+<code>null</code> off the world), an <code>aspect</code>, and optionally an
+<code>outline()</code> for the clip. The dot field, the contours and the highlights come from
+the inverse alone. Below, a sinusoidal projection written in eight lines; a d3-geo projection
+works unchanged, because mappo recognises the shape.</p>
+<div class="row">
+  <div class="card">
+    <h3>a { forward, inverse } object — sinusoidal</h3>
+    <p>Equal-area, straight parallels, meridians as sine curves. Nothing in mappo knows its name.</p>
+    <mappo-world id="custom" cols="150" lat-min="-90" lat-max="90" figure="solid outline" figure-source="vector"
+                 figure-color="var(--land)" figure-stroke="var(--edge)" figure-stroke-width="0.6" background="var(--sea)"
+                 graticule graticule-color="#6f8196" graticule-opacity=".35" equator-color="var(--accent)" equator-opacity=".7"></mappo-world>
+  </div>
+  <div class="card">
+    <h3>the code</h3>
+<pre style="margin-top:0"><code>const RAD = Math.PI / 180;
+const sinusoidal = {
+  id: "sinusoidal", aspect: 2,
+  forward: (lat, lon) => ({ x: 0.5 + lon * Math.cos(lat * RAD) / 360, y: (90 - lat) / 180 }),
+  inverse: (x, y) => {
+    const lat = 90 - y * 180, lon = (x - 0.5) * 360 / Math.cos(lat * RAD);
+    return Math.abs(lon) &lt;= 180 ? { lat, lon } : null;      // null: off the world
+  },
+  outline: () => [ [ ...meridian(-180), ...meridian(180).reverse() ] ]
+};
+new Mappo(el, { projection: sinusoidal, latRange: [-90, 90] });
+
+// a d3-geo projection is accepted as it is
+import { geoMollweide } from "d3-geo-projection";
+new Mappo(el, { projection: geoMollweide(), latRange: [-90, 90] });</code></pre>
+  </div>
+</div>
+
+<script type="module">
+  import { Mappo, registerBody } from "../dist/mappo.js";
+  import { MOON } from "../dist/bodies/moon.js";
+  import { MARS } from "../dist/bodies/mars.js";
+  registerBody(MOON);
+  registerBody(MARS);
+
+  // Arctic settlements the gazetteer does not carry: plain records, mixed with
+  // a gazetteer name.
+  const ready = (el, fn) => (el.map ? fn() : customElements.whenDefined(el.localName).then(() => queueMicrotask(fn)));
+  const arctic = document.getElementById("arctic");
+  ready(arctic, () => arctic.map.update({ places: [
+    "Reykjavík",
+    { name: "Longyearbyen", lat: 78.22, lon: 15.63 },
+    { name: "Murmansk", lat: 68.97, lon: 33.08 },
+    { name: "Nuuk", lat: 64.18, lon: -51.72 },
+    { name: "Utqiaġvik", lat: 71.29, lon: -156.79 }
+  ] }));
+
+  // A projection of our own, handed to the JS API (attributes can only name
+  // the built-ins). Sinusoidal: x = λ cos φ, y = φ.
+  const RAD = Math.PI / 180;
+  const meridian = (lon) => {
+    const pts = [];
+    for (let lat = 90; lat >= -90; lat -= 2) pts.push([ 0.5 + lon * Math.cos(lat * RAD) / 360, (90 - lat) / 180 ]);
+    return pts;
+  };
+  const sinusoidal = {
+    id: "sinusoidal", aspect: 2,
+    forward: (lat, lon) => ({ x: 0.5 + lon * Math.cos(lat * RAD) / 360, y: (90 - lat) / 180 }),
+    inverse: (x, y) => {
+      const lat = 90 - y * 180;
+      const c = Math.cos(lat * RAD);
+      if (c < 1e-12) return Math.abs(x - 0.5) < 1e-9 ? { lat, lon: 0 } : null;
+      const lon = (x - 0.5) * 360 / c;
+      return Math.abs(lon) <= 180 ? { lat, lon } : null;
+    },
+    outline: () => [ [ ...meridian(-180), ...meridian(180).reverse() ] ]
+  };
+  const custom = document.getElementById("custom");
+  const apply = () => custom.map?.update({ projection: sinusoidal });
+  if (custom.map) apply(); else customElements.whenDefined("mappo-world").then(() => queueMicrotask(apply));
+</script>
+</div>
+</body>
+</html>

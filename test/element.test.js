@@ -214,7 +214,7 @@ test("a body without outlines or borders is valid: vector falls back to the grid
   const id = "null-vectors";
   api.registerBody({ id, name: "Null vectors", latRange: [ -90, 90 ], figure: () => true });
   const element = mount("mappo-world", { body: id, cols: 24, figure: "outline", "figure-source": "vector", borders: true });
-  assert.ok(element.querySelector(".mappo-figure-path").getAttribute("d").length > 0,
+  assert.ok(element.querySelector(".mappo-figure-fill").getAttribute("d").length > 0,
     "a missing vector source falls back to the body's grid contour");
   assert.equal(element.querySelector(".mappo-borders"), null);
   unmount(element);
@@ -430,7 +430,7 @@ test("globe canvas accessibility follows live body and marker state", () => {
 
 test("figure colours are stylesheet-tier: a colour change never rebuilds the geometry", () => {
   const element = mount("mappo-world", { cols: 24, figure: "solid outline", "figure-source": "vector", borders: true });
-  const path = element.querySelector(".mappo-figure-path");
+  const path = element.querySelector(".mappo-figure-fill");
   const renders = { n: 0 };
   const original = element.map.render;
   element.map.render = function () { renders.n++; return original.call(this); };
@@ -438,8 +438,9 @@ test("figure colours are stylesheet-tier: a colour change never rebuilds the geo
   element.setAttribute("figure-stroke", "#654321");
   element.setAttribute("borders-color", "#abcdef");
   assert.equal(renders.n, 0, "three colour changes, zero geometry rebuilds");
-  assert.equal(element.querySelector(".mappo-figure-path"), path, "the same path node is still in place");
-  assert.match(element.querySelector("style").textContent, /\.mappo-figure-path\s*\{[^}]*fill: #123456;[^}]*stroke: #654321/);
+  assert.equal(element.querySelector(".mappo-figure-fill"), path, "the same path node is still in place");
+  assert.match(element.querySelector("style").textContent, /\.mappo-figure-fill\s*\{[^}]*fill: #123456;/);
+  assert.match(element.querySelector("style").textContent, /\.mappo-figure-edge\s*\{[^}]*stroke: #654321;/);
   assert.match(element.querySelector("style").textContent, /\.mappo-borders\s*\{[^}]*stroke: #abcdef/);
   unmount(element);
 });
@@ -461,4 +462,82 @@ test("built-in styles are instance-scoped defaults, so ordinary consumer CSS win
   } finally {
     consumer.remove();
   }
+});
+
+test("projection: a polar map is a disc — square frame, dots only inside it, off-map places skipped", () => {
+  const moon = mount("mappo-moon", { cols: 40, projection: "stereographic-south", "lat-max": -60, places: "Shackleton, Apollo 11" });
+  assert.deepEqual(moon.map.options.latRange, [ -90, -60 ], "lat-max is the rim; the pole is the centre");
+  assert.equal(moon.map.projection.id, "stereographic-south");
+  assert.equal(moon.querySelector("svg").getAttribute("viewBox"), "0 0 400 400", "aspect 1");
+  assert.ok(moon.querySelector("clipPath path").getAttribute("d").length > 200, "the frame clip is the disc");
+  let dots = 0;
+  for (const pos of moon.querySelectorAll(".mappo-dots .mappo-pos")) {
+    const [ , x, y ] = pos.getAttribute("transform").match(/translate\(([\d.]+) ([\d.]+)\)/).map(Number);
+    assert.ok(Math.hypot(x - 200, y - 200) <= 200 + 8, `dot at ${x},${y} is inside the disc`);
+    dots++;
+  }
+  assert.ok(dots > 0, "the polar maria are drawn");
+  assert.deepEqual([ ...moon.querySelectorAll("[data-place]") ].map((m) => m.dataset.place), [ "Shackleton" ],
+    "Apollo 11 has no place on a south polar cap");
+  unmount(moon);
+});
+
+test("projection: default framing follows the projection, explicit bounds still win, bad values are refused atomically", () => {
+  const north = mount("mappo-world", { cols: 24, projection: "stereographic-north" });
+  assert.deepEqual(north.map.options.latRange, [ 0, 90 ], "a hemisphere, not Earth's -58…84");
+  north.setAttribute("lat-min", "30");
+  assert.deepEqual(north.map.options.latRange, [ 30, 90 ]);
+  north.setAttribute("projection", "equirectangular");
+  assert.deepEqual(north.map.options.latRange, [ 30, 84 ], "back on a cylindrical map the body's own top bound returns");
+  assert.throws(() => north.map.update({ projection: "mercator" }), /unknown projection/);
+  assert.throws(() => north.map.update({ projection: "stereographic-north", latMin: -90 }), /opposite pole/);
+  assert.equal(north.map.options.projection, "equirectangular", "a rejected update changes nothing");
+  assert.deepEqual(north.map.options.latRange, [ 30, 84 ]);
+  unmount(north);
+});
+
+test("projection: Equal Earth leaves the corners empty", () => {
+  const ee = mount("mappo-world", { cols: 40, projection: "equal-earth", "lat-min": -90, "lat-max": 90 });
+  assert.equal(ee.querySelector('.mappo-dots .mappo-pos[data-col="0"][data-row="0"]'), null, "no dot in the top-left corner");
+  assert.ok(ee.map._dotCount > 0);
+  assert.equal(ee.querySelector("svg").getAttribute("viewBox"), "0 0 400 190", "rows follow the 2.05:1 aspect");
+  unmount(ee);
+});
+
+test("projection: vector outlines split into a fill and an edge, and the edge never crosses the map", () => {
+  const el = mount("mappo-world", { cols: 60, "center-lon": 150, figure: "solid outline", "figure-source": "vector", borders: "" });
+  const fill = el.querySelector(".mappo-figure-fill"), edge = el.querySelector(".mappo-figure-edge");
+  assert.ok(fill.getAttribute("d").length > 1000 && edge.getAttribute("d").length > 1000);
+  let prev = null;
+  for (const [ , cmd, x ] of edge.getAttribute("d").matchAll(/([ML])([\d.]+) [\d.]+/g)) {
+    if (cmd === "L") assert.ok(Math.abs(Number(x) - prev) < 300, "an edge segment never spans half the frame");
+    prev = Number(x);
+  }
+  assert.ok(el.querySelector(".mappo-borders").getAttribute("d").length > 1000);
+  assert.equal(el.querySelector(".mappo-figure").getAttribute("clip-path"), `url(#mappo-frame-i${el.map._uid})`);
+  unmount(el);
+});
+
+test("projection: the graticule draws on the flat map and its colours are style-tier", () => {
+  const el = mount("mappo-world", { cols: 40, graticule: "", projection: "stereographic-north" });
+  assert.ok(el.querySelector(".mappo-graticule").getAttribute("d").length > 100);
+  assert.ok(el.querySelector(".mappo-equator").getAttribute("d").length > 20);
+  const renders = { n: 0 };
+  const original = el.map.render;
+  el.map.render = function () { renders.n++; return original.call(this); };
+  el.setAttribute("graticule-color", "#ff0000");
+  assert.equal(renders.n, 0);
+  assert.match(el.querySelector("style").textContent, /\.mappo-graticule\s*\{[^}]*stroke: #ff0000/);
+  unmount(el);
+});
+
+test("projection: overlays follow the projection and off-map points are parked as behind", () => {
+  const el = mount("mappo-world", { cols: 40, projection: "stereographic-south", "lat-max": -60 },
+    `<a class="pin" data-lat="-89.9" data-lon="0">Pole</a><a class="far" data-lat="45" data-lon="0">Paris</a>`);
+  const pin = el.querySelector(".pin"), far = el.querySelector(".far");
+  assert.ok(Math.abs(parseFloat(pin.style.left) - 50) < 1 && Math.abs(parseFloat(pin.style.top) - 50) < 1, "the pole is the centre");
+  assert.equal(pin.hasAttribute("data-mappo-behind"), false);
+  assert.equal(far.style.left, "-9999px");
+  assert.ok(far.hasAttribute("data-mappo-behind"), "a point the projection cannot place is behind");
+  unmount(el);
 });

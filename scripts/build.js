@@ -19,7 +19,7 @@ const manifest = JSON.parse(readFileSync(join(here, "..", "package.json")));
 // the footer so it remains the single source of truth for the package's public
 // exports and auto-registration behaviour.
 const MODULES = [
-  "projection.js", "graticule.js", "bodies/earth.js", "body.js", "figure.js",
+  "projections.js", "projection.js", "graticule.js", "bodies/earth.js", "body.js", "figure.js",
   "noise.js", "color.js", "highlight.js", "globe.js", "renderer.js", "element.js"
 ];
 

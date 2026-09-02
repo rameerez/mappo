@@ -69,7 +69,9 @@ rows = round(cols · (φmax − φmin) / 360)
 ```
 
 `projectNormalized` is the same mapping into 0…1. It is linear, so it is exact
-for every point regardless of the grid.
+for every point regardless of the grid, and it returns `null` for a latitude
+outside `latRange` — the point has no place on that map. With a `projection`
+or `centerLon` it applies the formulas of section 3.7 instead.
 
 Globe, with unit-sphere coordinates `(x, y, z) = (cos φ sin λ, sin φ, cos φ cos λ)`
 (λ = 0 faces the viewer, +y is north), spin angle θ about the polar axis,
@@ -135,6 +137,7 @@ the latitude span divides evenly:
 
 This affects only the dot grid and grid-traced contours. Overlays,
 `projectNormalized` and `locate()` are linear in `latRange` and unaffected.
+Under another projection the same rounding applies to `rows = round(cols / aspect)`.
 
 ### 3.6 Place markers on the flat map are snapped
 
@@ -153,6 +156,100 @@ On the **globe**, markers are placed at their exact coordinates with no
 snapping. **For exact points on either renderer use overlays
 (`data-lat`/`data-lon`) or `locate()`**, both of which are exact to the bounds
 in §3.4.
+
+### 3.7 Projections
+
+The flat map's grid is "sample the body at the inverse projection of every
+screen cell", so a projection is defined by its inverse as much as its forward
+mapping, and the accuracy of both is what the round-trip figures below
+measure. All formulas are for the unit sphere and are then scaled into the
+unit frame; `λ′ = λ − λ₀` is the longitude relative to the central meridian
+`center-lon`.
+
+**Equirectangular** (default): `x = (λ′ + 180)/360`, `y = (φmax − φ)/(φmax − φmin)`.
+Linear, exact in double precision (section 3.1).
+
+**Equal Earth** (Šavrič, Patterson & Jenny, *The Equal Earth map projection*,
+IJGIS 33(3), 2019, doi:10.1080/13658816.2018.1504949), with the published
+constants `A₁ = 1.340264`, `A₂ = −0.081106`, `A₃ = 0.000893`, `A₄ = 0.003796`,
+`M = √3/2`:
+
+```
+θ = asin(M sin φ)
+x = λ′ cos θ / (M (A₁ + 3A₂θ² + θ⁶(7A₃ + 9A₄θ²)))
+y = θ (A₁ + A₂θ² + θ⁶(A₃ + A₄θ²))
+```
+
+The inverse solves the y polynomial for θ by Newton's method to a step below
+10⁻¹³ rad (it converges in 3–5 iterations from θ₀ = y) and recovers λ′ from x.
+The frame is `[−x(180°, 0), x(180°, 0)] × [y(φmin), y(φmax)]`; for the whole
+sphere its aspect ratio is 2.05458 : 1. Equal-area means the ground area a
+screen cell represents is the same everywhere on the map; it is the projection
+to use when the dot density is meant to be read as a density.
+
+**Polar stereographic** (Snyder, *Map Projections: A Working Manual*, USGS
+Professional Paper 1395, 1987, pp. 154–163), north or south, with `c` the
+angular distance from the centre pole:
+
+```
+ρ = 2 tan(c/2)                     c = 90° − φ  (north)   c = 90° + φ  (south)
+x = ρ sin λ′                       y = ∓ρ cos λ′   (− north: 0° at the bottom; + south: 0° at the top)
+k = 2 / (1 + cos c) = sec²(c/2)    the scale factor; area scale k²
+```
+
+Conformal: shapes are true locally and the scale is the same in every
+direction at a point, but grows toward the rim:
+
+| `c` from the pole | latitude on a north map | scale `k` | area scale `k²` |
+|---|---|---|---|
+| 0° | 90° | 1 | 1 |
+| 15° | 75° | 1.0173 | 1.035 |
+| 30° | 60° | 1.0718 | 1.149 |
+| 45° | 45° | 1.1716 | 1.373 |
+| 60° | 30° | 1.3333 | 1.778 |
+| 90° | 0° | 2 | 4 |
+
+So on a hemispheric polar map a screen cell at the rim covers half the ground
+distance and a quarter of the ground area of one at the pole; the dot density
+is a density of *screen* cells, not of ground. The frame is the disc of radius
+`ρ(rim)` where the rim is the far latitude bound, or an annulus when the near
+bound stops short of the pole. The opposite pole (`c = 180°`) is at infinity;
+a `latRange` whose rim reaches it is refused with a `RangeError`, and for
+geometry that crosses the rim (a coastline continuing into the far hemisphere)
+the far points are clamped at four rim radii, far outside the clip, so the
+visible part of the outline keeps its exact shape.
+
+**Measured round trip** `forward → inverse → forward`, on a 0.37° × 0.73° grid
+over each projection's default frame, Node 22, IEEE 754 binary64:
+
+| projection | points | worst of `|Δφ|` and `|Δλ| cos φ` | on Earth's surface | worst frame error |
+|---|---|---|---|---|
+| equirectangular | 239,598 | 1.14×10⁻¹³° | 1.3×10⁻⁸ m | 2.2×10⁻¹⁶ |
+| equal-earth | 239,598 | 7.09×10⁻¹²° | 7.9×10⁻⁷ m | 4.4×10⁻¹⁶ |
+| stereographic-north | 119,799 | 1.14×10⁻¹³° | 1.3×10⁻⁸ m | 7.8×10⁻¹⁶ |
+| stereographic-south | 119,799 | 1.14×10⁻¹³° | 1.3×10⁻⁸ m | 7.8×10⁻¹⁶ |
+
+The stereographic scale factor is verified numerically: at 60° N the
+meridional scale is 1.07180, against `2/(1 + cos 30°) = 1.07180`. The test
+suite asserts all of this (`test/projections.test.js`).
+
+**What a projection does not change.** The body's classification is sampled
+at the exact inverse-projected coordinate, so the figure/ground decision for a
+cell is as accurate as the pack (section 4.1), whatever the projection. A
+place, an overlay or a `locate()` point is projected exactly; only markers
+are snapped to the grid (section 3.6), and that snap is a search in *screen*
+cells, so its radius in ground terms follows the projection's scale. The
+vector outlines are the pack's rings, stitched across ±180° and cut at the
+projection's own seam by linear interpolation of the crossing latitude — an
+error of at most one vertex spacing (1/32° in the packs) along the seam line
+itself, and zero elsewhere.
+
+**Custom and d3 projections.** A `{ forward, inverse }` object is used as
+given. A d3-geo projection is wrapped: its frame is the bounding box of the
+sphere as d3 draws it, found by sampling 361 × 37 graticule points plus the
+bounding meridians at 0.5°, so a projection whose extreme point falls between
+samples has a frame short by up to that sampling step; a frame point is off
+the world when d3's own inverse fails to round-trip within 10⁻⁶ of the frame.
 
 ## 4. The data mappo carries
 

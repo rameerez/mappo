@@ -20,6 +20,7 @@ export { MappoElement, register, defineBodyElement } from "./element.js";
 export { EARTH } from "./bodies/earth.js";
 export { registerBody, resolveBody, knownBodies, onBodyRegistered, resolvePlace } from "./body.js";
 export { project, cellCenter, cellCorner, projectNormalized } from "./projection.js";
+export { resolveProjection, knownProjections } from "./projections.js";
 export { buildGraticule } from "./graticule.js";
 export { buildFigure, parseFigureStyle } from "./figure.js";
 export { noise2 } from "./noise.js";

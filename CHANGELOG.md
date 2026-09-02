@@ -27,11 +27,49 @@ highlands. The options say so:
 | `markers` (separate option) | `markers` attribute still exists; the option is `places` |
 | `onCityClick`, `onCityEnter`, `mappo:cityclick`, `mappo:cityenter` | `onPlaceClick`, `onPlaceEnter`, `mappo:placeclick`, `mappo:placeenter` |
 | `data-city` on markers | `data-place` (plus `data-kind` when the gazetteer has one) |
-| `.mappo-land`, `.mappo-land-path`, `.mappo-land-highlight`, `.mappo-ocean` | `.mappo-figure`, `.mappo-figure-path`, `.mappo-figure-highlight`, `.mappo-ground` |
+| `.mappo-land`, `.mappo-land-path`, `.mappo-land-highlight`, `.mappo-ocean` | `.mappo-figure`, `.mappo-figure-fill` + `.mappo-figure-edge`, `.mappo-figure-highlight`, `.mappo-ground` |
 
 Figure colours (`figure-color`, `figure-stroke`, `figure-stroke-width`,
 `borders-*`, `highlight-color`) are now stylesheet-tier: changing one never
 rebuilds geometry.
+
+### Projections
+
+The flat map has a projection. Four ship, selected with
+`projection="equirectangular | equal-earth | stereographic-north | stereographic-south"`
+(the option `projection` also accepts a `{ forward, inverse, aspect, outline? }`
+object or a d3-geo projection), and `center-lon` sets the central meridian.
+Everything is one code path: dots are sampled at the inverse projection of
+each screen cell, and markers, overlays, `locate()`, `projectNormalized`,
+borders, highlights and the graticule use the forward mapping. Exported:
+`resolveProjection`, `knownProjections`; on an instance, `map.projection`.
+
+- **Polar maps read `lat-min`/`lat-max` as the band shown**: the far bound is
+  the rim of the disc. Unset, a polar map shows its hemisphere rather than the
+  body's default framing.
+- **Vector outlines are stitched** back into whole rings once per body and cut
+  at the current projection's seam. The globe no longer draws the packs'
+  closure edges along the 180° meridian as coastline (a visible line along 180°
+  across Chukotka, Wrangel Island and Antarctica before). Fills get closed pieces, the edge
+  stroke gets open arcs, so no seam is ever stroked.
+- **The graticule draws on the flat map** too: `.mappo-graticule` and
+  `.mappo-equator` inside `.mappo-graticule-group`, clipped to the world.
+- **Breaking:** `.mappo-figure-path` is now two paths, `.mappo-figure-fill` and
+  `.mappo-figure-edge` (plus `.mappo-figure-complement` for a ring that
+  encloses the far pole of a polar map). `.mappo-bg` is a `<path>` in the
+  shape of the world, not a `<rect>`, and everything is clipped to it.
+- **Breaking:** `projectNormalized`, `locate()`, `project`, `cellCenter` and
+  `snapToFigure` return `null` for a point or cell with no place on the map: a
+  latitude outside the band, the far hemisphere of a polar map, the corner of
+  an Equal Earth frame. Before, an out-of-band latitude produced coordinates
+  outside 0…1 and a marker for it was clamped to the edge row. Places off the
+  map are not drawn; overlays are parked off-screen with `data-mappo-behind`.
+- An unknown projection name throws a `RangeError`; so does a polar map whose
+  rim would be the opposite pole. A rejected `update()` changes nothing.
+- `projection` and `center-lon` are geometry-tier for the flat map and ignored
+  by the globe, which is a physical view rather than a map projection.
+- The bundle is 91 KB gzipped, from 81 KB: the projection module and the
+  seam-aware outline geometry are the difference.
 
 ### Breaking: the body interface
 

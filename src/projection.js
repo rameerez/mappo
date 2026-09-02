@@ -1,71 +1,83 @@
-// Equirectangular projection — the deliberate choice for a SYMBOLIC map:
-// linear lat/lon ↔ x/y, matching both the packed figure mask and everyone's
-// mental image of "the world map". Not area-accurate (Mercator-style debates
-// don't apply — nothing here encodes quantity by area).
+// The grid: how a lat/lon becomes a cell and a cell becomes a lat/lon.
 //
-// All renderer geometry flows through these functions, which is what makes
-// globe mode a renderer swap instead of an API change: callers speak lat/lon,
-// only the projection changes.
+// A grid is { cols, rows, latRange } and, on the flat map, a `projection`
+// instance from projections.js. Without one the grid is equirectangular —
+// linear lat/lon ↔ x/y, matching the packed figure mask and everyone's mental
+// image of "the world map" — which is what the globe samples the sphere with
+// and what the flat map draws by default. With one, cell centres are the
+// inverse projection of the screen grid, so the dot field is uniform on screen
+// whatever the projection, and a cell that lands off the world (the corners of
+// an Equal Earth frame) has no centre: it is null.
 //
 // Conventions, everywhere in mappo: latitude is positive north, longitude is
-// positive EAST and runs −180…180 with 0 at the centre of the frame. Bodies
-// whose native maps use another convention (Mars's 0–360°E) are converted
-// when their pack is generated, never at draw time.
+// positive EAST and runs −180…180 with 0 at the centre of the default frame.
+// Bodies whose native maps use another convention (Mars's 0–360°E) are
+// converted when their pack is generated, never at draw time.
 
-// Map a lat/lon to fractional grid coordinates in a cols×rows grid covering
-// latRange (north→south) across the full −180…180 longitude span.
-export function project(lat, lon, { cols, rows, latRange }) {
-  const [ latMin, latMax ] = latRange;
+import { resolveProjection } from "./projections.js";
+
+// Map a lat/lon to fractional grid coordinates, or null when the point has no
+// place on this map.
+export function project(lat, lon, grid) {
+  if (grid.projection) {
+    const p = grid.projection.forward(lat, lon);
+    return p ? { x: p.x * grid.cols, y: p.y * grid.rows } : null;
+  }
+  const [ latMin, latMax ] = grid.latRange;
   return {
-    x: ((lon + 180) / 360) * cols,
-    y: ((latMax - lat) / (latMax - latMin)) * rows
+    x: ((lon + 180) / 360) * grid.cols,
+    y: ((latMax - lat) / (latMax - latMin)) * grid.rows
   };
 }
 
 // The centre lat/lon of a grid cell — where the figure is sampled and where a
-// dot is drawn.
-export function cellCenter(col, row, { cols, rows, latRange }) {
-  const [ latMin, latMax ] = latRange;
+// dot is drawn — or null for a cell that is off the world.
+export function cellCenter(col, row, grid) {
+  if (grid.projection) return grid.projection.inverse((col + 0.5) / grid.cols, (row + 0.5) / grid.rows);
+  const [ latMin, latMax ] = grid.latRange;
   return {
-    lat: latMax - ((row + 0.5) / rows) * (latMax - latMin),
-    lon: -180 + ((col + 0.5) / cols) * 360
+    lat: latMax - ((row + 0.5) / grid.rows) * (latMax - latMin),
+    lon: -180 + ((col + 0.5) / grid.cols) * 360
   };
 }
 
 // The lat/lon of a grid CORNER — where cell boundaries live, and therefore
-// where contour geometry lives. cellCenter answers for the middle of a cell;
-// contours are traced along its edges, so they need this. Same linear
-// mapping, no +0.5 offset.
-export function cellCorner(col, row, { cols, rows, latRange }) {
-  const [ latMin, latMax ] = latRange;
+// where contour geometry lives. Same mapping as cellCenter, no +0.5 offset.
+export function cellCorner(col, row, grid) {
+  if (grid.projection) return grid.projection.inverse(col / grid.cols, row / grid.rows);
+  const [ latMin, latMax ] = grid.latRange;
   return {
-    lat: latMax - (row / rows) * (latMax - latMin),
-    lon: -180 + (col / cols) * 360
+    lat: latMax - (row / grid.rows) * (latMax - latMin),
+    lon: -180 + (col / grid.cols) * 360
   };
 }
 
-// Normalized projection: lat/lon → {x, y} in 0…1 across the rendered box.
+// Normalized projection: lat/lon → {x, y} in 0…1 across the rendered box, or
+// null when the point is off the map.
 //
 // This is the one a HOST needs. `project` above answers in grid units, which
-// requires `rows` — and rows is derived internally from cols and latRange, so
+// requires `rows` — and rows is derived internally from cols and the frame, so
 // asking a consuming app for it forces that app to re-derive mappo's own
 // arithmetic (and to keep re-deriving it correctly forever). Normalized
-// coordinates need neither: the viewBox is linear in the grid, so 0…1 maps
-// straight onto CSS percentages, canvas pixels, or a server-rendered
-// `style="left:%"` in a template in any language.
+// coordinates need only what the map was told: its latRange and, if it has
+// one, its projection and central meridian. They map straight onto CSS
+// percentages, canvas pixels, or a server-rendered `style="left:%"`.
 //
 // latRange is REQUIRED. It is the one thing that differs between Earth's
 // default framing, a full-sphere Moon and your own crop, and a silent Earth
 // default here would put every other world's labels in the wrong place. The
 // range a live map uses is `map.options.latRange`; a body's default framing is
 // `body.latRange` (EARTH.latRange is [-58, 84]).
-export function projectNormalized(lat, lon, { latRange } = {}) {
+export function projectNormalized(lat, lon, { latRange, projection = "equirectangular", centerLon = 0 } = {}) {
   if (!Array.isArray(latRange) || latRange.length !== 2) {
     throw new TypeError("projectNormalized needs { latRange: [min, max] } — the map's own range, e.g. EARTH.latRange");
   }
-  const [ latMin, latMax ] = latRange;
-  return {
-    x: (lon + 180) / 360,
-    y: (latMax - lat) / (latMax - latMin)
-  };
+  if (projection === "equirectangular" && centerLon === 0) {
+    // The linear fast path: exact, and the same contract as every projection:
+    // null for a point outside the band this map shows.
+    const [ latMin, latMax ] = latRange;
+    if (!(lat >= latMin - 1e-9 && lat <= latMax + 1e-9) || !Number.isFinite(lon)) return null;
+    return { x: (lon + 180) / 360, y: (latMax - lat) / (latMax - latMin) };
+  }
+  return resolveProjection(projection, { latRange, centerLon }).forward(lat, lon);
 }
