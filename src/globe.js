@@ -739,7 +739,16 @@ export class GlobeRenderer {
         if (Math.abs(this._omega - this.o.rotateSpeed) < 0.05) this._omega = this.o.rotateSpeed;
         if (this._omega !== 0) this.angle = (this.angle + (this._omega * dt) / 1000 + 360) % 360;
       }
-      if (this.angle !== this._drawnAngle || animating || this._dirty) this._draw();
+      // The smoothed spin speed overlay-still compares against is measured on the
+      // frames actually drawn, so a globe that stops drawing keeps its last
+      // estimate. A parked globe re-aimed in one jump (a page setting `focus`)
+      // read as spinning at thousands of degrees a second for as long as it sat
+      // still, and every overlay stayed marked moving. While the estimate is
+      // above the threshold, keep drawing: each frame decays it by 0.7 and the
+      // one that brings it under the line clears the attribute.
+      const still = this.o.overlayStill;
+      const settling = still != null && Number.isFinite(still) && (this._speed ?? 0) > still;
+      if (this.angle !== this._drawnAngle || animating || this._dirty || settling) this._draw();
       // Only the layers changed: redraw them over the frame that is already there.
       else if (this._layersDirty) { this._layersDirty = false; this.onDraw?.(); }
       this._loop();

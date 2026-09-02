@@ -858,3 +858,30 @@ test("overlays: data-mappo-moving while the globe turns faster than overlay-stil
   assert.equal(pin.hasAttribute("data-mappo-moving"), false, "off unless the option is set");
   unmount(element);
 });
+
+test("overlays: a parked globe settles its overlay-still speed by itself, without another update", async () => {
+  // The speed is measured on the frames drawn, and a globe re-aimed in one
+  // jump then left alone draws no frame on its own — so the estimate froze at
+  // thousands of degrees a second and every overlay stayed moving. Under the
+  // frame loop (see the drag test for the harness) the globe must keep drawing
+  // until the estimate has fallen under the threshold.
+  const saved = { matchMedia: globalThis.matchMedia, raf: globalThis.requestAnimationFrame, caf: globalThis.cancelAnimationFrame };
+  globalThis.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  globalThis.requestAnimationFrame = window.requestAnimationFrame.bind(window);
+  globalThis.cancelAnimationFrame = window.cancelAnimationFrame.bind(window);
+  try {
+    const element = mount("mappo-world", { mode: "globe", cols: 24, "rotate-speed": 0, focus: "0,0", "overlay-still": "30" },
+      `<a class="pin" data-lat="0" data-lon="0">A</a>`);
+    const pin = element.querySelector(".pin");
+    element.setAttribute("focus", "0,120");
+    assert.equal(pin.hasAttribute("data-mappo-moving"), true, "the jump reads as a fast turn");
+    for (let i = 0; i < 60 && pin.hasAttribute("data-mappo-moving"); i++) await settle(50);
+    assert.equal(pin.hasAttribute("data-mappo-moving"), false, "and the parked globe clears it on its own");
+    assert.ok(element.map._renderer._speed < 30, `the estimate settled (${element.map._renderer._speed.toFixed(1)}°/s)`);
+    unmount(element);
+  } finally {
+    Object.assign(globalThis, { matchMedia: saved.matchMedia, requestAnimationFrame: saved.raf, cancelAnimationFrame: saved.caf });
+    if (saved.raf === undefined) delete globalThis.requestAnimationFrame;
+    if (saved.caf === undefined) delete globalThis.cancelAnimationFrame;
+  }
+});

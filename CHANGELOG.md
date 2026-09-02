@@ -65,6 +65,11 @@ that imports the core by relative path and registers itself:
   overlay carries `data-mappo-moving`, so labels can hide during a flick and
   return as it settles. Off unless set. Both options are paint-tier on the
   globe and ignored by the flat map.
+- A parked globe settles: the spin speed `overlay-still` compares against is
+  measured on the frames drawn, and a globe re-aimed in one jump (a page
+  setting `focus`) then left still kept reading as spinning and every overlay
+  stayed `data-mappo-moving`. While the estimate is above the threshold the
+  globe keeps drawing until it is not.
 - `locate().depth` is the facing under a perspective camera — the number
   `--mappo-depth` publishes — where it was the raw depth. The Region: Earth
   demo lost its own facing formula, hysteresis and speed estimate to these.
