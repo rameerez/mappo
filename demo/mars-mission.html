@@ -1,0 +1,497 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mars Transfer — mappo</title>
+<link rel="icon" href="../favicon/favicon-32x32.png">
+<style>
+  :root{
+    --bg:#05080e; --ink:#dbe6f5; --dim:#7d8 da0; --dim:#7d8da0; --faint:#4b5768;
+    --line:#182231; --panel:rgb(9 14 22 / .82);
+    --earth:#4f8fd8; --mars:#c1613a; --ship:#ffd479; --booster:#8fb7e8;
+    --warn:#ff8b5e; --ok:#5fd0a4;
+    --tc-bg:rgb(9 14 22 / .82); --tc-line:#182231; --tc-accent:#ffd479;
+    --tc-ink:#dbe6f5; --tc-dim:#7d8da0; --tc-faint:#4b5768;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);overflow:hidden;
+    font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;-webkit-font-smoothing:antialiased}
+  #view{display:block;position:absolute;inset:0;width:100%;height:100%}
+
+  .hud{position:absolute;inset:0;pointer-events:none}
+  .hud > *{pointer-events:auto}
+
+  .title{position:absolute;left:22px;top:18px;max-width:min(34ch,42vw)}
+  .title h1{margin:0 0 2px;font-size:15px;font-weight:600;letter-spacing:.04em}
+  .title p{margin:0;color:var(--dim);font-size:11.5px;line-height:1.45}
+  .phase{margin-top:14px;font-size:26px;font-weight:600;letter-spacing:.01em;
+    color:var(--ship);line-height:1.1}
+  .met{font-size:15px;color:var(--ink);font-variant-numeric:tabular-nums;margin-top:2px}
+  .met span{color:var(--faint)}
+
+  .panel{position:absolute;right:22px;top:18px;width:268px;background:var(--panel);
+    border:1px solid var(--line);border-radius:11px;padding:13px 15px;
+    backdrop-filter:blur(8px)}
+  .panel h2{margin:0 0 9px;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);font-weight:600}
+  .panel + .panel{top:auto}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:12px}
+  .kv dt{color:var(--dim)}
+  .kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+  .kv dd b{font-weight:600;color:var(--ship)}
+
+  #window{right:22px;top:auto;bottom:112px;width:268px}
+  #pork{display:block;width:100%;height:96px;border-radius:6px;margin:2px 0 8px;
+    background:#070b12;image-rendering:pixelated}
+  .legend{display:flex;justify-content:space-between;color:var(--faint);font-size:10px}
+
+  /* The phase strip: bookmarks into the clock, not a second source of truth. */
+  .bl{position:absolute;left:22px;bottom:22px;display:flex;flex-direction:column;
+    gap:11px;max-width:min(600px,50vw)}
+  .phases{display:flex;gap:4px;flex-wrap:wrap}
+  .phases button{background:rgb(9 14 22 / .8);border:1px solid var(--line);
+    color:var(--dim);border-radius:6px;padding:4px 7px;font:10px/1.3 inherit;
+    cursor:pointer;letter-spacing:.02em;white-space:nowrap}
+  .phases button:hover{color:var(--ink);border-color:#2a3a4f}
+  .phases button[aria-current="true"]{color:#07101c;background:var(--ship);
+    border-color:var(--ship);font-weight:600}
+  .phases button:focus-visible{outline:2px solid var(--ship);outline-offset:2px}
+
+  .tc-wrap{position:absolute;right:22px;bottom:22px}
+  .note{margin:0;color:var(--faint);font-size:10.5px;line-height:1.55}
+  a{color:var(--dim)}
+  @media (max-width:900px){.panel,#window{display:none}}
+</style>
+
+<canvas id="view"></canvas>
+
+<div class="hud">
+  <div class="title">
+    <h1>FIRST CREWED TRANSFER · EARTH → MARS</h1>
+    <p>Starbase, Texas → Arcadia Planitia. Trajectory solved, not sketched.</p>
+    <div class="phase" id="phase">—</div>
+    <div class="met" id="met"><span>T</span> —</div>
+  </div>
+
+  <div class="panel" id="tele">
+    <h2>Telemetry</h2>
+    <dl class="kv" id="telekv"></dl>
+  </div>
+
+  <div class="panel" id="window">
+    <h2>Launch window</h2>
+    <canvas id="pork" width="240" height="96"></canvas>
+    <div class="legend"><span id="porkA">—</span><span id="porkB">—</span></div>
+    <dl class="kv" id="winkv"></dl>
+  </div>
+
+  <div class="bl">
+    <p class="note" id="note"></p>
+    <div class="phases" id="phases"></div>
+  </div>
+  <div class="tc-wrap"><div id="tc"></div></div>
+</div>
+
+<script type="module">
+import { createClock } from "./timectl.js";
+import * as M from "./mission.js";
+import * as S from "./scene3d.js";
+import { stack, superHeavy, starship, tower, DIM } from "./vehicle.js";
+
+const $ = (id) => document.getElementById(id);
+const RAD = Math.PI / 180;
+
+// The clear middle of the frame, which is not its middle: the telemetry and
+// window panels take 290 px off the right whenever they are shown.
+const clearX = (w) => w > 900 ? (w - 290) / 2 : w / 2;
+
+// ── where we leave from, and where we are going ─────────────────────────────
+// Starbase is where Starship flies from. Arcadia Planitia is where SpaceX has
+// actually pointed: of the sites imaged by HiRISE at their request, most sit
+// on southern Arcadia plains underlain by shallow, relatively pure water ice —
+// low enough in latitude for power, low enough in elevation for the atmosphere
+// to slow a 100-tonne ship down, and with the propellant feedstock already
+// there. These are the coordinates of one of those HiRISE frames.
+const PAD = { name: "Starbase, TX", lat: 25.997, lon: -97.155 };
+const SITE = { name: "Arcadia Planitia", lat: 39.09, lon: 189.79 - 360 };
+
+// ── the window, computed ────────────────────────────────────────────────────
+// Nobody picks a Mars launch date. The shape of the two orbits picks it, and
+// this is the search that finds it: every departure day against every flight
+// time, keeping the cheapest. ~1200 Lambert solves, 25 ms.
+const SCAN = { from: new Date("2026-10-01T00:00:00Z"), toDays: 120, stepDays: 3,
+               tofMin: 150, tofMax: 380, tofStep: 8 };
+const pork = M.porkchop(SCAN);
+const TRIP = pork.best;
+
+const TMI_MS = TRIP.departure.getTime();          // the burn that leaves Earth
+const LAUNCH_MS = TMI_MS - 6 * 86400000;          // launch, refuel, then go
+const ARRIVE_MS = TRIP.arrival.getTime();
+const T = (ms) => (ms - LAUNCH_MS) / 1000;        // mission elapsed time, seconds
+
+// ── the timeline ────────────────────────────────────────────────────────────
+// Ascent event times are Flight 5's, which is the flight that first caught a
+// booster: MECO at T+02:33, catch at T+06:56. The ascent PROFILE between them
+// is a plausible interpolation, not an integrated trajectory — said plainly
+// because everything from TMI onward genuinely is solved.
+const D = 86400;
+const PHASES = [
+  { id: "pad",     t: -25,        name: "PRELAUNCH",        blurb: "33 Raptors, 3,600 t of methalox" },
+  { id: "liftoff", t: 0,          name: "LIFTOFF",          blurb: "74 MN off the pad" },
+  { id: "maxq",    t: 62,         name: "MAX Q",            blurb: "peak aerodynamic pressure" },
+  { id: "meco",    t: 153,        name: "MECO · HOT-STAGE", blurb: "ship lights through the ring" },
+  { id: "boost",   t: 235,        name: "BOOSTBACK",        blurb: "booster reverses for home" },
+  { id: "entry",   t: 350,        name: "BOOSTER ENTRY",    blurb: "grid fins, 20 km/min" },
+  { id: "catch",   t: 416,        name: "TOWER CATCH",      blurb: "caught by the chopsticks" },
+  { id: "seco",    t: 540,        name: "SECO · PARKING",   blurb: "ship in a 200 km orbit" },
+  { id: "refuel",  t: 3 * D,      name: "ORBITAL REFUEL",   blurb: "tankers fill the ship" },
+  { id: "tmi",     t: 6 * D,      name: "TRANS-MARS INJECTION", blurb: "the burn that leaves Earth" },
+  { id: "cruise",  t: 6 * D + 40 * D, name: "CRUISE",       blurb: "coasting the transfer ellipse" },
+  { id: "approach",t: (ARRIVE_MS - LAUNCH_MS) / 1000 - 3 * D, name: "MARS APPROACH", blurb: "inside Mars' sphere of influence" },
+  { id: "edl",     t: (ARRIVE_MS - LAUNCH_MS) / 1000 - 360, name: "ENTRY · DESCENT", blurb: "aerocapture, belly first" },
+  { id: "land",    t: (ARRIVE_MS - LAUNCH_MS) / 1000, name: "TOUCHDOWN",  blurb: "Arcadia Planitia" }
+];
+const phaseAt = (t) => PHASES.reduce((a, p) => (t >= p.t ? p : a), PHASES[0]);
+
+// ── ascent profile ──────────────────────────────────────────────────────────
+// Anchor points, linearly interpolated: altitude km, downrange km, speed km/s.
+const ASCENT = [
+  [ 0, 0, 0, 0 ], [ 20, 1.4, 0.1, 0.22 ], [ 62, 13, 3.2, 0.92 ],
+  [ 110, 38, 30, 1.65 ], [ 153, 68, 95, 2.35 ], [ 220, 108, 215, 2.9 ],
+  [ 320, 142, 470, 4.3 ], [ 430, 158, 940, 6.3 ], [ 540, 168, 1560, 7.66 ]
+];
+const BOOSTER = [
+  [ 153, 68, 95 ], [ 200, 92, 88 ], [ 250, 100, 60 ], [ 300, 84, 32 ],
+  [ 350, 56, 13 ], [ 390, 21, 3.2 ], [ 410, 3, 0.35 ], [ 416, 0.14, 0.02 ]
+];
+function lerpTable(table, t) {
+  if (t <= table[0][0]) return table[0].slice(1);
+  const last = table[table.length - 1];
+  if (t >= last[0]) return last.slice(1);
+  for (let i = 1; i < table.length; i++) {
+    if (t <= table[i][0]) {
+      const a = table[i - 1], b = table[i];
+      const k = (t - a[0]) / (b[0] - a[0]);
+      return a.slice(1).map((v, j) => v + (b.slice(1)[j] - v) * k);
+    }
+  }
+  return last.slice(1);
+}
+
+// ── the transfer, sampled once ──────────────────────────────────────────────
+const ARC = M.transferPath(TRIP, 300);
+const EARTH_ORBIT = M.orbitPath("earth", TRIP.departure);
+const MARS_ORBIT = M.orbitPath("mars", TRIP.departure);
+
+// ── clock: the one authority ────────────────────────────────────────────────
+const SPEEDS = [ -2592000, -86400, -3600, -600, -60, -1, 1, 60, 600, 3600, 86400, 2592000 ];
+const RATE = { 1: "1×", 60: "1 min/s", 600: "10 min/s", 3600: "1 h/s",
+               86400: "1 day/s", 2592000: "1 mo/s" };
+const clock = createClock({
+  mount: $("tc"), windowH: 24 * 420, speeds: SPEEDS, startSpeed: 1,
+  rateLabel: (w) => (w < 0 ? "−" : "") + (RATE[Math.abs(w)] ?? `${Math.abs(w)}×`),
+  hint: "or pick a phase",
+  onScrub: () => paint()
+});
+clock.setTime(LAUNCH_MS - 25000);
+const now = () => clock.now().getTime();
+
+// ── camera ──────────────────────────────────────────────────────────────────
+const cam = S.createCamera();
+let camDist = 400, camTarget = [ 0, 0, 0 ];
+let drag = null;
+const view = $("view"), ctx = view.getContext("2d");
+view.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY }; view.setPointerCapture(e.pointerId); });
+view.addEventListener("pointerup", () => { drag = null; });
+view.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  cam.az -= (e.clientX - drag.x) * 0.006;
+  cam.el = Math.max(-1.45, Math.min(1.45, cam.el + (e.clientY - drag.y) * 0.006));
+  drag = { x: e.clientX, y: e.clientY };
+});
+view.addEventListener("wheel", (e) => { e.preventDefault(); zoomBias *= Math.exp(e.deltaY * 0.0012); }, { passive: false });
+let zoomBias = 1;
+
+// ── scenes ──────────────────────────────────────────────────────────────────
+// Four frames, chosen by mission time, because one world spanning a 9 m flap
+// and a 1.5 AU transfer would spend its whole life in the noise of a float.
+const STACK = stack(), BOOSTER_M = superHeavy(), SHIP_M = starship(), TOWER_M = tower();
+
+function drawStars(w, h) {
+  ctx.fillStyle = "#05080e"; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = "#9fb0c6";
+  for (let i = 0; i < 220; i++) {
+    // Deterministic: a starfield that reshuffles every frame is a snowstorm.
+    const a = Math.sin(i * 12.9898) * 43758.5453, b = Math.sin(i * 78.233) * 12345.6789;
+    const x = (a - Math.floor(a)) * w, y = (b - Math.floor(b)) * h;
+    ctx.globalAlpha = 0.18 + ((i * 37) % 10) / 22;
+    ctx.fillRect(x, y, 1.1, 1.1);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// PAD — a local east/north/up frame at Starbase, kilometres.
+function scenePad(t, w, h) {
+  const [ alt, dr ] = lerpTable(ASCENT, Math.max(0, t));
+  const az = 93 * RAD;                                  // launch azimuth, roughly east
+  const shipPos = [ Math.sin(az) * dr, Math.cos(az) * dr, Math.max(0, alt) ];
+  const staged = t >= 153;
+  const [ bAlt, bDr ] = staged ? lerpTable(BOOSTER, t) : [ alt, dr ];
+  const boostPos = [ Math.sin(az) * bDr, Math.cos(az) * bDr, Math.max(0, bAlt) ];
+
+  // Close on whichever vehicle the phase is about.
+  const p = phaseAt(t);
+  const watchBooster = [ "boost", "entry", "catch" ].includes(p.id);
+  const focus = watchBooster ? boostPos : shipPos;
+  camTarget = [ focus[0], focus[1], focus[2] + 0.06 ];
+  camDist = (t < 5 ? 0.42 : 0.42 + Math.min(alt, 60) * 0.05) * (watchBooster && t > 400 ? 0.5 : 1);
+  if (p.id === "catch") { camTarget = [ 0, 0, 0.11 ]; camDist = 0.42; }
+
+  cam.target = camTarget; cam.distance = camDist * zoomBias; cam.fov = 42;
+  const P = S.projector(cam, w, h, clearX(w));
+
+  // Ground: a disc, so the horizon exists.
+  const g = P([ 0, 0, 0 ]);
+  if (g) {
+    ctx.fillStyle = "#0c1119";
+    ctx.beginPath();
+    for (let i = 0; i <= 64; i++) {
+      const a = (i / 64) * Math.PI * 2;
+      const q = P([ Math.cos(a) * 12, Math.sin(a) * 12, 0 ]);
+      if (q) i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+  S.drawMesh(ctx, S.place(TOWER_M, { origin: [ 0, 0.02, 0 ], scale: 0.001 }), P);
+
+  // The vehicles, in kilometres: the meshes are in metres, hence 0.001.
+  const up = [ 0, 0, 1 ];
+  const tilt = Math.min(1, Math.max(0, (t - 25) / 130));
+  const axis = S.norm([ Math.sin(az) * tilt * 0.85, Math.cos(az) * tilt * 0.85, 1 - tilt * 0.35 ]);
+  if (!staged) {
+    S.drawMesh(ctx, S.place(STACK, { origin: shipPos, axis, scale: 0.001 }), P);
+  } else {
+    S.drawMesh(ctx, S.place(SHIP_M, { origin: shipPos, axis, scale: 0.001 }), P);
+    const bAxis = t > 300 ? [ 0, 0, 1 ] : S.norm([ -axis[0], -axis[1], axis[2] ]);
+    S.drawMesh(ctx, S.place(BOOSTER_M, { origin: boostPos, axis: bAxis, scale: 0.001 }), P);
+  }
+  // Plume, while something is burning.
+  const burning = t < 153 || (t > 165 && t < 250) || (t > 340 && t < 416) || (t > 153 && t < 540);
+  if (burning) {
+    const q = P(shipPos);
+    if (q && q.scale > 0.0001) {
+      ctx.fillStyle = "rgba(255,190,110,.5)";
+      ctx.beginPath(); ctx.ellipse(q.x, q.y + 14, 6, 26, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  return { alt, dr, speed: lerpTable(ASCENT, Math.max(0, t))[2] };
+}
+
+// EARTH — geocentric, kilometres. Parking orbit and the departure asymptote.
+function sceneEarth(t, w, h) {
+  const R = M.R_EARTH, alt = 200;
+  const ang = (t / 5400) * Math.PI * 2;
+  const pos = [ (R + alt) * Math.cos(ang), (R + alt) * Math.sin(ang) * 0.94, (R + alt) * Math.sin(ang) * 0.34 ];
+  cam.target = [ 0, 0, 0 ];
+  cam.distance = 34000 * zoomBias; cam.fov = 40;
+  const P = S.projector(cam, w, h, clearX(w));
+  const sun = S.norm(S.mul(TRIP.earth.rKm, -1));
+  S.drawBody(ctx, P, { center: [ 0, 0, 0 ], radiusKm: R, color: "#2c5f96", sunDir: sun,
+    night: "#070c14", ring: "rgba(120,180,255,.25)" });
+  const ring = [];
+  for (let i = 0; i <= 96; i++) {
+    const a = (i / 96) * Math.PI * 2;
+    ring.push([ (R + alt) * Math.cos(a), (R + alt) * Math.sin(a) * 0.94, (R + alt) * Math.sin(a) * 0.34 ]);
+  }
+  S.drawPath(ctx, P, ring, { color: "rgba(143,183,232,.5)", width: 1, dash: [ 4, 4 ] });
+  const q = P(pos);
+  if (q) { ctx.fillStyle = "#ffd479"; ctx.beginPath(); ctx.arc(q.x, q.y, 3.4, 0, 7); ctx.fill(); }
+  return { alt, dr: 0, speed: 7.79 };
+}
+
+// CRUISE — heliocentric, kilometres. Both orbits, the arc, and where everyone
+// is on it right now.
+function sceneCruise(t, w, h) {
+  const ms = LAUNCH_MS + t * 1000;
+  const dt = Math.max(0, Math.min(TRIP.days * 86400, (ms - TMI_MS) / 1000));
+  const ship = M.propagate(TRIP.earth.rKm, TRIP.v1, dt);
+  const e = M.stateAt("earth", new Date(ms)), m = M.stateAt("mars", new Date(ms));
+
+  cam.target = [ 0, 0, 0 ];
+  cam.distance = 6.2e8 * zoomBias; cam.fov = 38;
+  const P = S.projector(cam, w, h, clearX(w));
+
+  S.drawPath(ctx, P, EARTH_ORBIT, { color: "rgba(79,143,216,.34)", width: 1 });
+  S.drawPath(ctx, P, MARS_ORBIT, { color: "rgba(193,97,58,.34)", width: 1 });
+  // The flown part of the arc solid, the rest of it faint.
+  const cut = Math.round((dt / (TRIP.days * 86400)) * (ARC.length - 1));
+  S.drawPath(ctx, P, ARC, { color: "rgba(255,212,121,.24)", width: 1, dash: [ 3, 5 ] });
+  S.drawPath(ctx, P, ARC.slice(0, cut + 1), { color: "#ffd479", width: 1.8 });
+
+  const sun = P([ 0, 0, 0 ]);
+  if (sun) {
+    const g = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 26);
+    g.addColorStop(0, "#fff6dd"); g.addColorStop(.35, "rgba(255,196,92,.55)");
+    g.addColorStop(1, "rgba(255,160,60,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sun.x, sun.y, 26, 0, 7); ctx.fill();
+  }
+  dotAt(P, e.rKm, "#4f8fd8", 4.5, "Earth");
+  dotAt(P, m.rKm, "#c1613a", 4, "Mars");
+  dotAt(P, ship.r, "#ffd479", 3.4, "Starship");
+  return { alt: 0, dr: 0, speed: Math.hypot(...ship.v), shipR: ship.r, shipV: ship.v, marsR: m.rKm };
+}
+
+// MARS — Mars-centric on approach and entry.
+function sceneMars(t, w, h) {
+  const ms = LAUNCH_MS + t * 1000;
+  const left = (ARRIVE_MS - ms) / 1000;
+  const m = M.stateAt("mars", new Date(ms));
+  const dt = Math.max(0, Math.min(TRIP.days * 86400, (ms - TMI_MS) / 1000));
+  const ship = M.propagate(TRIP.earth.rKm, TRIP.v1, dt);
+  const rel = S.sub(ship.r, m.rKm);
+  cam.target = [ 0, 0, 0 ];
+  cam.distance = Math.max(9000, Math.min(2.4e5, S.len(rel) * 2.4)) * zoomBias;
+  cam.fov = 40;
+  const P = S.projector(cam, w, h, clearX(w));
+  const sun = S.norm(S.mul(m.rKm, -1));
+  S.drawBody(ctx, P, { center: [ 0, 0, 0 ], radiusKm: M.R_MARS, color: "#a2542f",
+    sunDir: sun, night: "#170a06", ring: "rgba(226,140,96,.28)" });
+  const q = P(rel);
+  if (q) {
+    ctx.fillStyle = "#ffd479"; ctx.beginPath(); ctx.arc(q.x, q.y, 3.6, 0, 7); ctx.fill();
+    ctx.strokeStyle = "rgba(255,212,121,.45)"; ctx.beginPath();
+    ctx.arc(q.x, q.y, 11, 0, 7); ctx.stroke();
+  }
+  return { alt: S.len(rel) - M.R_MARS, dr: 0, speed: Math.hypot(...S.sub(ship.v, m.v)), left };
+}
+
+function dotAt(P, p, color, r, label) {
+  const q = P(p);
+  if (!q) return;
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, 7); ctx.fill();
+  if (label) {
+    ctx.fillStyle = "rgba(219,230,245,.72)";
+    ctx.font = "10px ui-monospace,Menlo,monospace";
+    ctx.fillText(label, q.x + r + 5, q.y + 3.5);
+  }
+}
+
+// ── readouts ────────────────────────────────────────────────────────────────
+const fmtMET = (s) => {
+  const sign = s < 0 ? "−" : "+";
+  const a = Math.abs(s);
+  if (a < 86400) {
+    const hh = Math.floor(a / 3600), mm = Math.floor(a / 60) % 60, ss = Math.floor(a % 60);
+    return `${sign}${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+  }
+  return `${sign}${Math.floor(a / 86400)} d ${String(Math.floor((a % 86400) / 3600)).padStart(2, "0")} h`;
+};
+const km = (v) => v >= 1e6 ? `${(v / 1e6).toFixed(2)} M km` : v >= 1000 ? `${Math.round(v).toLocaleString()} km` : `${v.toFixed(1)} km`;
+const rows = (el, pairs) => {
+  el.innerHTML = pairs.map(([ k, v ]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+};
+
+// ── the porkchop, drawn ─────────────────────────────────────────────────────
+(function drawPork() {
+  const c = $("pork"), g = c.getContext("2d");
+  const cols = pork.grid.length, rowsN = pork.grid[0].column.length;
+  const vals = pork.grid.flatMap((x) => x.column).filter(Number.isFinite);
+  const lo = Math.min(...vals), hi = Math.min(Math.max(...vals), lo + 4);
+  const img = g.createImageData(cols, rowsN);
+  for (let x = 0; x < cols; x++) for (let y = 0; y < rowsN; y++) {
+    const v = pork.grid[x].column[y];
+    const k = Number.isFinite(v) ? Math.max(0, Math.min(1, (v - lo) / (hi - lo))) : 1;
+    const i = (y * cols + x) * 4;
+    img.data[i] = 20 + 235 * (1 - k) + 60 * k;
+    img.data[i + 1] = 30 + 180 * (1 - k);
+    img.data[i + 2] = 50 + 60 * (1 - k) + 90 * k;
+    img.data[i + 3] = Number.isFinite(v) ? 255 : 40;
+  }
+  const off = document.createElement("canvas");
+  off.width = cols; off.height = rowsN;
+  off.getContext("2d").putImageData(img, 0, 0);
+  g.imageSmoothingEnabled = false;
+  g.drawImage(off, 0, 0, c.width, c.height);
+  // Where the mission actually goes.
+  const bx = ((TRIP.departure - SCAN.from) / 86400000 / SCAN.stepDays) / cols * c.width;
+  const by = ((TRIP.days - SCAN.tofMin) / SCAN.tofStep) / rowsN * c.height;
+  g.strokeStyle = "#ffd479"; g.lineWidth = 1.5;
+  g.beginPath(); g.arc(bx, by, 5, 0, 7); g.stroke();
+  g.beginPath(); g.moveTo(bx - 9, by); g.lineTo(bx - 6, by); g.moveTo(bx + 6, by); g.lineTo(bx + 9, by); g.stroke();
+  const d = (x) => x.toISOString().slice(0, 10);
+  $("porkA").textContent = d(SCAN.from);
+  $("porkB").textContent = d(new Date(SCAN.from.getTime() + SCAN.toDays * 86400000));
+})();
+
+rows($("winkv"), [
+  [ "Departure", `<b>${TRIP.departure.toISOString().slice(0, 10)}</b>` ],
+  [ "Arrival", TRIP.arrival.toISOString().slice(0, 10) ],
+  [ "Flight time", `${TRIP.days} days` ],
+  [ "C3", `${TRIP.c3.toFixed(2)} km²/s²` ],
+  [ "Δv from LEO", `${TRIP.dvDepart.toFixed(2)} km/s` ],
+  [ "Phase angle", `${TRIP.phaseAngle.toFixed(1)}°` ],
+  [ "Next window", `+${Math.round(M.SYNODIC_DAYS)} d` ]
+]);
+
+// ── phase strip ─────────────────────────────────────────────────────────────
+const strip = $("phases");
+for (const p of PHASES) {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = p.name; b.dataset.id = p.id;
+  b.addEventListener("click", () => {
+    clock.setTime(LAUNCH_MS + p.t * 1000);
+    // A phase measured in seconds wants a clock measured in seconds.
+    paint();
+  });
+  strip.appendChild(b);
+}
+
+$("note").innerHTML =
+  `Everything from trans-Mars injection onward is solved: Lambert's problem across ` +
+  `1,189 departure/flight-time pairs, propagated with universal variables. ` +
+  `Ascent event times are Flight 5's — MECO T+02:33, catch T+06:56 — with a plausible ` +
+  `profile interpolated between them, which is the one part of this that is drawn ` +
+  `rather than computed. Drag to orbit, scroll to zoom. <a href="./">More demos</a>.`;
+
+// ── frame ───────────────────────────────────────────────────────────────────
+function paint() {
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  const w = view.clientWidth, h = view.clientHeight;
+  if (view.width !== w * dpr) { view.width = w * dpr; view.height = h * dpr; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawStars(w, h);
+
+  const ms = now();
+  const t = T(ms);
+  const p = phaseAt(t);
+
+  let info;
+  if (t < 600) info = scenePad(t, w, h);
+  else if (ms < TMI_MS) info = sceneEarth(t, w, h);
+  else if (ARRIVE_MS - ms > 3 * 86400000) info = sceneCruise(t, w, h);
+  else info = sceneMars(t, w, h);
+
+  $("phase").textContent = p.name;
+  $("met").innerHTML = `<span>T</span> ${fmtMET(t)} <span>· ${p.blurb}</span>`;
+  for (const b of strip.children) b.setAttribute("aria-current", String(b.dataset.id === p.id));
+
+  const toGo = (ARRIVE_MS - ms) / 86400000;
+  const sep = info.marsR ? S.len(S.sub(info.marsR, info.shipR)) : null;
+  rows($("telekv"), [
+    [ "UTC", new Date(ms).toISOString().slice(0, 16).replace("T", " ") ],
+    [ "Speed", `${info.speed.toFixed(2)} km/s` ],
+    [ "Altitude", t < 600 ? km(info.alt) : info.alt > 0 ? km(info.alt) : "—" ],
+    [ "Downrange", t < 600 ? km(info.dr) : "—" ],
+    [ "To Mars", sep ? km(sep) : "—" ],
+    [ "Days to arrival", toGo > 0 ? toGo.toFixed(1) : "arrived" ],
+    [ "Entry speed", `${TRIP.vEntry.toFixed(2)} km/s` ]
+  ]);
+}
+
+function frame() {
+  requestAnimationFrame(frame);      // first, so a throw costs one frame, not the page
+  clock.step(); clock.render(); paint();
+}
+addEventListener("resize", paint);
+frame();
+</script>
