@@ -317,24 +317,33 @@ and an Earth in orbit — in the <a href="./demo/">demo gallery</a>.</p>
 <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
   <div class="card"><div class="meta">
     <h3>A script tag</h3>
-    <p>Nothing else. The element registers itself.</p>
+    <p>The 21.4&nbsp;KB core; the element registers itself. For the globe, real coastlines and the
+    other projections, load <code>all.js</code> instead.</p>
     <pre><code>&lt;script type="module"
-  src="https://unpkg.com/mappo"&gt;&lt;/script&gt;</code></pre>
+  src="https://unpkg.com/mappo"&gt;&lt;/script&gt;
+
+&lt;!-- or everything, one file --&gt;
+&lt;script type="module"
+  src="https://unpkg.com/mappo@0.7.0/dist/all.js"&gt;&lt;/script&gt;</code></pre>
   </div></div>
   <div class="card"><div class="meta">
     <h3>An import map</h3>
-    <p>Rails <code>importmap-rails</code> included.</p>
+    <p>Modules find the core by the URL next to them, so map the core to its full path.</p>
     <pre><code>&lt;script type="importmap"&gt;
-{ "imports": { "mappo": "https://unpkg.com/mappo" } }
+{ "imports": {
+  "mappo":       "https://unpkg.com/mappo@0.7.0/dist/mappo.js",
+  "mappo/globe": "https://unpkg.com/mappo@0.7.0/dist/globe.js" } }
 &lt;/script&gt;
-&lt;script type="module"&gt;import "mappo"&lt;/script&gt;</code></pre>
+&lt;script type="module"&gt;import "mappo"; import "mappo/globe"&lt;/script&gt;</code></pre>
   </div></div>
   <div class="card"><div class="meta">
     <h3>npm</h3>
-    <p>Though the point is that you don't need a bundler.</p>
+    <p>Though the point is that you don't need a bundler. Import only what the page uses.</p>
     <pre><code>npm install mappo
 
-import "mappo"</code></pre>
+import "mappo";              // 21.4 KB: the flat map, the whole Earth
+import "mappo/globe";        // + the globe
+import "mappo/projections";  // + Equal Earth, the poles, d3-geo</code></pre>
   </div></div>
 </div>
 

@@ -21,11 +21,8 @@ That's the whole integration.
 
 ```html
 <script type="module">
-  import "https://unpkg.com/mappo";                              // the core
-  import "https://unpkg.com/mappo/dist/globe.js";               // mode="globe"
-  import "https://unpkg.com/mappo/dist/vector.js";              // figure-source="vector"
-  import { registerBody } from "https://unpkg.com/mappo";
-  import { MOON } from "https://unpkg.com/mappo/dist/bodies/moon.js";
+  import { registerBody } from "https://unpkg.com/mappo@0.7.0/dist/all.js";  // the globe, real outlines, every projection
+  import { MOON } from "https://unpkg.com/mappo@0.7.0/dist/bodies/moon.js";
   registerBody(MOON);
 </script>
 
@@ -33,8 +30,9 @@ That's the whole integration.
             places="Apollo 11, Shackleton"></mappo-moon>
 ```
 
-That's another world, on a globe, with real outlines — three modules a hero
-section never downloads.
+That's another world, on a globe, with real outlines — from `all.js`, the
+everything file. With a bundler you would import the same things by name:
+`mappo`, `mappo/globe`, `mappo/vector`, `mappo/bodies/moon`.
 
 ## Why this exists
 
@@ -86,24 +84,40 @@ if the module never arrives, and draws the moment it registers. The numbers are
 measured by `npm run weight` and held by the test suite: the core cannot grow
 past 22 KB gzipped without a test failing.
 
-From a CDN, import the modules by their file paths; on unpkg the bare
-`https://unpkg.com/mappo` is the core and `https://unpkg.com/mappo/dist/all.js`
-is everything. Do not load `all.js` alongside the core or the other modules:
-two copies of the core would keep two registries.
+**From a CDN**, the simplest is one file: `https://unpkg.com/mappo` for the
+core, or `https://unpkg.com/mappo@0.7.0/dist/all.js` for everything. To load
+modules one by one, load the core by **the URL the modules resolve**: each
+module imports `./mappo.js` next to itself, so name the core by the same full,
+pinned path —
+
+```html
+<script type="module">
+  import "https://unpkg.com/mappo@0.7.0/dist/mappo.js";
+  import "https://unpkg.com/mappo@0.7.0/dist/globe.js";
+</script>
+```
+
+A browser keys modules by URL. A core loaded through a short or redirecting
+URL (`https://unpkg.com/mappo`) and the `./mappo.js` a module resolves are
+two URLs, so the page would run two cores with two registries and the globe
+would register with the wrong one. Never load `all.js` beside the core or the
+modules, for the same reason. With an import map the rule is the same: map
+`mappo` to the full `dist/mappo.js` URL and `mappo/globe` to `dist/globe.js`
+beside it.
 
 All of this is one npm package. The `@mappo` organisation on npm is reserved
 for things with a life of their own — framework wrappers, large datasets, a
 pack-generating CLI — never for pieces of the library; the policy is in
 [docs/roadmap.md §6](https://github.com/rameerez/mappo/blob/main/docs/roadmap.md).
 
-Rails with importmaps, vendoring `dist/`:
+Rails with importmaps: pin **one** file. Asset digests rename files, which
+breaks a module's relative `./mappo.js`; the body packs import nothing, so
+they pin fine on their own.
 
 ```ruby
-# config/importmap.rb
-pin "mappo", to: "mappo/mappo.js"                            # the core
-pin "mappo/globe", to: "mappo/globe.js"                      # each module resolves ./mappo.js itself
-pin "mappo/bodies/earth-vector", to: "mappo/bodies/earth-vector.js"
-pin "mappo/bodies/moon", to: "mappo/bodies/moon.js"
+# config/importmap.rb — vendor dist/mappo.js (the core) or dist/all.js (everything) as mappo.js
+pin "mappo", to: "mappo.js"
+pin "mappo/bodies/moon", to: "mappo-moon.js"    # a pack, if the app uses it
 ```
 
 Node ≥ 22.22 is needed only to *develop* mappo (see Development); the

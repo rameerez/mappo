@@ -47,6 +47,12 @@ that imports the core by relative path and registers itself:
   not export.
 - The test suite holds the headline: `dist/mappo.js` over 22 KB gzipped, a
   module importing beyond the seam, or a source file bundled twice fails it.
+- From a CDN, load the core by the same full, pinned URL the modules resolve
+  (`…/mappo@0.7.0/dist/mappo.js` beside `…/dist/globe.js`), or use `all.js`:
+  a browser keys modules by URL, and a core reached through the short
+  redirecting URL would be a second core with its own registries. Rails import
+  maps pin one file, since asset digests break a module's relative import; the
+  body packs import nothing and pin on their own.
 - `resolveProjection` with a name nobody has registered still throws; the
   renderer asks `hasProjection()` first and waits instead.
 

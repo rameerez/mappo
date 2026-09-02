@@ -60,13 +60,15 @@ three spheres — and the same options style all of them.</p>
 
 <h2>Opting in</h2>
 <p class="note">Earth is in the bundle because a world map is what people came for.
-Everything else is a separate file you ask for by name — the Moon is 11&nbsp;KB gzipped
-and Mars is 8&nbsp;KB, and nobody putting a world map in a hero section should download
-either. Registering a body also defines its tag; <code>body=</code> still wins if you
+Everything else is a separate file you ask for by name — the Moon is 9.5&nbsp;KB gzipped
+and Mars is 6.9&nbsp;KB, and nobody putting a world map in a hero section should download
+either. The globe and vector outlines these maps use are modules of their own too. Registering a body also defines its tag; <code>body=</code> still wins if you
 write both. Order does not matter: a map that asks for a body before its pack has
 loaded draws nothing, then draws the body the moment it registers.</p>
 <div class="card">
 <pre><code>import { registerBody } from "mappo";
+import "mappo/globe";                 // mode="globe"
+import "mappo/vector";                // figure-source="vector": the packs carry their rings
 import { MOON } from "mappo/bodies/moon";
 import { MARS } from "mappo/bodies/mars";
 
