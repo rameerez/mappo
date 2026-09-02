@@ -275,10 +275,18 @@ for the orthographic view). A tile's edges are projected with the same
 division, including the term `X·dZ/(D − Z)` from the edge's depth component;
 this is what folds a tile to nothing at the horizon.
 
-With `fog="near far"` alpha is `(1 − s)^(1/2.2)` where `s = smoothstep(near,
-far, −Z)`, the curve of a three.js `Fog` mixed in linear light and converted
-to sRGB alpha over a dark ground; over a light ground the far side reads
-stronger than the linear-light mix would give.
+With `fog="near far"` alpha is `1 − smoothstep(near, far, −Z)`, the curve a
+three.js `Fog` blends with, used directly. A 1/2.2 lift for a linear-light mix
+was tried and measured against the reference: it made the far hemisphere about
+twice as bright as the WebGL original, so the whole field read denser and the
+limb, where both hemispheres project onto the same pixels, doubled.
+
+With `fog-color` the same factor mixes each colour toward the fog's,
+numerically in sRGB (a WebGL fog blends in its framebuffer's own space), in 48
+bands so a fill style is set per band and not per dot; what sits in the fog is
+then drawn at full alpha in the mixed colour. Over a flat page of the fog's own
+colour the mix and the fade are the same picture; they part on a gradient, an
+image, or a fog colour that is not the page's.
 
 ## 4. The data mappo carries
 

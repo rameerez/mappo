@@ -130,15 +130,19 @@ borders, highlights and the graticule use the forward mapping. Exported:
 
 ### The globe: a camera, fog, a lattice and tiles
 
-Four opt-in options; the defaults draw exactly what they drew.
+Five opt-in options; the defaults draw exactly what they drew.
 
 - `distance` — a perspective camera that many body radii from the centre
   (`Infinity`, the default, is the orthographic view). The limb stays on the
   disc; the near side grows and the far side shrinks.
 - `fog="near far"` — depth fade in radii from the centre plane, positive away
   from the viewer. Set, the globe is glass: the far hemisphere is drawn too and
-  everything fades from opaque at `near` to gone at `far`, as a smoothstep in
-  linear light (the curve a WebGL fog has), converted to canvas alpha.
+  everything fades from opaque at `near` to gone at `far`, as one minus a
+  smoothstep (the curve a WebGL fog blends with), used as alpha directly.
+- `fog-color` — the fog's colour. Unset, the fog fades to transparent; set,
+  everything in it is drawn in its own colour mixed toward this one at full
+  alpha, as a WebGL fog blends: a dark fog darkens the far side on a light page
+  rather than paling it.
 - `distribution="uniform"` — dots on a Fibonacci lattice, equal area per dot,
   `round(cols²/π)` candidates so `cols` keeps its meaning at the equator.
 - `dot-shape="tile"` — squares lying on the surface, foreshortening into

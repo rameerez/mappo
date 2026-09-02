@@ -569,19 +569,24 @@ test("glass globe: fog draws the far side, and locate() reports depth and fade",
   const facing = el.map.locate(0, 0);
   assert.equal(facing.front, true);
   assert.ok(Math.abs(facing.z - 1) < 1e-9 && Math.abs(facing.fade - 1) < 1e-9);
-  // Fog: the far side is faint, not gone; the near third is untouched. The
-  // curve is a renderer's: smoothstep between near and far, in linear light,
-  // expressed as the sRGB alpha with the same brightness over a dark ground.
+  // Fog: the far side is faint and the antipode all but gone; the near third
+  // is untouched. The curve is a renderer's: one minus a smoothstep between
+  // near and far, used as alpha directly.
   el.setAttribute("fog", "-0.6 1.1");
   assert.deepEqual(el.map.options.fog, [ -0.6, 1.1 ]);
-  const fogged = (z) => { const t = Math.min(1, Math.max(0, (-z + 0.6) / 1.7)); return Math.pow(1 - t * t * (3 - 2 * t), 1 / 2.2); };
-  assert.ok(Math.abs(el.map.locate(0, 180).fade - fogged(-1)) < 1e-9, "the antipode keeps a little alpha");
-  assert.ok(el.map.locate(0, 180).fade > 0.1 && el.map.locate(0, 180).fade < 0.15, `antipode fade ${el.map.locate(0, 180).fade}`);
+  const fogged = (z) => { const t = Math.min(1, Math.max(0, (-z + 0.6) / 1.7)); return 1 - t * t * (3 - 2 * t); };
+  assert.ok(Math.abs(el.map.locate(0, 180).fade - fogged(-1)) < 1e-9, "the antipode keeps a trace of alpha");
+  assert.ok(el.map.locate(0, 180).fade > 0.005 && el.map.locate(0, 180).fade < 0.02, `antipode fade ${el.map.locate(0, 180).fade}`);
   assert.ok(Math.abs(el.map.locate(0, 0).fade - 1) < 1e-9);
   assert.ok(Math.abs(el.map.locate(0, 90).fade - fogged(0)) < 1e-9, "the limb sits 0.6 radii into a 1.7-radii fog");
-  assert.ok(el.map.locate(0, 90).fade > 0.85 && el.map.locate(0, 90).fade < 0.87);
+  assert.ok(el.map.locate(0, 90).fade > 0.70 && el.map.locate(0, 90).fade < 0.73);
   assert.ok(Math.abs(el.map.locate(0, -50).fade - 1) < 1e-9, "everything nearer than `near` is opaque");
   assert.ok(el.map.locate(0, 120).fade > el.map.locate(0, 150).fade && el.map.locate(0, 150).fade > el.map.locate(0, 180).fade, "monotonic into the fog");
+  // A fog colour turns the fade into a mix; it is plumbing here, paint in the globe.
+  el.setAttribute("fog-color", "#151414");
+  assert.equal(el.map.options.fogColor, "#151414");
+  el.removeAttribute("fog-color");
+  assert.equal(el.map.options.fogColor, null);
   // A malformed fog is no fog.
   el.setAttribute("fog", "banana");
   assert.equal(el.map.options.fog, null);

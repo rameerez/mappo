@@ -14,10 +14,12 @@ import {
   GlobeRenderer, latLonToXYZ, uniformCount, forEachSample,
   buildGlobePoints, buildGlobeFlags, buildGlobePhases, buildGlobeTiles
 } from "../globe.js";
+import { parseColor, mixColor } from "../color-mix.js";
 
 registerRenderer("globe", GlobeRenderer);
 
 export {
   GlobeRenderer, latLonToXYZ, uniformCount, forEachSample,
-  buildGlobePoints, buildGlobeFlags, buildGlobePhases, buildGlobeTiles
+  buildGlobePoints, buildGlobeFlags, buildGlobePhases, buildGlobeTiles,
+  parseColor, mixColor
 };

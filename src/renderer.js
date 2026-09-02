@@ -162,6 +162,10 @@ export const DEFAULTS = {
   // drawn too, and everything fades from opaque at near to gone at far. null
   // keeps the opaque globe with its built-in facing fade.
   fog: null,
+  // The fog's colour. null fades what is in the fog to transparent; a colour
+  // MIXES toward it at full alpha instead, the way a WebGL fog does — on a
+  // light page over a dark fog the far side darkens rather than pales.
+  fogColor: null,
   // How the globe's dots sample the sphere: "grid" — the lat/lon grid the
   // flat map draws, cells bunching toward the poles — or "uniform", a
   // Fibonacci lattice with equal area per dot and round(cols²/π) candidates,
@@ -200,7 +204,7 @@ const STYLE_KEYS = new Set([
   // pattern-filled ground always exist; only their fills change.
   "background", "globeRing",
   // Globe-only camera knobs: the flat map ignores them, so there is nothing to rebuild.
-  "distance", "fog"
+  "distance", "fog", "fogColor"
 ]);
 const DEF_KEYS = new Set([ "dotShape", "dotSize", "markerShape", "markerScale", "groundColor" ]);
 const MARKER_KEYS = new Set([ "places", "markerPulse", "interactive" ]);

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mixColor, parseColor } from "../src/color-mix.js";
 import {
   EARTH, project, cellCenter, resolvePlace, snapToFigure, DEFAULTS, Mappo, parseFigureStyle, resolveProjection
 } from "../dist/mappo.js";
@@ -165,6 +166,19 @@ test("hover: a figure style without dots has no dots to hover", () => {
 test("defaults: the globe's camera, fog and distribution are opt-in", () => {
   assert.equal(DEFAULTS.distance, Infinity, "orthographic unless a distance is given");
   assert.equal(DEFAULTS.fog, null, "opaque unless fog is given");
+  assert.equal(DEFAULTS.fogColor, null, "a fog fades to transparent unless given a colour");
   assert.equal(DEFAULTS.distribution, "grid");
   assert.equal(DEFAULTS.graticuleWidth, 1);
+});
+
+test("fog colour: parsed like a canvas, mixed numerically in sRGB", () => {
+  assert.deepEqual(parseColor("#d63c01"), [ 214, 60, 1, 1 ]);
+  assert.deepEqual(parseColor("#f00"), [ 255, 0, 0, 1 ]);
+  assert.deepEqual(parseColor("rgba(10, 20, 30, 0.5)"), [ 10, 20, 30, 0.5 ]);
+  assert.equal(parseColor("tomato"), null, "names need a canvas to normalise them");
+  assert.equal(mixColor("#d63c01", "#151414", 0), "rgb(214, 60, 1)");
+  assert.equal(mixColor("#d63c01", "#151414", 1), "rgb(21, 20, 20)");
+  assert.equal(mixColor("#d63c01", "#151414", 0.5), "rgb(118, 40, 11)");
+  assert.equal(mixColor("rgba(214, 60, 1, 0.5)", "#151414", 0.5), "rgba(118, 40, 11, 0.5)", "the colour keeps its own alpha");
+  assert.equal(mixColor("tomato", "#151414", 0.25), "color-mix(in srgb, tomato 75%, #151414)", "unknown colours are left to CSS");
 });

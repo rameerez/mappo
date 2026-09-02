@@ -12,7 +12,7 @@
 export * from "../index.js";
 export {
   GlobeRenderer, latLonToXYZ, uniformCount, forEachSample,
-  buildGlobePoints, buildGlobeFlags, buildGlobePhases, buildGlobeTiles
+  buildGlobePoints, buildGlobeFlags, buildGlobePhases, buildGlobeTiles, parseColor, mixColor
 } from "./globe.js";
 export { BUILTIN_PROJECTIONS, adaptProjection, adaptCustom, adaptD3 } from "./projections.js";
 export { stitchRings, projectRings } from "./vector.js";

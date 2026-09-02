@@ -94,6 +94,8 @@ const ATTR_MAP = {
                           const m = v.trim().split(/[\s,]+/).map(Number);
                           return m.length === 2 && m.every(Number.isFinite) && m[0] < m[1] ? m : null;
                         } ],
+  // The fog's colour: unset, the fog fades to transparent; set, it mixes.
+  "fog-color":          [ "fogColor", String ],
   // How the globe's dots sample the sphere: "grid" (default) or "uniform".
   "distribution":       [ "distribution", String ],
   // The hero look and motion

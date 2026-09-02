@@ -541,6 +541,7 @@ import "mappo"</code></pre>
     <tr><td>graticule-width</td><td>Line width, CSS px on the globe (<code>0.5</code> is one device pixel on a 2× screen); a multiplier of the flat map's hairline.</td></tr>
     <tr><td>distance</td><td>A perspective camera that many body radii from the centre. Default <em>Infinity</em>, the orthographic view; <code>2.4</code> is a globe seen from close by — near side larger, far side smaller, the limb on the same disc.</td></tr>
     <tr><td>fog</td><td><code>"near far"</code> in radii from the centre plane. Set, the globe is glass: the far hemisphere shows through and everything fades from opaque at <em>near</em> to gone at <em>far</em>.</td></tr>
+    <tr><td>fog-color</td><td>The fog's colour. Unset, the fog fades to transparent; set, everything in it is drawn in its own colour mixed toward this one, as a WebGL fog blends.</td></tr>
     <tr><td>distribution</td><td><em>grid</em> (the lat/lon grid) · <em>uniform</em>, a Fibonacci lattice with equal area per dot and no bunching at the poles.</td></tr>
   </table>
 

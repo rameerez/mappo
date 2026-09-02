@@ -1,4 +1,7 @@
-// One color utility: the auto hover shade. When dot-hover-color isn't set,
+// Colour utilities: the auto hover shade, CSS variable resolution, and the
+// fog's colour mix.
+//
+// The auto hover shade. When dot-hover-color isn't set,
 // hovers derive from figure-color itself — darker for light dots, lighter for
 // dark dots — so a custom-colored map never falls back to somebody else's
 // gray. Hex in, hex out; non-hex inputs (named colors, rgb()) fall back to

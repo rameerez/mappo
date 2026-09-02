@@ -40,6 +40,7 @@ import { cellCenter, cellCorner } from "./projection.js";
 import { normalizeRings, pointInRings } from "./highlight.js";
 import { noise2 } from "./noise.js";
 import { hoverShade, resolveColor, usesCssVars } from "./color.js";
+import { mixColor } from "./color-mix.js";
 import { buildGraticule } from "./graticule.js";
 import { buildFigure, parseFigureStyle, figureOutlines, figureBorders, vectorFeature } from "./figure.js";
 
@@ -202,15 +203,20 @@ function xyzRings(rings) {
 // fine enough that a fog gradient reads as continuous.
 const BANDS = 24;
 
-// Fog at view depth z (unit radii, positive toward the viewer), as an sRGB
-// alpha: smoothstep from near to far in radii behind the centre plane, the
-// transmittance then lifted by 1/2.2 so that compositing in sRGB matches a
-// mix in linear light over a dark ground. See #fadeOf.
-function fogAlpha(z, [ near, far ]) {
+// Fog at view depth z (unit radii, positive toward the viewer): how far into
+// the fog the point sits, 0 at near and 1 at far, as a smoothstep between the
+// two in radii behind the centre plane — the curve a WebGL fog blends with.
+// Without a fog colour the remainder is drawn as alpha; with one, the point is
+// drawn in its colour mixed that far toward the fog's. See #fadeOf.
+function fogFactor(z, [ near, far ]) {
   const t = Math.min(1, Math.max(0, (-z - near) / (far - near)));
-  const transmitted = 1 - t * t * (3 - 2 * t);
-  return transmitted <= 0 ? 0 : Math.pow(transmitted, 1 / 2.2);
+  return t * t * (3 - 2 * t);
 }
+function fogAlpha(z, fog) { return 1 - fogFactor(z, fog); }
+
+// Bands of the fog colour mix: each step is about 1/48 of the way between the
+// two colours, under the eye's threshold on a field of dots.
+const FOG_BANDS = 48;
 
 export class GlobeRenderer {
   // @param container [HTMLElement] emptied; a square canvas fills its width.
@@ -763,14 +769,65 @@ export class GlobeRenderer {
   //
   // Fog is light lost on the way, so it is computed the way a renderer's fog
   // is: a smoothstep between near and far (a linear ramp has visible corners
-  // where it starts and stops), mixed in LINEAR light. A canvas composites in
-  // sRGB, so the transmittance is converted to the alpha that gives the same
-  // brightness over a dark ground: transmittance^(1/2.2). Over a light ground
-  // this reads a little stronger than a true linear-light fog would.
+  // where it starts and stops), used directly as alpha. Not lifted by 1/2.2
+  // for a linear-light mix: that was tried, and it made the far hemisphere
+  // twice as bright as the reference it was modelled on (a WebGL fog blends in
+  // the framebuffer's own space), which read as a denser field and doubled the
+  // limb, where the two hemispheres meet.
   #fadeOf(z, T, lo = 0.25, hi = 0.75) {
     if (T.fog) return fogAlpha(z, T.fog);
     if (z <= T.horizon + 0.01) return 0;
     return lo + hi * this.#facing(z, T);
+  }
+
+  // A fog with a colour is a MIX, not a fade: what sits in the fog is drawn in
+  // its own colour blended toward the fog's, at full alpha, so on a light page
+  // over a dark fog the far side darkens rather than pales — what a WebGL
+  // scene does when its fog colour is not re-themed with the page. Resolved
+  // here, or null when the fog fades to transparent.
+  #fogTint(T) {
+    return T.fog && this.o.fogColor ? this._c(this.o.fogColor) : null;
+  }
+
+  // `color` mixed toward `tint` for one fog band, cached: a fillStyle string
+  // costs about a microsecond to parse, so the mixes are made once and set
+  // once per band, never once per dot.
+  #fogged(color, tint, band) {
+    const key = color + "|" + tint + "|" + band;
+    let v = this._mixCache.get(key);
+    if (v === undefined) {
+      if (this._mixCache.size > 4096) this._mixCache.clear();
+      v = mixColor(color, tint, (band + 0.5) / FOG_BANDS, this.ctx);
+      this._mixCache.set(key, v);
+    }
+    return v;
+  }
+
+  // The fog band whose colour a fade band's centre calls for.
+  #fogBandOf(fade) {
+    return Math.min(FOG_BANDS - 1, Math.max(0, Math.round((1 - fade) * FOG_BANDS - 0.5)));
+  }
+
+  // Samples grouped by fog band and highlight, for drawing far to near with
+  // one style per group: a counting sort over one byte per sample.
+  #fogOrder(arr, stride, flags, T) {
+    const n = arr.length / stride;
+    if (!this._order || this._order.length < n) { this._order = new Uint32Array(n); this._keys = new Uint8Array(n); }
+    const { sinR, cosR, sinT, cosT, fog } = T;
+    const keys = this._keys, order = this._order, cursor = this._cursor, starts = this._starts;
+    cursor.fill(0);
+    for (let j = 0, i = 0; j < n; j++, i += stride) {
+      const z1 = -arr[i] * sinR + arr[i + 2] * cosR;
+      const z2 = arr[i + 1] * sinT + z1 * cosT;
+      const band = Math.min(FOG_BANDS - 1, Math.floor(fogFactor(z2, fog) * FOG_BANDS));
+      const key = (flags && flags[j] === 1 ? FOG_BANDS : 0) + band;
+      keys[j] = key;
+      cursor[key + 1]++;
+    }
+    for (let k = 1; k <= 2 * FOG_BANDS; k++) cursor[k] += cursor[k - 1];
+    starts.set(cursor);
+    for (let j = 0; j < n; j++) order[cursor[keys[j]]++] = j;
+    return { order, starts };
   }
 
   // One place that knows how a unit-sphere point becomes a pixel on this
@@ -969,6 +1026,7 @@ export class GlobeRenderer {
       const q = geom.quads;
       const A = this._scratch, B = this._scratchB, C = this._scratchC, Dd = this._scratchD;
       const glass = !!T.fog;
+      const tint = this.#fogTint(T);
       let any = false;
       for (let i = 0; i < q.length; i += 12) {
         const fa = this.#projectXYZ(q[i], q[i + 1], q[i + 2], T, A);
@@ -979,7 +1037,7 @@ export class GlobeRenderer {
         // cell is drawn, at the fog's alpha for its depth.
         if (!glass && !(fa && fb && fc && fd)) continue;
         const fade = this.#fadeOf((A[2] + B[2] + C[2] + Dd[2]) / 4, T, 0.35, 0.65);
-        if (fade < 0.003) continue;
+        if (fade < 0.003 && !tint) continue;
         const path = paths[Math.min(BANDS - 1, Math.floor(fade * BANDS))];
         path.moveTo(A[0], A[1]);
         path.lineTo(B[0], B[1]);
@@ -989,9 +1047,11 @@ export class GlobeRenderer {
         any = true;
       }
       if (any) {
-        ctx.fillStyle = this._c(o.figureColor);
+        const color = this._c(o.figureColor);
+        ctx.fillStyle = color;
         for (let i = 0; i < BANDS; i++) {
-          ctx.globalAlpha = (i + 0.5) / BANDS;
+          if (tint) ctx.fillStyle = this.#fogged(color, tint, this.#fogBandOf((i + 0.5) / BANDS));
+          ctx.globalAlpha = tint ? 1 : (i + 0.5) / BANDS;
           ctx.fill(paths[i]);
         }
       }
@@ -1047,6 +1107,7 @@ export class GlobeRenderer {
   #strokeBanded(lines, color, width, peak, alphaScale = 1, T = this._T) {
     const ctx = this.ctx;
     const glass = !!T?.fog;
+    const tint = T ? this.#fogTint(T) : null;
     const paths = Array.from({ length: BANDS }, () => new Path2D());
     let any = false;
     for (const pts of lines) {
@@ -1054,7 +1115,7 @@ export class GlobeRenderer {
         const a = pts[i], b = pts[i + 1];
         if (!glass && (!a.front || !b.front)) continue;     // the far side, or crossing it
         const fade = (a.fade + b.fade) / 2;
-        if (fade < 0.003) continue;
+        if (fade < 0.003 && !tint) continue;
         const band = Math.min(BANDS - 1, Math.floor(fade * BANDS));
         paths[band].moveTo(a.sx, a.sy);
         paths[band].lineTo(b.sx, b.sy);
@@ -1067,7 +1128,8 @@ export class GlobeRenderer {
     ctx.lineJoin = "round";
     ctx.lineCap = "round";                       // keeps segments reading as one line
     for (let i = 0; i < BANDS; i++) {
-      ctx.globalAlpha = peak * ((i + 0.5) / BANDS) * alphaScale;
+      if (tint) ctx.strokeStyle = this.#fogged(color, tint, this.#fogBandOf((i + 0.5) / BANDS));
+      ctx.globalAlpha = tint ? peak * alphaScale : peak * ((i + 0.5) / BANDS) * alphaScale;
       ctx.stroke(paths[i]);
     }
     ctx.globalAlpha = 1;
@@ -1128,25 +1190,40 @@ export class GlobeRenderer {
   // drawn, the far one first so the near one lies over it.
   #drawPoints(pts, T, { base, shape, alphaLo, alphaHi, anim, flags, baseColor, hiColor }) {
     const ctx = this.ctx;
-    const { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, D, F, persp, horizon, fog } = T;
+    const { sinR, cosR, sinT, cosT, D, persp, horizon, fog } = T;
+    const tint = this.#fogTint(T);
+    if (tint) {
+      // A fog with a colour: every dot is drawn, in its band's mix, far to near.
+      const { order, starts } = this.#fogOrder(pts, 3, flags, T);
+      const baseCol = baseColor ?? ctx.fillStyle;
+      ctx.globalAlpha = 1;
+      for (let band = FOG_BANDS - 1; band >= 0; band--) {
+        for (let hi = 0; hi < 2; hi++) {
+          const key = hi * FOG_BANDS + band, from = starts[key], to = starts[key + 1];
+          if (from === to) continue;
+          ctx.fillStyle = this.#fogged(hi ? hiColor : baseCol, tint, band);
+          for (let p = from; p < to; p++) this.#dot(pts, order[p] * 3, T, base, shape, anim);
+        }
+      }
+      return;
+    }
     const passes = fog ? 2 : 1;
     for (let pass = 0; pass < passes; pass++) {
       const farPass = fog && pass === 0;
       let currentHi = null;
       for (let i = 0; i < pts.length; i += 3) {
-        // Spin around the polar axis, then lean by the axial tilt.
-        const x1 = pts[i] * cosR + pts[i + 2] * sinR;
+        // Spin around the polar axis, then lean by the axial tilt: the depth
+        // decides whether, and how faintly, the dot is drawn.
         const z1 = -pts[i] * sinR + pts[i + 2] * cosR;
-        const y2 = pts[i + 1] * cosT - z1 * sinT;
         const z2 = pts[i + 1] * sinT + z1 * cosT;
         const front = z2 > horizon + 0.01;
         if (fog ? front === farPass : !front) continue;
-        const facing = persp ? (D * z2 - 1) / Math.sqrt(D * D - 2 * D * z2 + 1) : z2;
         let alpha;
         if (fog) {
           alpha = fogAlpha(z2, fog);
           if (alpha < 0.003) continue;
         } else {
+          const facing = persp ? (D * z2 - 1) / Math.sqrt(D * D - 2 * D * z2 + 1) : z2;
           alpha = alphaLo + alphaHi * facing;                 // …and a depth fade
         }
         // Region highlight: per-dot colour switch, batched (fillStyle only
@@ -1159,66 +1236,97 @@ export class GlobeRenderer {
             currentHi = hi;
           }
         }
-
-        let lift = 0, sizeMul = 1;
-        if (anim) {
-          const j = (i / 3) * 2;
-          const d = (anim.cycle - anim.phases[j] + 1) % 1;
-          if (d < anim.w) {
-            const bump = Math.sin(Math.PI * (d / anim.w)) * anim.phases[j + 1];
-            if (anim.mode === "sparkle") sizeMul = 1 + 0.45 * bump;
-            else lift = (anim.heightPx * bump) / R;
-          }
-        }
-        const k = 1 + lift;
-        const scale = persp ? F / (D - z2 * k) : R;
-        const dx = x1 * k * scale, dy = -y2 * k * scale;
-        const sx = cx + dx * cosRo - dy * sinRo;
-        const sy = cy + dx * sinRo + dy * cosRo;
-        // Foreshortening at the limb; a perspective camera also shrinks what
-        // is farther away.
-        const s = base * (0.45 + 0.55 * Math.abs(facing)) * sizeMul * (persp ? scale / R : 1);
         ctx.globalAlpha = alpha;
-        if (shape === "circle") {
-          ctx.beginPath();
-          ctx.arc(sx, sy, s / 2, 0, 6.2832);
-          ctx.fill();
-        } else if (shape === "triangle") {
-          ctx.beginPath();
-          ctx.moveTo(sx, sy - s / 2);
-          ctx.lineTo(sx + s / 2, sy + s / 2);
-          ctx.lineTo(sx - s / 2, sy + s / 2);
-          ctx.fill();
-        } else {
-          ctx.fillRect(sx - s / 2, sy - s / 2, s, s);
-        }
+        this.#dot(pts, i, T, base, shape, anim);
       }
     }
   }
 
+  // One dot of the field, in the current style: spun, leaned, projected,
+  // sized by its facing and its depth, lifted or swollen by the animation.
+  #dot(pts, i, T, base, shape, anim) {
+    const ctx = this.ctx;
+    const { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, D, F, persp } = T;
+    const x1 = pts[i] * cosR + pts[i + 2] * sinR;
+    const z1 = -pts[i] * sinR + pts[i + 2] * cosR;
+    const y2 = pts[i + 1] * cosT - z1 * sinT;
+    const z2 = pts[i + 1] * sinT + z1 * cosT;
+    const facing = persp ? (D * z2 - 1) / Math.sqrt(D * D - 2 * D * z2 + 1) : z2;
+
+    let lift = 0, sizeMul = 1;
+    if (anim) {
+      const j = (i / 3) * 2;
+      const d = (anim.cycle - anim.phases[j] + 1) % 1;
+      if (d < anim.w) {
+        const bump = Math.sin(Math.PI * (d / anim.w)) * anim.phases[j + 1];
+        if (anim.mode === "sparkle") sizeMul = 1 + 0.45 * bump;
+        else lift = (anim.heightPx * bump) / R;
+      }
+    }
+    const k = 1 + lift;
+    const scale = persp ? F / (D - z2 * k) : R;
+    const dx = x1 * k * scale, dy = -y2 * k * scale;
+    const sx = cx + dx * cosRo - dy * sinRo;
+    const sy = cy + dx * sinRo + dy * cosRo;
+    // Foreshortening at the limb; a perspective camera also shrinks what
+    // is farther away.
+    const s = base * (0.45 + 0.55 * Math.abs(facing)) * sizeMul * (persp ? scale / R : 1);
+    if (shape === "circle") {
+      ctx.beginPath();
+      ctx.arc(sx, sy, s / 2, 0, 6.2832);
+      ctx.fill();
+    } else if (shape === "triangle") {
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - s / 2);
+      ctx.lineTo(sx + s / 2, sy + s / 2);
+      ctx.lineTo(sx - s / 2, sy + s / 2);
+      ctx.fill();
+    } else {
+      ctx.fillRect(sx - s / 2, sy - s / 2, s, s);
+    }
+  }
+
   // The dot field as TILES: squares lying on the surface. A tangent square
-  // projects to (very nearly) a parallelogram, and a parallelogram is one
-  // setTransform and one fillRect — so each tile is drawn on its own with its
-  // own alpha, and the fog is a true gradient rather than bands. Behind a
+  // projects to (very nearly) a parallelogram, drawn as a four-point path with
+  // its own alpha, so the fog is a true gradient rather than bands. Behind a
   // perspective camera tiles grow toward the viewer; along the limb they
   // foreshorten into slivers, as a real tangent square does.
   //
-  // Not a Path2D batch, deliberately: appending to one Path2D grows quadratic
-  // in Chrome past a few hundred subpaths (measured: 3k quads 28 ms, 7k 128 ms,
-  // 14k 500 ms to build, the fill itself under a millisecond). Two calls per
-  // tile is the fast path here, at about a quarter of a microsecond each.
-  // Under fog both hemispheres are drawn, the far one first.
+  // Two things measured, not guessed. Appending to one Path2D grows quadratic
+  // in Chrome past a few hundred subpaths (3k quads 28 ms, 7k 128 ms, 14k
+  // 500 ms to build, the fill itself under a millisecond), so tiles are not
+  // batched. And a parallelogram drawn as a transformed fillRect paints up to
+  // twice its true area once it is a needle (2.03× at a 3° corner, 1.6× at
+  // 12°, exact only past 45°), which piled a bright rim on the limb where
+  // thousands of slivers meet; an explicit path paints the exact area at
+  // every angle. Under fog both hemispheres are drawn, the far one first.
   #drawTiles(tiles, T, { alphaLo, alphaHi, anim, flags, baseColor, hiColor }) {
-    const ctx = this.ctx, dpr = this._dpr;
-    const { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, D, F, persp, horizon, fog } = T;
+    const ctx = this.ctx;
+    const { sinR, cosR, sinT, cosT, D, persp, horizon, fog } = T;
+    const tint = this.#fogTint(T);
+    if (tint) {
+      // A fog with a colour: every tile is drawn, in its band's mix, far to near.
+      const { order, starts } = this.#fogOrder(tiles, 9, flags, T);
+      const baseCol = baseColor ?? ctx.fillStyle;
+      ctx.globalAlpha = 1;
+      for (let band = FOG_BANDS - 1; band >= 0; band--) {
+        for (let hi = 0; hi < 2; hi++) {
+          const key = hi * FOG_BANDS + band, from = starts[key], to = starts[key + 1];
+          if (from === to) continue;
+          ctx.fillStyle = this.#fogged(hi ? hiColor : baseCol, tint, band);
+          for (let p = from; p < to; p++) this.#tile(tiles, order[p] * 9, T, anim);
+        }
+      }
+      return;
+    }
     const passes = fog ? 2 : 1;
     for (let pass = 0; pass < passes; pass++) {
       const farPass = fog && pass === 0;
       let currentHi = null;
       for (let i = 0; i < tiles.length; i += 9) {
-        // The centre through the spin and the tilt.
-        const cx1 = tiles[i] * cosR + tiles[i + 2] * sinR, cz1 = -tiles[i] * sinR + tiles[i + 2] * cosR;
-        const cy2 = tiles[i + 1] * cosT - cz1 * sinT, cz2 = tiles[i + 1] * sinT + cz1 * cosT;
+        // The centre's depth through the spin and the tilt.
+        const cz1 = -tiles[i] * sinR + tiles[i + 2] * cosR;
+        const cz2 = tiles[i + 1] * sinT + cz1 * cosT;
         const front = cz2 > horizon + 0.01;
         if (fog ? front === farPass : !front) continue;
         let alpha;
@@ -1235,46 +1343,63 @@ export class GlobeRenderer {
             currentHi = hi;
           }
         }
-        // The east and north half-edges through the same rotation.
-        const ex1 = tiles[i + 3] * cosR + tiles[i + 5] * sinR, ez1 = -tiles[i + 3] * sinR + tiles[i + 5] * cosR;
-        const ey2 = tiles[i + 4] * cosT - ez1 * sinT, ez2 = tiles[i + 4] * sinT + ez1 * cosT;
-        const nx1 = tiles[i + 6] * cosR + tiles[i + 8] * sinR, nz1 = -tiles[i + 6] * sinR + tiles[i + 8] * cosR;
-        const ny2 = tiles[i + 7] * cosT - nz1 * sinT, nz2 = tiles[i + 7] * sinT + nz1 * cosT;
-
-        let k = 1, m = 1;
-        if (anim) {
-          const j = (i / 9) * 2;
-          const d = (anim.cycle - anim.phases[j] + 1) % 1;
-          if (d < anim.w) {
-            const bump = Math.sin(Math.PI * (d / anim.w)) * anim.phases[j + 1];
-            if (anim.mode === "sparkle") m = 1 + 0.45 * bump;
-            else k = 1 + (anim.heightPx * bump) / R;
-          }
-        }
-        const depth = persp ? D - cz2 * k : 1;
-        const scale = persp ? F / depth : R;
-        const dx = cx1 * k * scale, dy = -cy2 * k * scale;
-        const sx = cx + dx * cosRo - dy * sinRo, sy = cy + dx * sinRo + dy * cosRo;
-        // The half-edges on screen. Under a camera an edge's screen length is
-        // not just its sideways part scaled by depth: the part of it that runs
-        // toward or away from the camera moves its end across the screen too,
-        // by x·dz/(D − z). That term is what folds a tile to a sliver at the
-        // camera's horizon (where the sideways part alone would still be 1/D of
-        // the side); leaving it out piles full-width tiles on the limb.
-        const pe = persp ? ez2 / depth : 0, pn = persp ? nz2 / depth : 0;
-        const exs = (ex1 + cx1 * k * pe) * scale * m, eys = -(ey2 + cy2 * k * pe) * scale * m;
-        const nxs = (nx1 + cx1 * k * pn) * scale * m, nys = -(ny2 + cy2 * k * pn) * scale * m;
-        ctx.setTransform(
-          (exs * cosRo - eys * sinRo) * 2 * dpr, (exs * sinRo + eys * cosRo) * 2 * dpr,
-          (nxs * cosRo - nys * sinRo) * 2 * dpr, (nxs * sinRo + nys * cosRo) * 2 * dpr,
-          sx * dpr, sy * dpr);
         ctx.globalAlpha = alpha;
-        ctx.fillRect(-0.5, -0.5, 1, 1);
+        this.#tile(tiles, i, T, anim);
       }
     }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+  // One tile, in the current style: its centre and half-edges through the
+  // spin and the tilt, then onto the screen.
+  #tile(tiles, i, T, anim) {
+    const ctx = this.ctx;
+    const { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, D, F, persp } = T;
+    const cx1 = tiles[i] * cosR + tiles[i + 2] * sinR, cz1 = -tiles[i] * sinR + tiles[i + 2] * cosR;
+    const cy2 = tiles[i + 1] * cosT - cz1 * sinT, cz2 = tiles[i + 1] * sinT + cz1 * cosT;
+    // The east and north half-edges through the same rotation.
+    const ex1 = tiles[i + 3] * cosR + tiles[i + 5] * sinR, ez1 = -tiles[i + 3] * sinR + tiles[i + 5] * cosR;
+    const ey2 = tiles[i + 4] * cosT - ez1 * sinT, ez2 = tiles[i + 4] * sinT + ez1 * cosT;
+    const nx1 = tiles[i + 6] * cosR + tiles[i + 8] * sinR, nz1 = -tiles[i + 6] * sinR + tiles[i + 8] * cosR;
+    const ny2 = tiles[i + 7] * cosT - nz1 * sinT, nz2 = tiles[i + 7] * sinT + nz1 * cosT;
+
+    let k = 1, m = 1;
+    if (anim) {
+      const j = (i / 9) * 2;
+      const d = (anim.cycle - anim.phases[j] + 1) % 1;
+      if (d < anim.w) {
+        const bump = Math.sin(Math.PI * (d / anim.w)) * anim.phases[j + 1];
+        if (anim.mode === "sparkle") m = 1 + 0.45 * bump;
+        else k = 1 + (anim.heightPx * bump) / R;
+      }
+    }
+    const depth = persp ? D - cz2 * k : 1;
+    const scale = persp ? F / depth : R;
+    const dx = cx1 * k * scale, dy = -cy2 * k * scale;
+    const sx = cx + dx * cosRo - dy * sinRo, sy = cy + dx * sinRo + dy * cosRo;
+    // The half-edges on screen. Under a camera an edge's screen length is
+    // not just its sideways part scaled by depth: the part of it that runs
+    // toward or away from the camera moves its end across the screen too,
+    // by x·dz/(D − z). That term is what folds a tile to a sliver at the
+    // camera's horizon (where the sideways part alone would still be 1/D of
+    // the side); leaving it out piles full-width tiles on the limb.
+    const pe = persp ? ez2 / depth : 0, pn = persp ? nz2 / depth : 0;
+    const exs = (ex1 + cx1 * k * pe) * scale * m, eys = -(ey2 + cy2 * k * pe) * scale * m;
+    const nxs = (nx1 + cx1 * k * pn) * scale * m, nys = -(ny2 + cy2 * k * pn) * scale * m;
+    // Rolled; the four corners are the centre ± both half-edges. Drawn as
+    // an explicit path, not a transformed fillRect: see the note above.
+    const ax = exs * cosRo - eys * sinRo, ay = exs * sinRo + eys * cosRo;
+    const bx = nxs * cosRo - nys * sinRo, by = nxs * sinRo + nys * cosRo;
+    ctx.beginPath();
+    ctx.moveTo(sx + ax + bx, sy + ay + by);
+    ctx.lineTo(sx - ax + bx, sy - ay + by);
+    ctx.lineTo(sx - ax - bx, sy - ay - by);
+    ctx.lineTo(sx + ax - bx, sy + ay - by);
+    ctx.fill();
+  }
+
+  _mixCache = new Map();
+  _cursor = new Uint32Array(2 * FOG_BANDS + 1);
+  _starts = new Uint32Array(2 * FOG_BANDS + 1);
   _scratch = new Float64Array(3);
   _scratchB = new Float64Array(3);
   _scratchC = new Float64Array(3);
