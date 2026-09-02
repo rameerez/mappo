@@ -1,7 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Standby — mappo</title>
+<title>Standby · mappo</title>
 <link rel="icon" href="../favicon/favicon-32x32.png">
 <style>
   /* Apple's landscape standby clock, rebuilt on mappo. Measured from a
@@ -139,10 +139,11 @@
 <script type="module">
 import "../dist/all.js";
 import { earthAt } from "./astro.js";
-import { nightRings, terminatorCurves } from "./terminator.js";
+import { FACE, fx, fy, nightRings, terminatorCurves } from "./standby-face.js";
 import { CLOCK_CITIES } from "./clocks.js";
 
-const LAT_RANGE = [ -58, 84 ];
+// One definition, shared with every other page that draws this face.
+const LAT_RANGE = FACE.latRange;
 
 // ?at=2026-09-02T00:24Z freezes the clock. The terminator is the one thing on
 // this page that cannot be checked by looking — it has to be checked against a
@@ -235,9 +236,7 @@ const box = () => {
 };
 const sx = (lon, b) => b.ox + ((lon + 180) / 360) * b.w;
 const sy = (lat, b) => b.oy + ((LAT_RANGE[1] - lat) / (LAT_RANGE[1] - LAT_RANGE[0])) * b.h;
-// The clip path wants the map's own 0…1 box.
-const fx = (lon) => (lon + 180) / 360;
-const fy = (lat) => (LAT_RANGE[1] - lat) / (LAT_RANGE[1] - LAT_RANGE[0]);
+// fx and fy come from standby-face.js, computed over the same band.
 
 const term = document.getElementById("term");
 const line = document.getElementById("termline");

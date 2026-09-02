@@ -1,9 +1,9 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mappo — beautiful web maps</title>
+<title>mappo · beautiful web maps</title>
 <link rel="icon" href="./favicon/favicon-32x32.png">
-<meta name="description" content="A world map as a zero-dependency web component. Dots or coastlines, flat or a rotating globe, Earth or the Moon or Mars — in 22 KB.">
+<meta name="description" content="A world map as a zero-dependency web component. Dots or coastlines, flat or a rotating globe, Earth or the Moon or Mars, in 22 KB.">
 <style>
   /* Dark first, and on purpose: the demos below span red, orange, blue and
      green, so the page they sit on has to be a neutral that lets each of them
@@ -152,9 +152,9 @@
   #t-analytics .stage{background:#fff}
   #t-worlds .stage{background:#05070b}
 
-  .clockface{position:absolute;left:6%;bottom:12%;color:#ff2b2b;font-family:var(--sans);
+  .clockface{position:absolute;left:6%;bottom:12%;font-family:var(--sans);
     line-height:1;pointer-events:none}
-  .clockface .city{font-size:16px;font-weight:600;letter-spacing:-.01em;margin-bottom:9px}
+  .clockface .city{font-size:16px;font-weight:600;letter-spacing:-.01em;margin-bottom:9px;color:#ff3b30}
   .clockface .time{font-size:clamp(44px,7vw,72px);font-weight:700;letter-spacing:-.045em;
     font-variant-numeric:tabular-nums}
 
@@ -209,7 +209,7 @@
   <div class="hero-copy">
     <h1>Beautiful web maps</h1>
     <p>A world map as a web component. Dots or coastlines, flat or a rotating
-      globe, Earth or the Moon or Mars — in 22&nbsp;KB, with no dependencies.</p>
+      globe, Earth or the Moon or Mars, in 22&nbsp;KB, with no dependencies.</p>
     <span class="install"><b>npm i</b> mappo</span>
     <div class="cta">
       <a class="primary" href="./demo/">See the demos</a>
@@ -230,7 +230,7 @@
         use them.</p></div>
       <div><h3>One element</h3><p>Fifty attributes, no build step, no bundler.
         Drop <code>&lt;mappo-world&gt;</code> on a page and style it with CSS
-        variables — a theme flip repaints every map without a line of JS.</p></div>
+        variables, so a theme flip repaints every map without a line of JS.</p></div>
       <div><h3>Not only Earth</h3><p>A body answers whether a coordinate is
         inside or outside. The Moon is <b>9.5 KB</b>, Mars <b>6.9 KB</b>, and the
         renderer never learns which one it is drawing.</p></div>
@@ -241,20 +241,20 @@
 <main class="wrap show">
   <div class="show-head">
     <h2>Built with it</h2>
-    <p>Every panel below is live — a real <code>&lt;mappo-world&gt;</code> on this
+    <p>Every panel below is live: a real <code>&lt;mappo-world&gt;</code> on this
       page, not a screenshot.</p>
   </div>
 
   <section class="tile" id="t-standby">
     <div class="stage">
       <div id="standby-map" style="width:min(760px,92%)"></div>
-      <div class="clockface"><div class="city" id="sb-city">&nbsp;</div><div class="time" id="sb-time">—</div></div>
+      <div class="clockface"><div class="city" id="sb-city">&nbsp;</div><div class="time" id="sb-time">00:00</div></div>
     </div>
     <div class="meta">
       <div>
         <span class="tag" style="background:#2a0000;color:#ff4d4d">Day and night</span>
         <h3>The clock that knows where the sun is</h3>
-        <p>A dot field, and the terminator computed from the real solar position —
+        <p>A dot field, and the terminator computed from the real solar position,
           drawn on a canvas the map keeps over itself, so it can never lag the
           geography by a frame.</p>
       </div>
@@ -282,7 +282,7 @@
         <div>
           <span class="tag" style="background:#241708;color:#e0975a">Other worlds</span>
           <h3>Earth, Mars and the Moon, to scale</h3>
-          <p>Same component, same attributes, three bodies — at their true
+          <p>Same component, same attributes, three bodies, at their true
             relative size.</p>
         </div>
         <a href="./demo/worlds.html">Open →</a>
@@ -296,7 +296,7 @@
       <div>
         <span class="tag" style="background:#eef2f7;color:#334155">Data</span>
         <h3>Where your users are</h3>
-        <p>Every country as its own shape, shaded by a number — the choropleth
+        <p>Every country as its own shape, shaded by a number: the choropleth
           every dashboard wants, filled through the same projection the map was
           drawn with.</p>
       </div>
@@ -310,7 +310,7 @@
   <div class="all-demos" id="all-demos"></div>
   <p class="foot-note">Land and borders from Natural Earth (public domain),
     pinned by checksum. Lunar maria from the Clementine albedo mosaic, Martian
-    lowlands from MOLA topography — both NASA, both public domain.</p>
+    lowlands from MOLA topography. Both are NASA, and both are public domain.</p>
 </footer>
 
 <script type="module">
@@ -330,7 +330,7 @@ registerBody(MOON);
 registerBody(MARS);
 
 import { earthAt } from "./demo/astro.js";
-import { nightRings, terminatorCurves } from "./demo/terminator.js";
+import { FACE, faceAttrs, paintFace, clockFor } from "./demo/standby-face.js";
 import { regions } from "./demo/countries.js";
 import { bindThemeToggle } from "./assets/theme.js";
 
@@ -395,63 +395,23 @@ $("all-demos").innerHTML = DEMOS
 
 // ── standby: dots, and the night drawn over them ────────────────────────────
 panel("standby", () => {
-  const LAT = [ -58, 78 ];
+  // Every number here comes from demo/standby-face.js, which the full-screen
+  // demo reads too. They used to be two sets that drifted.
   const el = document.createElement("mappo-world");
-  for (const [ k, v ] of Object.entries({
-    mode: "flat", cols: "88", "lat-min": LAT[0], "lat-max": LAT[1],
-    figure: "dots", "dot-shape": "circle", "dot-size": "0.55",
-    "figure-color": "#e60000", background: "none", interactive: "false"
-  })) el.setAttribute(k, v);
+  for (const [ k, v ] of Object.entries(faceAttrs(88))) el.setAttribute(k, v);
   $("standby-map").appendChild(el);
 
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   $("sb-city").textContent = (tz.split("/").pop() || "Here").replace(/_/g, " ");
-  const parts = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", timeZone: tz });
-  const hhmm = (d) => parts.formatToParts(d)
-    .filter((p) => p.type === "hour" || p.type === "literal" || p.type === "minute")
-    .map((p) => (p.type === "literal" ? ":" : p.value)).join("").replace(/:+$/, "");
-
-  const fx = (lon) => (lon + 180) / 360;
-  const fy = (lat) => (LAT[1] - lat) / (LAT[1] - LAT[0]);
+  const hhmm = clockFor(tz);
+  const clock = $("sb-time");
+  clock.style.color = FACE.clock;
 
   customElements.whenDefined("mappo-world").then(() => requestAnimationFrame(() => {
     // addLayer: mappo keeps a canvas over the map and redraws it with every
     // frame the map draws, so this cannot drift from the dots underneath.
-    el.map.addLayer((ctx, view) => {
-      const { dec, subLon } = earthAt(new Date());
-      const X = (lon) => fx(lon) * view.width;
-      const Y = (lat) => fy(lat) * view.height;
-      const trace = (pts, xy) => pts.forEach((p, i) => {
-        const [ x, y ] = xy(p);
-        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-      });
-
-      // Night, as three washes rather than one: the horizon, then civil and
-      // astronomical twilight nested inside it. Stacked translucency deepens
-      // the way dusk does, where a single flat mask reads as a sticker.
-      for (const [ h0, alpha ] of [ [ 0, 0.42 ], [ -6, 0.34 ], [ -18, 0.34 ] ]) {
-        ctx.fillStyle = `rgba(0,0,0,${alpha})`;
-        for (const ring of nightRings(dec, subLon, h0, LAT)) {
-          ctx.beginPath();
-          trace(ring, ([ lon, lat ]) => [ X(lon), Y(lat) ]);
-          ctx.closePath();
-          ctx.fill();
-        }
-      }
-
-      // And the boundary itself. Without this the panel has a dark half and a
-      // light half and no sun line between them — which is the one thing the
-      // whole picture is about.
-      ctx.strokeStyle = "#ff5a4d";
-      ctx.lineWidth = 1.4;
-      ctx.lineJoin = ctx.lineCap = "round";
-      for (const curve of terminatorCurves(dec, subLon, 0, LAT)) {
-        ctx.beginPath();
-        trace(curve, ([ lon, lat ]) => [ X(lon), Y(lat) ]);
-        ctx.stroke();
-      }
-    });
-    const tick = () => { $("sb-time").textContent = hhmm(new Date()); };
+    el.map.addLayer((ctx, view) => paintFace(ctx, view.width, view.height, earthAt(new Date())));
+    const tick = () => { clock.textContent = hhmm(new Date()); };
     tick();
     setInterval(() => { tick(); el.map.render?.(); }, 30000);
   }));

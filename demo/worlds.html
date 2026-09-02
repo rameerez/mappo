@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Other worlds — mappo</title>
+<title>Other worlds · mappo</title>
 <meta name="description" content="mappo drawing bodies that are not the Earth. The Moon and Mars ship as separate packs you opt into; the engine never learns what a mare or a dichotomy is.">
 <link rel="shortcut icon" href="../favicon/favicon.ico" type="image/x-icon">
 <style>
@@ -54,13 +54,13 @@
 it asks a <em>body</em> whether a given latitude and longitude is <em>figure</em> or
 <em>ground</em>. On Earth that means land against sea, on the Moon maria against
 highlands, on Mars the northern lowlands against the southern highlands. One question,
-three spheres — and the same options style all of them.</p>
+three spheres, and the same options style all of them.</p>
 <p class="by">A prototype · <a href="../index.html">mappo</a> ·
 <a href="./index.html">more demos</a></p>
 
 <h2>Opting in</h2>
 <p class="note">Earth is in the bundle because a world map is what people came for.
-Everything else is a separate file you ask for by name — the Moon is 9.5&nbsp;KB gzipped
+Everything else is a separate file you ask for by name: the Moon is 9.5&nbsp;KB gzipped
 and Mars is 6.9&nbsp;KB, and nobody putting a world map in a hero section should download
 either. The globe and vector outlines these maps use are modules of their own too. Registering a body also defines its tag; <code>body=</code> still wins if you
 write both. Order does not matter: a map that asks for a body before its pack has
@@ -82,7 +82,7 @@ registerBody(MARS);   // and &lt;mappo-mars&gt;
 
 <h2>Outlines, not pixels</h2>
 <p class="note">A body can carry vector outlines as well as a bitmask, and the Moon now
-does — traced from the same threshold the mask uses, so the line and the squares are the
+does, traced from the same threshold the mask uses, so the line and the squares are the
 same boundary at two levels of detail. That is exactly the relationship Earth's coastline
 has with Earth's bitmask. Left is <code>figure="outline"</code>; right is the grid it came from.</p>
 <div class="row">
@@ -99,7 +99,7 @@ has with Earth's bitmask. Left is <code>figure="outline"</code>; right is the gr
   </div>
   <div class="card">
     <h3>figure-source="grid"</h3>
-    <p>The bitmask the outline was traced from, filled. Same boundary, drawn as cells —
+    <p>The bitmask the outline was traced from, filled. Same boundary, drawn as cells,
     and the cells follow <code>cols</code>, so resolution is a slider.</p>
     <mappo-moon mode="globe" cols="160" rotate-speed="0" focus="0,0" tilt="0"
       figure="solid outline" figure-source="grid"
@@ -171,8 +171,8 @@ area of Earth's dry land, which is the sort of comparison this picture is for.</
 
 <p class="by" style="margin-top:36px">
 Maria from the Clementine 750&nbsp;nm albedo mosaic; Martian elevation from MOLA (both
-public domain, NASA/USGS). Each threshold is set to reproduce a published figure — maria
-at 16% of the lunar sphere, lowlands at a third of Mars — and then checked against places
+public domain, NASA/USGS). Each threshold is set to reproduce a published figure: maria
+at 16% of the lunar sphere, lowlands at a third of Mars, and then checked against places
 whose heights are known. Both binaries are interpretations, not coastlines: one is a
 brightness, the other an elevation, and neither is a shore.</p>
 
