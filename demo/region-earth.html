@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Region: Earth — mappo</title>
+<title>Region: Earth · mappo</title>
 <meta name="description" content="Cloudflare's “Region: Earth” section, rebuilt on mappo: a glass globe of uniform tiles under fog, seen through a perspective camera, with DOM pins, captions and arcs positioned by the library.">
 <link rel="icon" href="../favicon/favicon-32x32.png">
 <style>
@@ -77,7 +77,7 @@
   .globe-box{position:relative;isolation:isolate;z-index:0;margin-inline:auto;height:420px;width:100%;
     translate:0 calc(var(--spacing) * -4);padding-inline:1px;clip-path:inset(0 0 0 0)}
   @media (min-width:48rem){ .globe-box{height:500px;translate:0 0} }
-  /* The entrance: the site's exact choreography — 0.97 and transparent until
+  /* The entrance: the site's exact choreography. 0.97 and transparent until
      the scene reports ready, 900 ms out on cubic-bezier(0.22,1,0.36,1), a
      failsafe at 1800 ms, will-change released 900 ms later. */
   .enter{position:relative;width:100%;height:100%;overflow:hidden;transform-origin:50%;transform:translateZ(0);
@@ -157,7 +157,7 @@
           <svg class="check" viewBox="0 0 24 24" aria-hidden="true"><use href="#checkmark"></use></svg>
         </button>
       </h2>
-      <p class="h5" data-cms-path="pages.home.homeRegionEarth.description">One smart network for workloads + security — close to users, close to data.</p>
+      <p class="h5" data-cms-path="pages.home.homeRegionEarth.description">One smart network for workloads + security: close to users, close to data.</p>
     </div>
 
     <div class="globe-box" data-cms-preview-heavy="globe">
@@ -178,7 +178,7 @@
             graticule meridians="24" parallels="23" graticule-color="var(--graticule)" equator-color="var(--graticule)"
             graticule-opacity="0.04" equator-opacity="0.04" graticule-width="0.5"></mappo-world>
           <!-- The original draws twelve extra great circles through the poles
-               at 30° spacing, two per plane, on top of its 24 meridians — so
+               at 30° spacing, two per plane, on top of its 24 meridians, so
                every other meridian is stroked three times. A graticule-only
                twin, on a body that has no figure, reproduces the extra two. -->
           <mappo-world id="lattice" mode="globe" body="void" cols="24" lat-min="-90" lat-max="90"
@@ -223,7 +223,7 @@
   <code>fog="-0.67 1.01"</code>, with the land coming from mappo's own Natural Earth mask instead of a picture.</p>
   <p>The pins and captions are ordinary DOM inside the element, positioned by mappo; the arcs are
   <code>mappo/links</code>, fed the original's curve and faded by the fog at every depth. The spin is the original's: the camera orbits the screen's vertical while
-  the globe leans 14.3°, so the pole slowly wanders — that motion is decomposed each frame into mappo's
+  the globe leans 14.3°, so the pole slowly wanders. That motion is decomposed each frame into mappo's
   <code>focus</code>, <code>tilt</code> and <code>roll</code>. Drag the globe: the pointer feeds the same damped rotation OrbitControls uses
   (a twentieth of what is pending, each frame), so the globe eases after the hand and glides to a stop.
   <a href="./">More demos</a>.</p>
@@ -401,8 +401,8 @@ let arcColor = "#ff7038";
 themeGraticule();
 new MutationObserver(themeGraticule).observe(document.documentElement, { attributes: true, attributeFilter: [ "class", "style", "data-theme" ] });
 
-// The arcs are mappo/links on the lattice globe — the same camera in the same
-// box — which puts them over the graticule twin and under the pins, where the
+// The arcs are mappo/links on the lattice globe (the same camera in the same
+// box), which puts them over the graticule twin and under the pins, where the
 // hand-drawn canvas used to sit. fade: true takes the fog's alpha at each depth.
 arcLayer = links(lattice, { color: arcColor, width: 0.004 * geom.R, fade: true });
 
@@ -451,8 +451,8 @@ function paint(force = false) {
   const t = (now - t0) / 1000;
   // The camera turns the way OrbitControls turns it with enableDamping: input
   // (the pointer, and the auto-rotation when nobody is dragging) accumulates in
-  // a pending angle, and each frame applies dampingFactor of it — 5% at 60 fps,
-  // scaled to the real frame time — so the globe eases after the pointer and
+  // a pending angle, and each frame applies dampingFactor of it (5% at 60 fps,
+  // scaled to the real frame time), so the globe eases after the pointer and
   // keeps turning for a moment after release, then settles into the spin.
   if (!dragging && !reduceMotion.matches && !still) pending += SPIN * dt;
   const applied = pending * (1 - Math.pow(1 - DAMPING, dt * 60));
@@ -466,7 +466,7 @@ function paint(force = false) {
   // Visibility is the library's call: overlay-horizon="0.12 0.02" marks a pin
   // behind with hysteresis at the limb (appear above 0.12 facing, stay down to
   // 0.02), overlay-still="172" marks every overlay moving while the camera
-  // turns faster than 172°/s — the original's 0.05 rad per frame. The page
+  // turns faster than 172°/s, the original's 0.05 rad per frame. The page
   // only reads the attributes mappo wrote this frame.
   const located = new Map();
   for (const p of POIS) {
@@ -534,7 +534,7 @@ function caption(p, pinOn, q, t, mobile) {
 
 // ── arcs: user → Workers, Workers → R2, drawn by mappo/links ─────────────────
 // The original's curve: twenty chord samples between the two surface points,
-// each pushed outward by 0.3·(b − b²) — a bulge of 0.075 radii at the middle —
+// each pushed outward by 0.3·(b − b²), a bulge of 0.075 radii at the middle,
 // run through a Catmull-Rom spline and swept into a tube 0.002 radii thick.
 // Its reveal: the head races ahead, the tail follows, the colour fades with
 // the arc's own length. The same points go to mappo/links, which projects them
@@ -590,7 +590,7 @@ function catmullRom(P, per = 10) {
   }
   return out;
 }
-// Equal steps of arc length — what TubeGeometry's getPointAt gives.
+// Equal steps of arc length, what TubeGeometry's getPointAt gives.
 function resample(pts, segments) {
   const cum = [ 0 ];
   for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]));

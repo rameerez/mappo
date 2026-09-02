@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GitHub Globe — mappo</title>
+<title>GitHub Globe · mappo</title>
 <meta name="description" content="github.com/globe rebuilt on mappo: the dotted, lit sphere, the pink arcs of merged pull requests and the blue spikes of open ones, the hover card, the pause toggle and the timezone-dependent opening view, from the original's own constants.">
 <link rel="icon" href="../favicon/favicon-32x32.png">
 <style>
@@ -146,7 +146,7 @@
           <div class="shine"></div>
           <div class="shade"></div>
           <!-- The sky: a second globe with nothing on it, over the lights, carrying the
-               arcs, the spikes and the flag — so the lines are unlit, as in WebGL. -->
+               arcs, the spikes and the flag, so the lines are unlit, as in WebGL. -->
           <mappo-world id="sky" mode="globe" body="void" cols="8" lat-min="-90" lat-max="90"
             distance="8.8" background="none" rotate-speed="0" interactive="false" overlay-horizon="0.1 0.02">
             <div class="vault-root" data-lat="78.14" data-lon="15.26">
@@ -199,7 +199,7 @@
   <code>mappo/links</code>: a pink arc per merged pull request drawing in, holding and erasing on the original's
   600-index-per-second clock, a blue spike per open one rising and sinking as the data window passes.</p>
   <p>The opening view depends on your clock, as theirs does: the globe starts turned by your timezone offset.
-  Drag to spin — the pointer feeds the original's eased velocity, not the angle — and drag up or down to tilt
+  Drag to spin: the pointer feeds the original's eased velocity, not the angle. Drag up or down to tilt
   within its limits. Hover a line for its pull request; the globe slows to a stop while the card shows, and a
   line stays until you let it go. The flag at Svalbard is the Arctic Code Vault. The data is a snapshot of the
   feed the page reads (<code>webgl-globe/data/data.json</code>, with its <code>fallback.json</code>), so what

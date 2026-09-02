@@ -25,7 +25,7 @@ await sleep(Number(waitMs));
 // Only what is inside the viewport gets painted, and the clip is in DOCUMENT
 // coordinates: bring the element into view, let a frame or two run where it
 // now is, and add the scroll offset to its box.
-await evaluate(`(() => { document.querySelector(${JSON.stringify(selector)}).scrollIntoView({ block: "center" }); return true; })()`);
+await evaluate(`(() => { document.querySelector(${JSON.stringify(selector)}).scrollIntoView({ block: "center", behavior: "instant" }); return true; })()`);
 await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 6, y: 6 });
 await sleep(400);
 const rect = await evaluate(`(() => { const b = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return [b.left + scrollX, b.top + scrollY, b.width, b.height]; })()`);
