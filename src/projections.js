@@ -37,6 +37,19 @@ const DEG = Math.PI / 180;
 const FULL = [ -90, 90 ];
 const EPS = 1e-9;
 
+function validateLatRange(latRange) {
+  if (!Array.isArray(latRange) || latRange.length !== 2 || !latRange.every(Number.isFinite) ||
+      latRange[0] < -90 || latRange[1] > 90 || latRange[0] >= latRange[1]) {
+    throw new RangeError("a projection needs latRange [min, max] within [-90, 90] with min < max");
+  }
+  return Object.freeze([ ...latRange ]);
+}
+
+const inRange = (value, min, max) => value >= min - EPS && value <= max + EPS;
+const finitePoint = (p) => p && Number.isFinite(p.x) && Number.isFinite(p.y);
+const finiteLocation = (p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lon);
+const frameLon = (lon) => lon >= -180 && lon <= 180 ? lon : wrapLon(lon);
+
 // Longitude into [-180, 180).
 export function wrapLon(lon) {
   return ((((lon + 180) % 360) + 360) % 360) - 180;
@@ -197,10 +210,9 @@ let customSeq = 0;
 // (a function of [lon, lat] with an .invert). Returns the instance the renderer
 // draws with.
 export function resolveProjection(value, { latRange = FULL, centerLon = 0 } = {}) {
-  if (!Array.isArray(latRange) || latRange.length !== 2 || !latRange.every(Number.isFinite) || latRange[0] >= latRange[1]) {
-    throw new RangeError("a projection needs latRange [min, max] with min < max");
-  }
+  latRange = validateLatRange(latRange);
   if (!Number.isFinite(centerLon)) throw new RangeError("centerLon must be a finite number of degrees");
+  centerLon = wrapLon(centerLon);
   // A longitude of exactly ±180 keeps its side: the right edge of a map centred
   // on 0° is 180, not a wrap to −180. Only out-of-range input is wrapped.
   const shift = (lon) => { const s = lon - centerLon; return s >= -180 && s <= 180 ? s : wrapLon(s); };
@@ -213,8 +225,9 @@ export function resolveProjection(value, { latRange = FULL, centerLon = 0 } = {}
     const hit = INSTANCES.get(key);
     if (hit) return hit;
     const built = spec.create({ latRange, centerLon });
+    if (!Number.isFinite(built.aspect) || built.aspect <= 0) throw new RangeError(`${id} produced an invalid aspect ratio`);
     const instance = Object.freeze({
-      id, kind: spec.kind, key, aspect: built.aspect, centerLon, latRange: [ ...latRange ],
+      id, kind: spec.kind, key, aspect: built.aspect, centerLon, latRange,
       farPole: built.farPole ?? null,
       shift,
       forwardShifted: built.forwardShifted,
@@ -222,13 +235,15 @@ export function resolveProjection(value, { latRange = FULL, centerLon = 0 } = {}
       // (off the disc of a polar map, outside the latitude band). The internal
       // forwardShifted stays permissive so ring geometry never has holes.
       forward: (lat, lon) => {
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+        if (!Number.isFinite(lat) || !Number.isFinite(lon) || !inRange(lat, latRange[0], latRange[1])) return null;
         const p = built.forwardShifted(lat, shift(lon));
-        return p && built.inverse(p.x, p.y) ? p : null;
+        return finitePoint(p) && built.inverse(p.x, p.y) ? p : null;
       },
       inverse: (x, y) => {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
         const p = built.inverse(x, y);
-        return p ? { lat: p.lat, lon: wrapLon(p.lonS + centerLon) } : null;
+        if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lonS) || !inRange(p.lat, latRange[0], latRange[1])) return null;
+        return { lat: Math.max(-90, Math.min(90, p.lat)), lon: wrapLon(p.lonS + centerLon) };
       },
       outline: built.outline
     });
@@ -250,64 +265,242 @@ function customKey(value, latRange) {
   return `${base}|${latRange[0]}|${latRange[1]}`;
 }
 
-// Your own projection. The seam is yours too: rings are drawn as the body
-// stores them (cut at ±180°), which is right for any projection centred on 0°.
+function validateOutline(value) {
+  const raw = typeof value.outline === "function" ? value.outline() : null;
+  const source = raw ?? [ [ [ 0, 0 ], [ 1, 0 ], [ 1, 1 ], [ 0, 1 ], [ 0, 0 ] ] ];
+  if (!Array.isArray(source) || source.length === 0) throw new TypeError("projection outline() must return one or more rings");
+  return Object.freeze(source.map((ring) => {
+    if (!Array.isArray(ring) || ring.length < 3) throw new TypeError("projection outline rings need at least three points");
+    const points = ring.map((point) => {
+      if (!Array.isArray(point) || point.length < 2 || !Number.isFinite(point[0]) || !Number.isFinite(point[1]) ||
+          !inRange(point[0], 0, 1) || !inRange(point[1], 0, 1)) {
+        throw new RangeError("projection outline points must be finite [x, y] coordinates in the unit frame");
+      }
+      return Object.freeze([ Math.max(0, Math.min(1, point[0])), Math.max(0, Math.min(1, point[1])) ]);
+    });
+    if (points[0][0] !== points[points.length - 1][0] || points[0][1] !== points[points.length - 1][1]) points.push(points[0]);
+    return Object.freeze(points);
+  }));
+}
+
+// Your own projection. By default its spherical seam is the antimeridian,
+// which is what a conventional projection centred on 0° expects. Set
+// `seam: false` when the mapping has no cylindrical seam; if its forward
+// function cannot project a complete vector ring, the renderer deliberately
+// falls back to screen-grid contours instead of connecting survivors by a
+// false chord.
 function adaptCustom(value, latRange) {
+  const aspect = value.aspect ?? 2;
+  if (!Number.isFinite(aspect) || aspect <= 0) throw new RangeError("a custom projection needs a positive finite aspect ratio");
+  const outline = validateOutline(value);
+  const rawForward = value.forward.bind(value);
+  const rawInverse = value.inverse.bind(value);
+  const lonInFrame = frameLon;
   const forward = (lat, lon) => {
-    const p = value.forward(lat, lon);
-    return p && Number.isFinite(p.x) && Number.isFinite(p.y) ? { x: p.x, y: p.y } : null;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !inRange(lat, latRange[0], latRange[1])) return null;
+    const p = rawForward(lat, lonInFrame(lon));
+    return finitePoint(p) && inRange(p.x, 0, 1) && inRange(p.y, 0, 1)
+      ? { x: Math.max(0, Math.min(1, p.x)), y: Math.max(0, Math.min(1, p.y)) }
+      : null;
+  };
+  const inverse = (x, y) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !inRange(x, 0, 1) || !inRange(y, 0, 1)) return null;
+    const p = rawInverse(x, y);
+    if (!finiteLocation(p) || !inRange(p.lat, latRange[0], latRange[1]) || !inRange(p.lat, -90, 90)) return null;
+    const result = { lat: Math.max(-90, Math.min(90, p.lat)), lon: frameLon(p.lon) };
+    const back = forward(result.lat, result.lon);
+    return back && Math.hypot(back.x - x, back.y - y) <= 1e-6 ? result : null;
   };
   return Object.freeze({
-    id: value.id ?? "custom", kind: "custom", key: customKey(value, latRange),
-    aspect: value.aspect ?? 2, centerLon: 0, latRange: [ ...latRange ], farPole: null,
-    shift: (lon) => lon,
-    forwardShifted: forward,
+    id: value.id ?? "custom", kind: value.seam === false ? "custom" : "cylindrical", key: customKey(value, latRange),
+    aspect, centerLon: 0, latRange, farPole: null,
+    shift: lonInFrame,
+    forwardShifted: (lat, lon) => forward(lat, lon),
     forward,
-    inverse: (x, y) => {
-      const p = value.inverse(x, y);
-      return p && Number.isFinite(p.lat) && Number.isFinite(p.lon) ? { lat: p.lat, lon: p.lon } : null;
-    },
-    outline: () => (typeof value.outline === "function" ? value.outline() : null) ??
-      [ [ [ 0, 0 ], [ 1, 0 ], [ 1, 1 ], [ 0, 1 ], [ 0, 0 ] ] ]
+    inverse,
+    outline: () => outline
   });
 }
 
-// A d3-geo projection: proj([lon, lat]) → [x, y] in its own pixel space, and
-// proj.invert([x, y]) → [lon, lat]. The frame is the bounding box of the whole
-// sphere as the projection draws it, found by sampling; a frame point is off
-// the world when the inverse does not round-trip, which is how d3 signals it.
-function adaptD3(proj, latRange) {
+const D3_ADAPTERS = new WeakMap();
+let d3Seq = 0;
+const D3_GETTERS = [ "angle", "center", "clipAngle", "clipExtent", "parallels", "precision", "reflectX", "reflectY", "rotate", "scale", "translate" ];
+const D3_NOT_GETTERS = new Set([ "stream", "invert", "fitExtent", "fitSize", "fitWidth", "fitHeight", "copy" ]);
+const STATE_IDS = new WeakMap();
+let stateSeq = 0;
+
+function stateValue(value) {
+  if (Array.isArray(value)) return value.map(stateValue);
+  if (value && typeof value === "object") {
+    const entries = Object.keys(value).sort().map((key) => [ key, stateValue(value[key]) ]);
+    if (entries.length) return entries;
+  }
+  if (typeof value === "function" || (value && typeof value === "object")) {
+    let id = STATE_IDS.get(value);
+    if (!id) STATE_IDS.set(value, id = ++stateSeq);
+    return `<identity:${id}>`;
+  }
+  return value;
+}
+
+function d3Signature(proj) {
+  const names = [ ...new Set([ ...D3_GETTERS, ...Object.keys(proj) ]) ].filter((name) =>
+    !D3_NOT_GETTERS.has(name) && typeof proj[name] === "function").sort();
+  return JSON.stringify(names.map((name) => {
+    try { return [ name, stateValue(proj[name]()) ]; }
+    catch { return [ name, "<unreadable>" ]; }
+  }));
+}
+
+function streamPaths(proj, write) {
+  const paths = [];
+  let line = null;
+  const sink = {
+    point(x, y) { if (line && Number.isFinite(x) && Number.isFinite(y)) line.push([ x, y ]); },
+    lineStart() { line = []; },
+    lineEnd() { if (line?.length > 1) paths.push(line); line = null; },
+    polygonStart() {}, polygonEnd() {}, sphere() {}
+  };
+  write(proj.stream(sink));
+  return paths;
+}
+
+function streamLine(proj, coordinates, polygon = false) {
+  return streamPaths(proj, (stream) => {
+    if (polygon) stream.polygonStart();
+    stream.lineStart();
+    const n = polygon && coordinates.length > 1 && coordinates[0][0] === coordinates[coordinates.length - 1][0] &&
+      coordinates[0][1] === coordinates[coordinates.length - 1][1] ? coordinates.length - 1 : coordinates.length;
+    for (let i = 0; i < n; i++) stream.point(coordinates[i][0], coordinates[i][1]);
+    stream.lineEnd();
+    if (polygon) stream.polygonEnd();
+  });
+}
+
+function pointProjector(proj) {
+  let point = null;
+  const sink = {
+    point(x, y) { if (!point && Number.isFinite(x) && Number.isFinite(y)) point = [ x, y ]; },
+    lineStart() {}, lineEnd() {}, polygonStart() {}, polygonEnd() {}, sphere() {}
+  };
+  const stream = proj.stream(sink);
+  return (lon, lat) => {
+    point = null;
+    stream.point(lon, lat);
+    return point;
+  };
+}
+
+function bandRing([ lat0, lat1 ]) {
+  const ring = [];
+  const step = 0.25;
+  for (let lon = -180; lon <= 180; lon += step) ring.push([ lon, lat1 ]);
+  for (let lon = 180; lon >= -180; lon -= step) ring.push([ lon, lat0 ]);
+  ring.push(ring[0]);
+  return ring;
+}
+
+function d3Frame(proj, latRange) {
+  const paths = latRange[0] === -90 && latRange[1] === 90
+    ? streamPaths(proj, (stream) => stream.sphere())
+    : streamLine(proj, bandRing(latRange), true);
+  const points = paths.flat();
+  if (points.length < 3) throw new RangeError("d3 projection produced no finite frame");
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  const see = (lon, lat) => {
-    const p = proj([ lon, lat ]);
-    if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) return;
-    if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
-    if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
-  };
-  for (let lon = -180; lon <= 180; lon += 1) { see(lon, latRange[0]); see(lon, latRange[1]); for (let lat = -90; lat <= 90; lat += 5) see(lon, lat); }
-  for (let lat = -90; lat <= 90; lat += 0.5) { see(-180, lat); see(180, lat); see(0, lat); }
+  for (const [ x, y ] of points) {
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+  }
   if (!(maxX > minX && maxY > minY)) throw new RangeError("d3 projection produced no finite frame");
-  const width = maxX - minX, height = maxY - minY, tolerance = 1e-6 * Math.max(width, height);
+  const width = maxX - minX, height = maxY - minY;
+  const normalize = ([ x, y ]) => [ (x - minX) / width, (y - minY) / height ];
+  const outline = paths.filter((path) => path.length >= 3).map((path) => {
+    const ring = path.map(normalize);
+    if (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1]) ring.push([ ...ring[0] ]);
+    return ring;
+  });
+  return { minX, minY, width, height, normalize, outline };
+}
+
+// A real d3-geo projection is adapted through projection.stream, not by direct
+// point calls. The stream is where d3 applies spherical clipping, rotation,
+// antimeridian cutting and adaptive resampling.
+function adaptD3(proj, latRange) {
+  if (typeof proj.stream !== "function") {
+    throw new TypeError("a d3-geo projection needs .stream() as well as .invert(); pass a { forward, inverse } object for a custom projection");
+  }
+  const signature = d3Signature(proj);
+  let cache = D3_ADAPTERS.get(proj);
+  if (!cache) D3_ADAPTERS.set(proj, cache = new Map());
+  const cacheKey = `${latRange[0]}|${latRange[1]}|${signature}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const frame = d3Frame(proj, latRange);
+  const streamPoint = pointProjector(proj);
+  const tolerance = 1e-6 * Math.max(frame.width, frame.height);
+  const normalized = (point) => ({ x: (point[0] - frame.minX) / frame.width, y: (point[1] - frame.minY) / frame.height });
   const forward = (lat, lon) => {
-    const p = proj([ lon, lat ]);
-    return p && Number.isFinite(p[0]) && Number.isFinite(p[1]) ? { x: (p[0] - minX) / width, y: (p[1] - minY) / height } : null;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !inRange(lat, latRange[0], latRange[1])) return null;
+    const p = streamPoint(wrapLon(lon), lat);
+    if (!p) return null;
+    const result = normalized(p);
+    return inRange(result.x, 0, 1) && inRange(result.y, 0, 1) ? result : null;
   };
-  return Object.freeze({
-    id: "d3", kind: "custom", key: customKey(proj, latRange),
-    aspect: width / height, centerLon: 0, latRange: [ ...latRange ], farPole: null,
+  const adapter = Object.freeze({
+    id: "d3", kind: "d3", key: `${customKey(proj, latRange)}|state-${++d3Seq}`,
+    aspect: frame.width / frame.height, centerLon: 0, latRange, farPole: null,
     shift: (lon) => lon,
     forwardShifted: forward,
     forward,
     inverse: (x, y) => {
-      const px = minX + x * width, py = minY + y * height;
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !inRange(x, 0, 1) || !inRange(y, 0, 1)) return null;
+      const px = frame.minX + x * frame.width, py = frame.minY + y * frame.height;
       const ll = proj.invert([ px, py ]);
       if (!ll || !Number.isFinite(ll[0]) || !Number.isFinite(ll[1])) return null;
-      const back = proj(ll);
+      const lon = frameLon(ll[0]), lat = ll[1];
+      if (!inRange(lat, -90, 90) || !inRange(lat, latRange[0], latRange[1])) return null;
+      const back = streamPoint(lon, lat);
       if (!back || Math.hypot(back[0] - px, back[1] - py) > tolerance) return null;
-      return { lat: ll[1], lon: ll[0] };
+      return { lat: Math.max(-90, Math.min(90, lat)), lon };
     },
-    outline: () => [ [ [ 0, 0 ], [ 1, 0 ], [ 1, 1 ], [ 0, 1 ], [ 0, 0 ] ] ]
+    outline: () => frame.outline,
+    projectRings(rings) {
+      const fill = [], edge = [];
+      for (const ring of rings) {
+        if (ring.length < 4) continue;
+        const coordinates = ring.map(([ lat, lon ]) => [ lon, lat ]);
+        // Measure semantic fill winding on continuous longitude, including a
+        // pole closure for a pole-encircling ring. Discontinuous longitude
+        // made tiny Chukotka look like a hemisphere-sized hole; omitting the
+        // pole closure made Mars's northern lowlands look like one too.
+        const sourceSign = ringFillSign(unwrap(ring, frameLon));
+        const polygonInput = sourceSign < 0 ? [ ...coordinates ].reverse() : coordinates;
+        for (const path of streamLine(proj, polygonInput, true)) {
+          const points = path.map(frame.normalize);
+          if (points.length < 3) continue;
+          // d3 may emit several related rings for one clipped polygon: a clip
+          // boundary and one or more geographic arcs with deliberately
+          // opposite winding. Preserve that relationship. A source hole was
+          // reversed before streaming so d3 clips its small interior; reverse
+          // the whole emitted compound (every ring), not each ring toward one
+          // sign, to turn that interior back into a nonzero-fill hole.
+          if (sourceSign < 0) points.reverse();
+          fill.push({ points, complement: false });
+        }
+        for (const path of streamLine(proj, coordinates, false)) {
+          if (path.length > 1) edge.push(path.map(frame.normalize));
+        }
+      }
+      return { fill, edge, complete: true };
+    },
+    projectPolyline(line) {
+      return streamLine(proj, line.map(([ lat, lon ]) => [ lon, lat ]), false).map((path) => path.map(frame.normalize));
+    }
   });
+  cache.set(cacheKey, adapter);
+  if (cache.size > 8) cache.delete(cache.keys().next().value);
+  return adapter;
 }
 
 // ── rings across the seam ───────────────────────────────────────────────────
@@ -357,6 +550,7 @@ export function stitchRings(rings) {
   const TOL = 1;
   const used = new Set();
   const failed = new Set();   // source rings whose arcs could not all be matched
+  const successes = [];
   for (const first of arcs) {
     if (used.has(first)) continue;
     const chain = [ ...first.pts ];
@@ -382,8 +576,25 @@ export function stitchRings(rings) {
       chain.push(...(Math.abs(next.pts[0][0] - end[0]) < 1e-9 ? next.pts.slice(1) : next.pts));
       cur = next;
     }
-    if (closed) out.push(closeRing(chain));
+    if (closed) successes.push({ ring: closeRing(chain), members });
     else for (const m of members) failed.add(m.source);
+  }
+  // Stitching is transactional at SOURCE-ring level. A source may contain
+  // several arcs; if any one cannot be paired, no successful chain containing
+  // another of its arcs may also be emitted beside the untouched original.
+  // Propagate that invalidation through chains before deciding what survives.
+  let invalidated = true;
+  while (invalidated) {
+    invalidated = false;
+    for (const success of successes) {
+      if (!success.members.some((m) => failed.has(m.source))) continue;
+      for (const m of success.members) {
+        if (!failed.has(m.source)) { failed.add(m.source); invalidated = true; }
+      }
+    }
+  }
+  for (const success of successes) {
+    if (!success.members.some((m) => failed.has(m.source))) out.push(success.ring);
   }
   // Anything that would not stitch is drawn as the pack stored it.
   for (const source of failed) out.push(rings[source]);
@@ -417,6 +628,19 @@ function unwrap(ring, shift) {
 }
 
 const meanLat = (pts) => pts.reduce((s, p) => s + p[0], 0) / pts.length;
+
+// The sign a spherical ring contributes to nonzero fill. Longitude must be
+// continuous, and a ring winding a pole must include the same pole closure the
+// cylindrical renderer adds later; without it, a polar cap and the complement
+// of that cap are indistinguishable in planar shoelace area.
+function ringFillSign({ seq, winding }) {
+  const closed = [ ...seq ];
+  if (winding !== 0) {
+    const pole = meanLat(seq) >= 0 ? 90 : -90;
+    closed.push([ pole, seq[seq.length - 1][1] ], [ pole, seq[0][1] ]);
+  }
+  return Math.sign(signedArea(closed.map(([ lat, lon ]) => [ lon, -lat ])));
+}
 
 // Cut one unwrapped ring at the seam of a cylindrical projection (λ' = ±180 and
 // its 360° repeats). Returns pieces with shifted longitudes inside [−180, 180],
@@ -470,25 +694,55 @@ function normalizePiece(pts) {
   return out;
 }
 
+// Interior points along one side of a cylindrical frame. Equal Earth and
+// sinusoidal seams are curves, so closing a fill with SVG's one straight Z
+// segment cuts a shallow false chord through the map edge. A two-degree
+// latitude step is finer than the stored vector geometry and follows the
+// projection's real boundary; the stroke remains the open geographic arc.
+function seamClosure(last, first) {
+  const count = Math.ceil(Math.abs(first[0] - last[0]) / 2);
+  const points = [];
+  for (let i = 1; i < count; i++) {
+    const t = i / count;
+    points.push([ last[0] + t * (first[0] - last[0]), last[1] ]);
+  }
+  return points;
+}
+
 // Rings of [lat, lon] → what the flat renderer draws, in unit-frame
 // coordinates: `fill` pieces (closed; `complement` marks a ring whose interior
 // contains the far pole of an azimuthal map and must be filled outside-in) and
 // `edge` arcs (open, never along a seam).
 export function projectRings(rings, projection) {
+  if (typeof projection.projectRings === "function") return projection.projectRings(rings);
   const fill = [], edge = [];
-  const toFrame = (pts) => pts.map(([ lat, lonS ]) => { const p = projection.forwardShifted(lat, lonS); return [ p.x, p.y ]; });
+  let complete = true;
+  const toFrame = (pts) => {
+    const frame = [];
+    for (const [ lat, lonS ] of pts) {
+      const p = projection.forwardShifted(lat, lonS);
+      if (!p) { complete = false; return null; }
+      frame.push([ p.x, p.y ]);
+    }
+    return frame;
+  };
 
   for (const ring of rings) {
     if (ring.length < 4) continue;
     if (projection.kind === "custom") {
       const pts = [];
-      for (const [ lat, lon ] of ring) { const p = projection.forward(lat, lon); if (p) pts.push([ p.x, p.y ]); }
-      if (pts.length >= 3) { fill.push({ points: pts, complement: false }); edge.push(pts); }
+      for (const [ lat, lon ] of ring) {
+        const p = projection.forward(lat, lon);
+        if (!p) { complete = false; break; }
+        pts.push([ p.x, p.y ]);
+      }
+      if (pts.length === ring.length && pts.length >= 3) { fill.push({ points: pts, complement: false }); edge.push(pts); }
       continue;
     }
     const unwrapped = unwrap(ring, projection.shift);
     if (projection.kind === "azimuthal") {
       const pts = toFrame(unwrapped.seq);
+      if (!pts) continue;
       const enclosedPole = unwrapped.winding !== 0 ? (meanLat(unwrapped.seq) >= 0 ? 90 : -90) : null;
       fill.push({ points: pts, complement: enclosedPole !== null && enclosedPole === projection.farPole });
       edge.push([ ...pts, pts[0] ]);
@@ -496,6 +750,7 @@ export function projectRings(rings, projection) {
     }
     for (const { pts, closure } of cutAtSeam(unwrapped)) {
       const frame = toFrame(pts);
+      if (!frame) continue;
       if (closure === "ring") {
         fill.push({ points: frame, complement: false });
         edge.push([ ...frame, frame[0] ]);
@@ -504,31 +759,42 @@ export function projectRings(rings, projection) {
         if (closure === "pole") {
           const pole = meanLat(pts) >= 0 ? 90 : -90;
           const last = pts[pts.length - 1], first = pts[0];
-          fill.push({ points: [ ...frame, ...toFrame([ [ pole, last[1] ], [ pole, first[1] ] ]) ], complement: false });
+          const closureFrame = toFrame([ [ pole, last[1] ], [ pole, first[1] ] ]);
+          if (closureFrame) fill.push({ points: [ ...frame, ...closureFrame ], complement: false });
         } else {
-          fill.push({ points: frame, complement: false });   // the seam edge closes it
+          const boundary = toFrame(seamClosure(pts[pts.length - 1], pts[0]));
+          if (boundary) fill.push({ points: [ ...frame, ...boundary ], complement: false });
         }
       }
     }
   }
-  return { fill, edge };
+  return { fill, edge, complete };
 }
 
 // A polyline of [lat, lon] (a graticule line) → unit-frame polylines, broken
 // wherever the line leaves the map or crosses a cylindrical seam.
 export function projectPolyline(line, projection) {
+  if (typeof projection.projectPolyline === "function") return projection.projectPolyline(line);
   const out = [];
-  let cur = [], prevS = null;
+  let cur = [], prevS = null, prevLat = null;
   for (const [ lat, lon ] of line) {
     const s = projection.shift(lon);
     if (prevS !== null && projection.kind === "cylindrical" && Math.abs(s - prevS) > 180) {
+      const lifted = s < prevS ? s + 360 : s - 360;
+      const boundary = lifted > prevS ? 180 : -180;
+      const t = (boundary - prevS) / (lifted - prevS);
+      const crossLat = prevLat + t * (lat - prevLat);
+      const before = projection.forwardShifted(crossLat, boundary);
+      if (before) cur.push([ before.x, before.y ]);
       if (cur.length > 1) out.push(cur);
-      cur = [];
+      const after = projection.forwardShifted(crossLat, -boundary);
+      cur = after ? [ [ after.x, after.y ] ] : [];
     }
     const p = projection.kind === "custom" ? projection.forward(lat, lon) : projection.forwardShifted(lat, s);
-    if (!p) { if (cur.length > 1) out.push(cur); cur = []; prevS = null; continue; }
+    if (!p) { if (cur.length > 1) out.push(cur); cur = []; prevS = null; prevLat = null; continue; }
     cur.push([ p.x, p.y ]);
     prevS = s;
+    prevLat = lat;
   }
   if (cur.length > 1) out.push(cur);
   return out;

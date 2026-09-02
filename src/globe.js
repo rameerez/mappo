@@ -10,6 +10,18 @@
 // just outside the sphere. tilt doubles as the axial tilt here — the same
 // option that lays the flat map down leans the globe.
 //
+// Two options change that grammar, both opt-in:
+//
+//   distance   a perspective camera at that many body radii from the centre
+//              (Infinity, the default, is the orthographic view). The near
+//              side grows, the far side shrinks, and the visible cap is
+//              smaller than a hemisphere — the way a camera actually sees a
+//              sphere from close by.
+//   fog        [near, far] in radii from the centre plane, positive away from
+//              the viewer. The globe becomes GLASS: the far hemisphere is drawn
+//              too, and everything fades from opaque at `near` to invisible at
+//              `far`, so depth is carried by alpha rather than by culling.
+//
 // Geometry is a sphere of unit radius; `radiusKm` on a body is for the
 // consumer's arithmetic, never for drawing. Latitude is planetocentric,
 // longitude east-positive — whatever the body, whatever its native map used.
@@ -20,7 +32,8 @@
 // Expensive source geometry and trigonometry stay out of the frame loop: dots,
 // figure quads, contour loops and vector outlines are precomputed unit-sphere
 // coordinates in typed arrays. Frames rotate those into short-lived canvas
-// paths. Several globes on one page is a first-class case.
+// paths, and a frame in which nothing moved is not drawn at all. Several
+// globes on one page is a first-class case.
 
 import { resolvePlaces } from "./body.js";
 import { stitchRings } from "./projections.js";
@@ -30,6 +43,9 @@ import { noise2 } from "./noise.js";
 import { hoverShade, resolveColor, usesCssVars } from "./color.js";
 import { buildGraticule } from "./graticule.js";
 import { buildFigure, parseFigureStyle, figureOutlines, figureBorders } from "./figure.js";
+
+const DEGREES = 180 / Math.PI;
+const GOLDEN = (1 + Math.sqrt(5)) / 2;
 
 // Unit-sphere position for a lat/lon. At rotation 0, lon 0 faces the
 // viewer (+z out of the screen), +y is north.
@@ -44,39 +60,79 @@ export function latLonToXYZ(lat, lon) {
   };
 }
 
-// Figure dots as a flat Float32Array [x,y,z, x,y,z, …] — same grid sampling
-// as the flat renderer (cellCenter + the body's figure()), so flat and globe
-// agree on what the world looks like at a given resolution. `ground` flips
-// the selection to the complement (the filler dots).
-export function buildGlobePoints(cols, latRange, body, ground = false) {
-  const rows = Math.round((cols / 360) * (latRange[1] - latRange[0]));
-  const grid = { cols, rows, latRange };
-  const out = [];
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const c = cellCenter(col, row, grid);
-      if (Boolean(body.figure(c.lat, c.lon)) === ground) continue;
-      const p = latLonToXYZ(c.lat, c.lon);
-      out.push(p.x, p.y, p.z);
+// The number of Fibonacci-lattice candidates that gives the same spacing at
+// the equator as a grid of `cols` cells: the sphere's area over one cell's.
+export function uniformCount(cols) {
+  return Math.round((cols * cols) / Math.PI);
+}
+
+// The dot field, one sample at a time. Two ways to lay dots on a sphere:
+//
+//   "grid"     the lat/lon grid the flat map draws — cols cells across 360°,
+//              rows = cols · Δφ / 360 — so flat and globe agree on what the
+//              world looks like at a given resolution. Cells bunch toward the
+//              poles, as a grid must.
+//   "uniform"  a Fibonacci lattice: equal area per dot everywhere, no bunching.
+//              round(cols² / π) candidates, so the equatorial spacing matches
+//              the grid's and `cols` keeps meaning "resolution". A lattice has
+//              two points its spiral arms converge on; they are put on the
+//              equator at ±90° so that on Earth both fall in open ocean, where
+//              a swirl cannot be seen. (The sample order and the golden-ratio
+//              azimuth are the standard construction; the axis is the choice.)
+//
+// `fn(lat, lon, col, row)`: for the grid, the cell; for the lattice, the
+// fractional grid position of the sample, so the animation phase fields and
+// the hit-test have something spatial to hold on to.
+export function forEachSample(cols, latRange, distribution, fn) {
+  const [ latMin, latMax ] = latRange;
+  const rows = Math.round((cols / 360) * (latMax - latMin));
+  if (distribution !== "uniform") {
+    const grid = { cols, rows, latRange };
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const c = cellCenter(col, row, grid);
+        fn(c.lat, c.lon, col, row);
+      }
     }
+    return;
   }
+  const n = uniformCount(cols);
+  for (let i = 0; i < n; i++) {
+    const theta = Math.acos(1 - (2 * i) / n);
+    const a = 2 * Math.PI * GOLDEN * i;
+    const sx = Math.sin(theta) * Math.cos(a), sy = Math.sin(theta) * Math.sin(a), sz = Math.cos(theta);
+    // sy is north; the lattice axis (sz) points at lat 0, lon −90.
+    const lat = Math.asin(sy) * DEGREES;
+    let lon = Math.atan2(sx, sz) * DEGREES - 90;
+    if (lon < -180) lon += 360;
+    if (lat < latMin || lat > latMax) continue;
+    fn(lat, lon, ((lon + 180) / 360) * cols, ((latMax - lat) / (latMax - latMin)) * rows);
+  }
+}
+
+// Figure dots as a flat Float32Array [x,y,z, x,y,z, …] — same sampling as the
+// flat renderer for the grid distribution (cellCenter + the body's figure()),
+// so flat and globe agree on what the world looks like at a given resolution.
+// `ground` flips the selection to the complement (the filler dots).
+export function buildGlobePoints(cols, latRange, body, ground = false, distribution = "grid") {
+  const out = [];
+  forEachSample(cols, latRange, distribution, (lat, lon) => {
+    if (Boolean(body.figure(lat, lon)) === ground) return;
+    const p = latLonToXYZ(lat, lon);
+    out.push(p.x, p.y, p.z);
+  });
   return new Float32Array(out);
 }
 
 // Per-point highlight flags, aligned index-for-index with buildGlobePoints
 // (same loop, same skip rule) — the phase-array discipline, reused: geometry
 // arrays never reorder, parallel arrays annotate.
-export function buildGlobeFlags(cols, latRange, test, body) {
-  const rows = Math.round((cols / 360) * (latRange[1] - latRange[0]));
-  const grid = { cols, rows, latRange };
+export function buildGlobeFlags(cols, latRange, test, body, distribution = "grid") {
   const out = [];
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const c = cellCenter(col, row, grid);
-      if (!body.figure(c.lat, c.lon)) continue;
-      out.push(test(c.lat, c.lon) ? 1 : 0);
-    }
-  }
+  forEachSample(cols, latRange, distribution, (lat, lon) => {
+    if (!body.figure(lat, lon)) return;
+    out.push(test(lat, lon) ? 1 : 0);
+  });
   return new Uint8Array(out);
 }
 
@@ -84,25 +140,42 @@ export function buildGlobeFlags(cols, latRange, test, body) {
 // buildGlobePoints. Phase picks WHEN a dot moves in the cycle, amp how far —
 // the exact fields the flat renderer bakes into its dot markup, so the modes
 // read the same on a sphere.
-export function buildGlobePhases(cols, latRange, mode, body) {
+export function buildGlobePhases(cols, latRange, mode, body, distribution = "grid") {
   const rows = Math.round((cols / 360) * (latRange[1] - latRange[0]));
-  const grid = { cols, rows, latRange };
   const out = [];
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const c = cellCenter(col, row, grid);
-      if (!body.figure(c.lat, c.lon)) continue;
-      let p;
-      switch (mode) {
-        case "noise":   p = (noise2(col * 0.22, row * 0.22) + 1) / 2; break;
-        case "ripple":  p = Math.hypot(col - cols / 2, row - rows / 2) / Math.hypot(cols / 2, rows / 2); break;
-        case "sweep":   p = col / cols; break;
-        case "sparkle": p = (noise2(col * 3.7 + 9, row * 3.7 + 9) + 1) / 2; break;
-        default:        p = (col + row) / (cols + rows); // wave
-      }
-      out.push(p, 0.55 + 0.45 * ((noise2(col * 0.31 + 47, row * 0.31 + 47) + 1) / 2));
+  forEachSample(cols, latRange, distribution, (lat, lon, col, row) => {
+    if (!body.figure(lat, lon)) return;
+    let p;
+    switch (mode) {
+      case "noise":   p = (noise2(col * 0.22, row * 0.22) + 1) / 2; break;
+      case "ripple":  p = Math.hypot(col - cols / 2, row - rows / 2) / Math.hypot(cols / 2, rows / 2); break;
+      case "sweep":   p = col / cols; break;
+      case "sparkle": p = (noise2(col * 3.7 + 9, row * 3.7 + 9) + 1) / 2; break;
+      default:        p = (col + row) / (cols + rows); // wave
     }
-  }
+    out.push(p, 0.55 + 0.45 * ((noise2(col * 0.31 + 47, row * 0.31 + 47) + 1) / 2));
+  });
+  return new Float32Array(out);
+}
+
+// Tiles: a square lying ON the surface at each dot — nine floats per dot, the
+// centre and the east and north tangents scaled to half a side (`halfSide`,
+// in radii). Projected corner by corner, a tile foreshortens the way a real
+// tangent square does: into a sliver along the limb, not a smaller square.
+// Aligned index-for-index with buildGlobePoints, like everything else.
+export function buildGlobeTiles(cols, latRange, body, halfSide, ground = false, distribution = "grid") {
+  const out = [];
+  const h = halfSide;
+  forEachSample(cols, latRange, distribution, (lat, lon) => {
+    if (Boolean(body.figure(lat, lon)) === ground) return;
+    const phi = lat / DEGREES, lambda = lon / DEGREES;
+    const cp = Math.cos(phi), sp = Math.sin(phi), cl = Math.cos(lambda), sl = Math.sin(lambda);
+    out.push(
+      cp * sl, sp, cp * cl,                 // centre
+      h * cl, 0, -h * sl,                   // east, half a side long
+      -h * sp * sl, h * cp, -h * sp * cl    // north, half a side long
+    );
+  });
   return new Float32Array(out);
 }
 
@@ -126,6 +199,20 @@ function xyzRings(rings) {
   return out;
 }
 
+// Alpha is quantised into this many bands for the batched fills and strokes;
+// fine enough that a fog gradient reads as continuous.
+const BANDS = 24;
+
+// Fog at view depth z (unit radii, positive toward the viewer), as an sRGB
+// alpha: smoothstep from near to far in radii behind the centre plane, the
+// transmittance then lifted by 1/2.2 so that compositing in sRGB matches a
+// mix in linear light over a dark ground. See #fadeOf.
+function fogAlpha(z, [ near, far ]) {
+  const t = Math.min(1, Math.max(0, (-z - near) / (far - near)));
+  const transmitted = 1 - t * t * (3 - 2 * t);
+  return transmitted <= 0 ? 0 : Math.pow(transmitted, 1 / 2.2);
+}
+
 export class GlobeRenderer {
   // @param container [HTMLElement] emptied; a square canvas fills its width.
   // @param options   [Object] the owning Mappo's options (shared ref).
@@ -142,6 +229,7 @@ export class GlobeRenderer {
     this.angle = options.focus ? ((-options.focus.lon % 360) + 360) % 360 : 0;
     this._raf = null;
     this._t = null;
+    this._dirty = true;
 
     // The host is guaranteed block-level by Mappo#render before we get here
     // — an inline container has clientWidth 0, which turned v0.3.0's first
@@ -190,6 +278,7 @@ export class GlobeRenderer {
         this._visible = entry.isIntersecting;
         if (this._visible && !this._raf && !this._static) {
           this._t = null; // don't let the paused gap become one giant dt
+          this._dirty = true;
           this._loop();
         }
       });
@@ -198,7 +287,11 @@ export class GlobeRenderer {
     if (typeof ResizeObserver === "function") {
       // Observe the canvas itself: its CSS box (100% wide, aspect-locked
       // square) is the ground truth the backing store must match.
-      this._ro = new ResizeObserver(() => this._resize());
+      // The observer reports the LAYOUT size, which is the one that matters:
+      // an ancestor's transform (a page scaling the globe in as it appears)
+      // changes the box on screen, not the pixels the canvas should hold nor
+      // the frame locate() should answer in.
+      this._ro = new ResizeObserver(([ entry ]) => this._resize(entry?.contentRect?.width));
       this._ro.observe(this.canvas);
     }
 
@@ -215,8 +308,10 @@ export class GlobeRenderer {
     "tilt", "roll", "rotateSpeed", "focus", "globeRing", "background",
     "figureColor", "figureStroke", "figureStrokeWidth", "dotHoverColor", "dotHoverScale",
     "bordersColor", "bordersWidth", "bordersOpacity",
-    "graticuleColor", "equatorColor", "graticuleOpacity", "equatorOpacity",
+    "graticuleColor", "equatorColor", "graticuleOpacity", "equatorOpacity", "graticuleWidth",
     "markerColor", "markerScale", "markerHoverScale", "highlightColor", "overlays",
+    // The camera and the fog change the frame's arithmetic, not its geometry.
+    "distance", "fog",
     // Flat-map concerns the globe ignores entirely.
     "projection", "centerLon"
   ]);
@@ -244,6 +339,7 @@ export class GlobeRenderer {
       this._rebuildData();
     }
     if (!changed || changed.includes("focus")) this.#aim();
+    this._dirty = true;
     this._draw();
   }
 
@@ -267,7 +363,7 @@ export class GlobeRenderer {
       this.o.highlightColor, this.o.dotHoverColor);
     if (wanted === !!this._themeObserver) return;
     if (!wanted) { this._themeObserver.disconnect(); this._themeObserver = null; return; }
-    this._themeObserver = new MutationObserver(() => { this._cvCache = null; this._draw(); });
+    this._themeObserver = new MutationObserver(() => { this._cvCache = null; this._dirty = true; this._draw(); });
     this._themeObserver.observe(document.documentElement, {
       attributes: true, attributeFilter: [ "class", "style", "data-theme" ]
     });
@@ -408,6 +504,7 @@ export class GlobeRenderer {
     if (key === this._hoverKey) return;
     this._hoverKey = key;
     this._hover = hit;
+    this._dirty = true;
     this.canvas.style.cursor = hit
       ? (hit.kind === "place" ? this.o.markerCursor : this.o.cursor)
       : "grab";
@@ -419,39 +516,34 @@ export class GlobeRenderer {
     if (!this._hover) return;
     this._hover = null;
     this._hoverKey = null;
+    this._dirty = true;
     this.canvas.style.cursor = this.o.interactive === false ? "" : "grab";
     if (this._static) this._draw();
   }
 
-  // Screen point → sphere surface → lat/lon → grid cell (or place, checked
-  // first in screen space since markers draw on top).
+  // Screen point → sphere surface → lat/lon → dot (or place, checked first in
+  // screen space since markers draw on top). The inverse of #project: un-roll
+  // the pointer, then cast a ray — straight in for the orthographic view, from
+  // the camera for a perspective one — and un-tilt and un-spin the hit.
   #hitTest(e) {
+    const T = this._T;
+    if (!T) return null;
     const rect = this.canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    const side = this.side;
-    const cx = side / 2, cy = side / 2, R = side * 0.40;
-    const rot = (this.angle * Math.PI) / 180;
-    const tilt = ((this.o.tilt || 0) * Math.PI) / 180;
-    const sinR = Math.sin(rot), cosR = Math.cos(rot);
-    const sinT = Math.sin(tilt), cosT = Math.cos(tilt);
+    const { cx, cy, R, F, D, persp } = T;
     // Un-roll the pointer first: roll is applied last when drawing, so it
     // is undone first when inverting. Everything below then works in the
     // unrolled frame exactly as it did before roll existed.
-    const roll = ((this.o.roll || 0) * Math.PI) / 180;
-    const sinRo = Math.sin(-roll), cosRo = Math.cos(-roll);
     const rdx = mx - cx, rdy = my - cy;
-    const ux = cx + rdx * cosRo - rdy * sinRo;
-    const uy = cy + rdx * sinRo + rdy * cosRo;
+    const ux = cx + rdx * T.cosRo + rdy * T.sinRo;
+    const uy = cy - rdx * T.sinRo + rdy * T.cosRo;
     const base = Math.max(0.75, (4 * R) / (this.o.cols ?? 170)) * this.o.dotSize * 1.6;
 
+    const s = this._scratch;
     for (const place of this.placeData) {
-      const x1 = place.p.x * cosR + place.p.z * sinR;
-      const z1 = -place.p.x * sinR + place.p.z * cosR;
-      const y2 = place.p.y * cosT - z1 * sinT;
-      const z2 = place.p.y * sinT + z1 * cosT;
-      if (z2 <= 0.01) continue;
-      if (Math.hypot(ux - (cx + x1 * R), uy - (cy - y2 * R)) <= Math.max(10, base * this.o.markerScale * 0.9)) {
+      if (!this.#projectXYZ(place.p.x, place.p.y, place.p.z, T, s)) continue;
+      if (Math.hypot(mx - s[0], my - s[1]) <= Math.max(10, base * this.o.markerScale * 0.9)) {
         const detail = { name: place.name, lat: place.lat, lon: place.lon, element: this.canvas };
         if (place.kind) detail.kind = place.kind;
         return { kind: "place", detail };
@@ -465,23 +557,53 @@ export class GlobeRenderer {
     // the screen.
     if (!parseFigureStyle(this.o.figure).dots) return null;
 
-    const X = (ux - cx) / R;
-    const Y = -(uy - cy) / R;
-    const rr = X * X + Y * Y;
-    if (rr > 1) return null;
-    const Z = Math.sqrt(1 - rr);
+    let X, Y, Z;
+    if (persp) {
+      // The ray from the camera through the screen point meets the sphere
+      // where (px² + py²)/F² · (D − z)² + z² = 1; the nearer root is the
+      // visible surface.
+      const px = ux - cx, py = -(uy - cy);
+      const q = (px * px + py * py) / (F * F);
+      const disc = 1 - q * (D * D - 1);
+      if (disc < 0) return null;
+      Z = (q * D + Math.sqrt(disc)) / (q + 1);
+      X = (px * (D - Z)) / F;
+      Y = (py * (D - Z)) / F;
+    } else {
+      X = (ux - cx) / R;
+      Y = -(uy - cy) / R;
+      const rr = X * X + Y * Y;
+      if (rr > 1) return null;
+      Z = Math.sqrt(1 - rr);
+    }
     // Inverse of the draw transform: un-tilt, then un-spin.
-    const y = Y * cosT + Z * sinT;
-    const z1 = -Y * sinT + Z * cosT;
-    const x = X * cosR - z1 * sinR;
-    const z = X * sinR + z1 * cosR;
-    const lat = (Math.asin(y) * 180) / Math.PI;
-    const lon = (Math.atan2(x, z) * 180) / Math.PI;
+    const y = Y * T.cosT + Z * T.sinT;
+    const z1 = -Y * T.sinT + Z * T.cosT;
+    const x = X * T.cosR - z1 * T.sinR;
+    const z = X * T.sinR + z1 * T.cosR;
+    const lat = Math.asin(Math.max(-1, Math.min(1, y))) * DEGREES;
+    const lon = Math.atan2(x, z) * DEGREES;
 
     const [ latMin, latMax ] = this.o.latRange;
     if (lat < latMin || lat > latMax) return null;
     const cols = this.o.cols ?? 170; // auto: globes want density — foreshortening thins the limb
     const rows = Math.round((cols / 360) * (latMax - latMin));
+    if (this._distribution === "uniform") {
+      // No cell to look up: the dot under the pointer is the nearest sample,
+      // if one lies within a dot's spacing of the surface point.
+      const pts = this.points;
+      let best = -1, bestDot = Math.cos((1.2 * Math.PI) / cols);
+      for (let i = 0; i < pts.length; i += 3) {
+        const d = pts[i] * x + pts[i + 1] * y + pts[i + 2] * z;
+        if (d > bestDot) { bestDot = d; best = i; }
+      }
+      if (best < 0) return null;
+      const dlat = Math.asin(Math.max(-1, Math.min(1, pts[best + 1]))) * DEGREES;
+      const dlon = Math.atan2(pts[best], pts[best + 2]) * DEGREES;
+      const col = Math.min(cols - 1, Math.max(0, Math.floor(((dlon + 180) / 360) * cols)));
+      const row = Math.min(rows - 1, Math.max(0, Math.floor(((latMax - dlat) / (latMax - latMin)) * rows)));
+      return { kind: "dot", detail: { lat: dlat, lon: dlon, col, row, element: this.canvas } };
+    }
     const col = Math.min(cols - 1, Math.max(0, Math.floor(((lon + 180) / 360) * cols)));
     const row = Math.min(rows - 1, Math.max(0, Math.floor(((latMax - lat) / (latMax - latMin)) * rows)));
     const c = cellCenter(col, row, { cols, rows, latRange: this.o.latRange });
@@ -500,40 +622,51 @@ export class GlobeRenderer {
   }
 
   _rebuildData() {
-    const cols = this.o.cols ?? 170; // auto: globes want density — foreshortening thins the limb
-    this.points = buildGlobePoints(cols, this.o.latRange, this._body);
+    const o = this.o;
+    const cols = o.cols ?? 170; // auto: globes want density — foreshortening thins the limb
+    const distribution = o.distribution === "uniform" ? "uniform" : "grid";
+    this._distribution = distribution;
+    this.points = buildGlobePoints(cols, o.latRange, this._body, false, distribution);
+    // Tiles lie on the surface: a side is dotSize of a cell, and a cell is
+    // 2π/cols radians across at the equator for either distribution.
+    const tiles = o.dotShape === "tile";
+    const half = (o.dotSize * Math.PI) / cols;
+    this.tiles = tiles ? buildGlobeTiles(cols, o.latRange, this._body, half, false, distribution) : null;
     // The graticule is pure lat/lon geometry — built once per option change,
     // projected per frame. Cheap enough to rebuild unconditionally.
-    this._graticule = this.o.graticule
-      ? buildGraticule({ meridians: this.o.meridians, parallels: this.o.parallels })
+    this._graticule = o.graticule
+      ? buildGraticule({ meridians: o.meridians, parallels: o.parallels })
       : null;
     // Region highlight: flags parallel the figure points (never reorder
     // geometry — annotate it).
-    if (this.o.highlightPolygon?.length) {
-      const normalized = normalizeRings(this.o.highlightPolygon);
-      this.highlightFlags = buildGlobeFlags(cols, this.o.latRange, (lat, lon) => pointInRings(lat, lon, normalized), this._body);
+    if (o.highlightPolygon?.length) {
+      const normalized = normalizeRings(o.highlightPolygon);
+      this.highlightFlags = buildGlobeFlags(cols, o.latRange, (lat, lon) => pointInRings(lat, lon, normalized), this._body, distribution);
     } else {
       this.highlightFlags = null;
     }
-    this.groundPoints = this.o.groundColor && this.o.groundColor !== "none"
-      ? buildGlobePoints(cols, this.o.latRange, this._body, true)
+    const ground = o.groundColor && o.groundColor !== "none";
+    this.groundPoints = ground ? buildGlobePoints(cols, o.latRange, this._body, true, distribution) : null;
+    this.groundTiles = ground && tiles ? buildGlobeTiles(cols, o.latRange, this._body, half * 0.62, true, distribution) : null;
+    this.phases = o.animation && o.animation !== "none"
+      ? buildGlobePhases(cols, o.latRange, o.animation, this._body, distribution)
       : null;
-    this.phases = this.o.animation && this.o.animation !== "none"
-      ? buildGlobePhases(cols, this.o.latRange, this.o.animation, this._body)
-      : null;
-    this.placeData = resolvePlaces(this.o.places, this._body)
+    this.placeData = resolvePlaces(o.places, this._body)
       .map((p) => ({ ...p, p: latLonToXYZ(p.lat, p.lon) }));
-    this.canvas.style.cursor = this.o.interactive === false ? "" : "grab";
-    if (this.o.dotShape !== "circle" && this.o.dotShape !== "square" &&
-        this.o.dotShape !== "triangle" && !this._shapeWarned) {
+    this.canvas.style.cursor = o.interactive === false ? "" : "grab";
+    if (o.dotShape !== "circle" && o.dotShape !== "square" && o.dotShape !== "triangle" &&
+        o.dotShape !== "tile" && !this._shapeWarned) {
       this._shapeWarned = true;
-      console.warn(`[mappo] mode="globe" draws circle/square/triangle dots; custom SVG paths fall back to squares`);
+      console.warn(`[mappo] mode="globe" draws circle/square/triangle/tile dots; custom SVG paths fall back to squares`);
     }
+    this._dirty = true;
   }
 
-  _resize() {
-    const rect = this.canvas.getBoundingClientRect();
-    const side = rect.width || this.container.clientWidth || 300;
+  // @param width [Number] the canvas's layout width when the caller knows it
+  //   (the ResizeObserver does); otherwise it is read from layout, never from
+  //   the bounding box, which an ancestor's transform would have scaled.
+  _resize(width) {
+    const side = (width > 0 ? width : 0) || this.canvas.clientWidth || this.container.clientWidth || 300;
     // Cap the backing store. A 3× phone painting a 400px globe would other-
     // wise allocate 1200² and burn the fill rate for detail no eye resolves;
     // 2 is where the returns stop on a dot field. (Cloudflare's WebGL globe
@@ -544,16 +677,24 @@ export class GlobeRenderer {
     this.canvas.width = Math.max(1, Math.round(side * dpr));
     this.canvas.height = Math.max(1, Math.round(side * dpr));
     this._dpr = dpr;
+    this._dirty = true;
     this._draw();
   }
 
+  // The frame loop advances the spin and draws — but only a frame in which
+  // something moved. A parked globe (rotate-speed 0, nothing animating, no
+  // pointer, no option change) costs nothing per frame, which is what lets a
+  // dashboard hold a dozen of them. Anything that changes the picture without
+  // moving the angle sets _dirty; _draw clears it.
   _loop() {
     this._raf = requestAnimationFrame((t) => {
       this._raf = null;
       if (!this._visible) return; // the IntersectionObserver restarts us
       const dt = this._t == null ? 16 : Math.min(100, t - this._t);
       this._t = t;
-      this._time = (this._time || 0) + dt / 1000;
+      const before = this.angle;
+      const animating = !!(this.o.animation && this.o.animation !== "none" && this.phases);
+      if (animating) this._time = (this._time || 0) + dt / 1000;
       if (this._drag?.active) {
         // The pointer owns the angle while dragging.
       } else {
@@ -561,30 +702,92 @@ export class GlobeRenderer {
         // Momentum relaxes back to the base spin — exponential, ~0.8s to
         // settle, so the handoff from a flick to auto-rotation is seamless.
         this._omega += (this.o.rotateSpeed - this._omega) * (1 - Math.exp(-dt / 800));
-        this.angle = (this.angle + (this._omega * dt) / 1000 + 360) % 360;
+        if (Math.abs(this._omega) < 1e-4) this._omega = this.o.rotateSpeed;
+        if (this._omega !== 0) this.angle = (this.angle + (this._omega * dt) / 1000 + 360) % 360;
       }
-      this._draw();
+      if (this.angle !== before || animating || this._dirty) this._draw();
       this._loop();
     });
   }
 
+  // Everything one frame needs to know about the camera, computed once per
+  // frame and kept as this._T so locate() and hit-testing answer about the
+  // picture on screen. Spin (sinR/cosR), axial tilt (sinT/cosT) and roll
+  // (sinRo/cosRo); the disc radius R; and the camera:
+  //   D        distance from the centre in radii (Infinity = orthographic)
+  //   F        pixels per radius at the centre plane, chosen so the limb of
+  //            the sphere lands exactly at R whatever the distance
+  //   horizon  the view depth at which the surface turns away (1/D, or 0)
+  //   fog      [near, far] or null
+  #frame() {
+    const o = this.o, side = this.side;
+    const cx = side / 2, cy = side / 2, R = side * 0.40;
+    const rot = (this.angle * Math.PI) / 180;
+    const tilt = ((o.tilt || 0) * Math.PI) / 180;
+    const roll = ((o.roll || 0) * Math.PI) / 180;
+    let D = o.distance;
+    if (D != null && D !== Infinity && !(Number.isFinite(D) && D > 1)) {
+      if (!this._distanceWarned) {
+        this._distanceWarned = true;
+        console.warn(`[mappo] distance must be a number of body radii greater than 1 (got ${JSON.stringify(D)}); drawing the orthographic view`);
+      }
+      D = Infinity;
+    }
+    if (D == null) D = Infinity;
+    const persp = Number.isFinite(D);
+    const fog = Array.isArray(o.fog) && o.fog.length === 2 && o.fog.every(Number.isFinite) && o.fog[0] < o.fog[1] ? o.fog : null;
+    return {
+      cx, cy, R,
+      sinR: Math.sin(rot), cosR: Math.cos(rot),
+      sinT: Math.sin(tilt), cosT: Math.cos(tilt),
+      sinRo: Math.sin(roll), cosRo: Math.cos(roll),
+      D, F: persp ? R * Math.sqrt(D * D - 1) : R, persp, horizon: persp ? 1 / D : 0, fog
+    };
+  }
+
+  // How squarely a surface point at view depth z faces the camera: 1 straight
+  // on, 0 at the limb, −1 at the antipode. The orthographic camera is at
+  // infinity, so facing is simply the depth.
+  #facing(z, T) {
+    return T.persp ? (T.D * z - 1) / Math.sqrt(T.D * T.D - 2 * T.D * z + 1) : z;
+  }
+
+  // The alpha a point at view depth z (unit radii) is drawn with. Fog decides
+  // for a glass globe, on both hemispheres; an opaque globe hides its far side
+  // and fades the near one with facing, between `lo` at the limb and lo + hi
+  // straight on.
+  //
+  // Fog is light lost on the way, so it is computed the way a renderer's fog
+  // is: a smoothstep between near and far (a linear ramp has visible corners
+  // where it starts and stops), mixed in LINEAR light. A canvas composites in
+  // sRGB, so the transmittance is converted to the alpha that gives the same
+  // brightness over a dark ground: transmittance^(1/2.2). Over a light ground
+  // this reads a little stronger than a true linear-light fog would.
+  #fadeOf(z, T, lo = 0.25, hi = 0.75) {
+    if (T.fog) return fogAlpha(z, T.fog);
+    if (z <= T.horizon + 0.01) return 0;
+    return lo + hi * this.#facing(z, T);
+  }
+
   // One place that knows how a unit-sphere point becomes a pixel on this
-  // sphere: spin about the polar axis, lean by the axial tilt, then roll in
-  // the screen plane. Writes [sx, sy, depth] into `out` and returns whether
-  // the point faces the viewer. Allocation-free — this is the per-vertex
-  // hot path for figure quads, contours and vector outlines. (The dot loop
-  // keeps its own inlined copy; it runs tens of thousands of times a frame
-  // and every property read shows up.)
+  // sphere: spin about the polar axis, lean by the axial tilt, project —
+  // orthographically, or through a camera D radii away — then roll in the
+  // screen plane. Writes [sx, sy, depth] into `out` and returns whether the
+  // point faces the viewer. Allocation-free — this is the per-vertex hot path
+  // for figure quads, contours, tiles and vector outlines. (The dot loop keeps
+  // its own inlined copy; it runs tens of thousands of times a frame and every
+  // property read shows up.)
   #projectXYZ(x, y, z, T, out) {
     const x1 = x * T.cosR + z * T.sinR;
     const z1 = -x * T.sinR + z * T.cosR;
     const y2 = y * T.cosT - z1 * T.sinT;
     const z2 = y * T.sinT + z1 * T.cosT;
-    const dx = x1 * T.R, dy = -y2 * T.R;
+    const k = T.persp ? T.F / (T.D - z2) : T.R;
+    const dx = x1 * k, dy = -y2 * k;
     out[0] = T.cx + dx * T.cosRo - dy * T.sinRo;
     out[1] = T.cy + dx * T.sinRo + dy * T.cosRo;
     out[2] = z2;
-    return z2 > 0.01;
+    return z2 > T.horizon + 0.01;
   }
 
   // The same transform for a lat/lon, as an object — graticule, overlays,
@@ -597,16 +800,34 @@ export class GlobeRenderer {
     const z1 = -px * T.sinR + pz * T.cosR;
     const y2 = py * T.cosT - z1 * T.sinT;
     const z2 = py * T.sinT + z1 * T.cosT;
-    const dx = x1 * T.R, dy = -y2 * T.R;
-    return {
-      sx: T.cx + dx * T.cosRo - dy * T.sinRo,
-      sy: T.cy + dx * T.sinRo + dy * T.cosRo,
-      z: z2,
+    const k = T.persp ? T.F / (T.D - z2) : T.R;
+    const dx = x1 * k, dy = -y2 * k;
+    let front;
+    if (radius === 1) {
+      front = z2 > T.horizon + 0.01;
+    } else if (T.persp) {
+      // A point off the surface is hidden only when the body is in the way:
+      // when the segment from the camera to the point enters the sphere
+      // before reaching it.
+      const vx = x1, vy = y2, vz = z2 - T.D;
+      const a = vx * vx + vy * vy + vz * vz, b = 2 * T.D * vz, c = T.D * T.D - 1;
+      const disc = b * b - 4 * a * c;
+      front = disc < 0 || (-b - Math.sqrt(disc)) / (2 * a) >= 1 - 1e-6;
+    } else {
       // A point ON the sphere is visible when it faces us. A point ABOVE it is
       // hidden only when the body is actually in the way, which it can only be
       // inside the disc — so something in orbit over the far side still shows,
       // standing off the limb, which is exactly where you would see it from here.
-      front: z2 > 0.01 || (radius > 1 && Math.hypot(x1, y2) > 1)
+      front = z2 > 0.01 || (radius > 1 && Math.hypot(x1, y2) > 1);
+    }
+    return {
+      sx: T.cx + dx * T.cosRo - dy * T.sinRo,
+      sy: T.cy + dx * T.sinRo + dy * T.cosRo,
+      z: z2,
+      front,
+      // Fog is spatial: a point off the surface is fogged at its own depth. The
+      // opaque fade is about facing, so it reads the surface point beneath.
+      fade: T.fog ? this.#fadeOf(z2, T) : this.#fadeOf(z2 / radius, T)
     };
   }
 
@@ -620,7 +841,7 @@ export class GlobeRenderer {
       const pts = new Array(ring.length / 3);
       for (let i = 0, j = 0; i < ring.length; i += 3, j++) {
         const front = this.#projectXYZ(ring[i], ring[i + 1], ring[i + 2], T, s);
-        pts[j] = { sx: s[0], sy: s[1], z: s[2], front };
+        pts[j] = { sx: s[0], sy: s[1], z: s[2], front, fade: this.#fadeOf(s[2], T) };
       }
       out[r] = pts;
     }
@@ -643,7 +864,7 @@ export class GlobeRenderer {
   #strokeVector(rings, T, { stroke, width, alphaScale = 1 }) {
     // Stitched: the pack's cut at ±180° is a closure edge for a flat map, and
     // stroking it on a sphere drew a line down the antimeridian.
-    this.#strokeBanded(this.#projectRings(xyzRings(stitchRings(rings)), T), stroke, width, 1, alphaScale);
+    this.#strokeBanded(this.#projectRings(xyzRings(stitchRings(rings)), T), stroke, width, 1, alphaScale, T);
   }
 
   // Grid geometry for the figure — the same figure.js geometry the flat map
@@ -732,7 +953,7 @@ export class GlobeRenderer {
     const geom = this.#figureGeometry({ cols, rows, latRange: o.latRange });
 
     if (style.fill) {
-      // Batched by depth band, NOT one fill() per cell.
+      // Batched by alpha band, NOT one fill() per cell.
       //
       // The figure is a few thousand quads; issuing a beginPath/fill for each
       // was measured at ~13 ms per globe, which turns a page carrying several
@@ -740,37 +961,42 @@ export class GlobeRenderer {
       // fill calls that cost — so the quads are accumulated into a handful of
       // paths, one per slice of the depth fade, and each is filled once. Same
       // picture, BANDS draw calls instead of thousands.
-      const BANDS = 6;
       const paths = Array.from({ length: BANDS }, () => new Path2D());
       const q = geom.quads;
-      const A = this._scratch, B = this._scratchB, C = this._scratchC, D = this._scratchD;
+      const A = this._scratch, B = this._scratchB, C = this._scratchC, Dd = this._scratchD;
+      const glass = !!T.fog;
       let any = false;
       for (let i = 0; i < q.length; i += 12) {
-        if (!this.#projectXYZ(q[i], q[i + 1], q[i + 2], T, A)) continue;
-        if (!this.#projectXYZ(q[i + 3], q[i + 4], q[i + 5], T, B)) continue;
-        if (!this.#projectXYZ(q[i + 6], q[i + 7], q[i + 8], T, C)) continue;
-        if (!this.#projectXYZ(q[i + 9], q[i + 10], q[i + 11], T, D)) continue;
-        const path = paths[Math.min(BANDS - 1, Math.floor(A[2] * BANDS))];
+        const fa = this.#projectXYZ(q[i], q[i + 1], q[i + 2], T, A);
+        const fb = this.#projectXYZ(q[i + 3], q[i + 4], q[i + 5], T, B);
+        const fc = this.#projectXYZ(q[i + 6], q[i + 7], q[i + 8], T, C);
+        const fd = this.#projectXYZ(q[i + 9], q[i + 10], q[i + 11], T, Dd);
+        // Opaque: a cell is drawn only when it faces us whole. Glass: every
+        // cell is drawn, at the fog's alpha for its depth.
+        if (!glass && !(fa && fb && fc && fd)) continue;
+        const fade = this.#fadeOf((A[2] + B[2] + C[2] + Dd[2]) / 4, T, 0.35, 0.65);
+        if (fade < 0.003) continue;
+        const path = paths[Math.min(BANDS - 1, Math.floor(fade * BANDS))];
         path.moveTo(A[0], A[1]);
         path.lineTo(B[0], B[1]);
         path.lineTo(C[0], C[1]);
-        path.lineTo(D[0], D[1]);
+        path.lineTo(Dd[0], Dd[1]);
         path.closePath();
         any = true;
       }
       if (any) {
         ctx.fillStyle = this._c(o.figureColor);
         for (let i = 0; i < BANDS; i++) {
-          ctx.globalAlpha = 0.35 + 0.65 * ((i + 0.5) / BANDS);   // the fade the dots wear
+          ctx.globalAlpha = (i + 0.5) / BANDS;
           ctx.fill(paths[i]);
         }
       }
     }
 
     if (style.stroke) {
-      // Contours are stroked per depth band like everything else: a single
+      // Contours are stroked per alpha band like everything else: a single
       // stroke() can only carry one alpha.
-      this.#strokeBanded(this.#projectRings(geom.loops, T), strokeColor, o.figureStrokeWidth ?? 1, 1);
+      this.#strokeBanded(this.#projectRings(geom.loops, T), strokeColor, o.figureStrokeWidth ?? 1, 1, 1, T);
     }
     // Boundaries are an overlay: draw them after the figure for every source.
     // Drawing them before a fill covers them; tying them to vector coastlines
@@ -791,11 +1017,12 @@ export class GlobeRenderer {
     if (!o.graticule || !this._graticule) return;
     const color = this._c(o.graticuleColor ?? o.figureColor);
     const equator = this._c(o.equatorColor ?? o.graticuleColor ?? o.figureColor);
+    const width = o.graticuleWidth ?? 1;
 
     const project = (lines) => lines.map((line) => line.map(([ lat, lon ]) => this.#project(lat, lon, T)));
-    this.#strokeBanded(project(this._graticule.meridians), color, 1, o.graticuleOpacity);
-    this.#strokeBanded(project(this._graticule.parallels), color, 1, o.graticuleOpacity);
-    this.#strokeBanded(project([ this._graticule.equator ]), equator, 1, o.equatorOpacity);
+    this.#strokeBanded(project(this._graticule.meridians), color, width, o.graticuleOpacity, 1, T);
+    this.#strokeBanded(project(this._graticule.parallels), color, width, o.graticuleOpacity, 1, T);
+    this.#strokeBanded(project([ this._graticule.equator ]), equator, width, o.equatorOpacity, 1, T);
   }
 
   // Stroke polylines with a depth fade that is actually per-segment.
@@ -808,18 +1035,23 @@ export class GlobeRenderer {
   // dark, its neighbour looked faint, and half the Pacific's meridians differed
   // from the other half. Arbitrary, and it moved as the globe turned.
   //
-  // So segments are bucketed by depth and each bucket is stroked once. Same
+  // So segments are bucketed by alpha and each bucket is stroked once. Same
   // fade, honestly applied, and far fewer draw calls than stroking per segment.
-  #strokeBanded(lines, color, width, peak, alphaScale = 1) {
+  // Each point carries its `fade` (see #fadeOf): on an opaque globe a segment
+  // needs both ends in front; on a glass one every segment the fog leaves
+  // visible is drawn, the far side included.
+  #strokeBanded(lines, color, width, peak, alphaScale = 1, T = this._T) {
     const ctx = this.ctx;
-    const BANDS = 7;
+    const glass = !!T?.fog;
     const paths = Array.from({ length: BANDS }, () => new Path2D());
     let any = false;
     for (const pts of lines) {
       for (let i = 0; i + 1 < pts.length; i++) {
         const a = pts[i], b = pts[i + 1];
-        if (!a.front || !b.front) continue;     // the far side, or crossing it
-        const band = Math.min(BANDS - 1, Math.max(0, Math.floor(((a.z + b.z) / 2) * BANDS)));
+        if (!glass && (!a.front || !b.front)) continue;     // the far side, or crossing it
+        const fade = (a.fade + b.fade) / 2;
+        if (fade < 0.003) continue;
+        const band = Math.min(BANDS - 1, Math.floor(fade * BANDS));
         paths[band].moveTo(a.sx, a.sy);
         paths[band].lineTo(b.sx, b.sy);
         any = true;
@@ -831,7 +1063,7 @@ export class GlobeRenderer {
     ctx.lineJoin = "round";
     ctx.lineCap = "round";                       // keeps segments reading as one line
     for (let i = 0; i < BANDS; i++) {
-      ctx.globalAlpha = peak * (0.25 + 0.75 * ((i + 0.5) / BANDS)) * alphaScale;
+      ctx.globalAlpha = peak * ((i + 0.5) / BANDS) * alphaScale;
       ctx.stroke(paths[i]);
     }
     ctx.globalAlpha = 1;
@@ -842,7 +1074,9 @@ export class GlobeRenderer {
   // was drawn with, so anything positioned by it is registered to the pixel.
   //
   // Returns null before the first frame. `front` is false only when the body
-  // is between you and the point.
+  // is between you and the point. `z` is the point's depth toward the viewer
+  // in radii (1 facing you, 0 on the limb plane, −1 the antipode) and `fade`
+  // the alpha the globe itself draws at that depth — under fog, the fog's.
   locate(lat, lon, radius = 1) {
     if (!this._T) return null;
     const p = this.#project(lat, lon, this._T, radius);
@@ -850,6 +1084,8 @@ export class GlobeRenderer {
       x: p.sx, y: p.sy,
       depth: Math.max(0, Math.min(1, p.z / radius)),
       front: p.front,
+      z: p.z / radius,
+      fade: p.fade,
       cx: this._T.cx, cy: this._T.cy, r: this._T.R
     };
   }
@@ -877,62 +1113,162 @@ export class GlobeRenderer {
       el.style.transform = p.front
         ? `translate3d(${p.sx.toFixed(2)}px, ${p.sy.toFixed(2)}px, 0)`
         : "translate3d(-9999px, -9999px, 0)";
-      el.style.setProperty("--mappo-depth", p.front ? p.z.toFixed(3) : "0");
+      el.style.setProperty("--mappo-depth", p.front ? Math.max(0, this.#facing(p.z, T)).toFixed(3) : "0");
       el.toggleAttribute("data-mappo-behind", !p.front);
     }
   }
 
-  #drawPoints(pts, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo = 0, cosRo = 1, base, shape, alphaLo, alphaHi, anim, flags, baseColor, hiColor }) {
+  // The dot field, one screen-aligned mark per point. Sized by the visible
+  // cell, foreshortened and faded by facing; behind a perspective camera the
+  // near side is drawn larger than the far. Under fog both hemispheres are
+  // drawn, the far one first so the near one lies over it.
+  #drawPoints(pts, T, { base, shape, alphaLo, alphaHi, anim, flags, baseColor, hiColor }) {
     const ctx = this.ctx;
-    let currentHi = null;
-    for (let i = 0; i < pts.length; i += 3) {
-      // Region highlight: per-dot colour switch, batched (fillStyle only
-      // changes when the flag flips — dots stream in row order, so runs
-      // are long and the switch is cheap).
-      if (flags) {
-        const hi = flags[i / 3] === 1;
-        if (hi !== currentHi) {
-          ctx.fillStyle = hi ? hiColor : baseColor;
-          currentHi = hi;
+    const { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, D, F, persp, horizon, fog } = T;
+    const passes = fog ? 2 : 1;
+    for (let pass = 0; pass < passes; pass++) {
+      const farPass = fog && pass === 0;
+      let currentHi = null;
+      for (let i = 0; i < pts.length; i += 3) {
+        // Spin around the polar axis, then lean by the axial tilt.
+        const x1 = pts[i] * cosR + pts[i + 2] * sinR;
+        const z1 = -pts[i] * sinR + pts[i + 2] * cosR;
+        const y2 = pts[i + 1] * cosT - z1 * sinT;
+        const z2 = pts[i + 1] * sinT + z1 * cosT;
+        const front = z2 > horizon + 0.01;
+        if (fog ? front === farPass : !front) continue;
+        const facing = persp ? (D * z2 - 1) / Math.sqrt(D * D - 2 * D * z2 + 1) : z2;
+        let alpha;
+        if (fog) {
+          alpha = fogAlpha(z2, fog);
+          if (alpha < 0.003) continue;
+        } else {
+          alpha = alphaLo + alphaHi * facing;                 // …and a depth fade
         }
-      }
-      // Spin around the polar axis, then lean by the axial tilt.
-      const x1 = pts[i] * cosR + pts[i + 2] * sinR;
-      const z1 = -pts[i] * sinR + pts[i + 2] * cosR;
-      const y2 = pts[i + 1] * cosT - z1 * sinT;
-      const z2 = pts[i + 1] * sinT + z1 * cosT;
-      if (z2 <= 0.01) continue; // back hemisphere
+        // Region highlight: per-dot colour switch, batched (fillStyle only
+        // changes when the flag flips — dots stream in row order, so runs
+        // are long and the switch is cheap).
+        if (flags) {
+          const hi = flags[i / 3] === 1;
+          if (hi !== currentHi) {
+            ctx.fillStyle = hi ? hiColor : baseColor;
+            currentHi = hi;
+          }
+        }
 
-      let lift = 0, sizeMul = 1;
-      if (anim) {
-        const j = (i / 3) * 2;
-        const d = (anim.cycle - anim.phases[j] + 1) % 1;
-        if (d < anim.w) {
-          const bump = Math.sin(Math.PI * (d / anim.w)) * anim.phases[j + 1];
-          if (anim.mode === "sparkle") sizeMul = 1 + 0.45 * bump;
-          else lift = (anim.heightPx * bump) / R;
+        let lift = 0, sizeMul = 1;
+        if (anim) {
+          const j = (i / 3) * 2;
+          const d = (anim.cycle - anim.phases[j] + 1) % 1;
+          if (d < anim.w) {
+            const bump = Math.sin(Math.PI * (d / anim.w)) * anim.phases[j + 1];
+            if (anim.mode === "sparkle") sizeMul = 1 + 0.45 * bump;
+            else lift = (anim.heightPx * bump) / R;
+          }
         }
-      }
-      const k = 1 + lift;
-      const dx = x1 * R * k, dy = -y2 * R * k;
-      const sx = cx + dx * cosRo - dy * sinRo;
-      const sy = cy + dx * sinRo + dy * cosRo;
-      const s = base * (0.45 + 0.55 * z2) * sizeMul; // foreshortening at the limb
-      ctx.globalAlpha = alphaLo + alphaHi * z2; // …and a depth fade
-      if (shape === "circle") {
-        ctx.beginPath();
-        ctx.arc(sx, sy, s / 2, 0, 6.2832);
-        ctx.fill();
-      } else if (shape === "triangle") {
-        ctx.beginPath();
-        ctx.moveTo(sx, sy - s / 2);
-        ctx.lineTo(sx + s / 2, sy + s / 2);
-        ctx.lineTo(sx - s / 2, sy + s / 2);
-        ctx.fill();
-      } else {
-        ctx.fillRect(sx - s / 2, sy - s / 2, s, s);
+        const k = 1 + lift;
+        const scale = persp ? F / (D - z2 * k) : R;
+        const dx = x1 * k * scale, dy = -y2 * k * scale;
+        const sx = cx + dx * cosRo - dy * sinRo;
+        const sy = cy + dx * sinRo + dy * cosRo;
+        // Foreshortening at the limb; a perspective camera also shrinks what
+        // is farther away.
+        const s = base * (0.45 + 0.55 * Math.abs(facing)) * sizeMul * (persp ? scale / R : 1);
+        ctx.globalAlpha = alpha;
+        if (shape === "circle") {
+          ctx.beginPath();
+          ctx.arc(sx, sy, s / 2, 0, 6.2832);
+          ctx.fill();
+        } else if (shape === "triangle") {
+          ctx.beginPath();
+          ctx.moveTo(sx, sy - s / 2);
+          ctx.lineTo(sx + s / 2, sy + s / 2);
+          ctx.lineTo(sx - s / 2, sy + s / 2);
+          ctx.fill();
+        } else {
+          ctx.fillRect(sx - s / 2, sy - s / 2, s, s);
+        }
       }
     }
+  }
+
+  // The dot field as TILES: squares lying on the surface. A tangent square
+  // projects to (very nearly) a parallelogram, and a parallelogram is one
+  // setTransform and one fillRect — so each tile is drawn on its own with its
+  // own alpha, and the fog is a true gradient rather than bands. Behind a
+  // perspective camera tiles grow toward the viewer; along the limb they
+  // foreshorten into slivers, as a real tangent square does.
+  //
+  // Not a Path2D batch, deliberately: appending to one Path2D grows quadratic
+  // in Chrome past a few hundred subpaths (measured: 3k quads 28 ms, 7k 128 ms,
+  // 14k 500 ms to build, the fill itself under a millisecond). Two calls per
+  // tile is the fast path here, at about a quarter of a microsecond each.
+  // Under fog both hemispheres are drawn, the far one first.
+  #drawTiles(tiles, T, { alphaLo, alphaHi, anim, flags, baseColor, hiColor }) {
+    const ctx = this.ctx, dpr = this._dpr;
+    const { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, D, F, persp, horizon, fog } = T;
+    const passes = fog ? 2 : 1;
+    for (let pass = 0; pass < passes; pass++) {
+      const farPass = fog && pass === 0;
+      let currentHi = null;
+      for (let i = 0; i < tiles.length; i += 9) {
+        // The centre through the spin and the tilt.
+        const cx1 = tiles[i] * cosR + tiles[i + 2] * sinR, cz1 = -tiles[i] * sinR + tiles[i + 2] * cosR;
+        const cy2 = tiles[i + 1] * cosT - cz1 * sinT, cz2 = tiles[i + 1] * sinT + cz1 * cosT;
+        const front = cz2 > horizon + 0.01;
+        if (fog ? front === farPass : !front) continue;
+        let alpha;
+        if (fog) {
+          alpha = fogAlpha(cz2, fog);
+          if (alpha < 0.003) continue;
+        } else {
+          alpha = alphaLo + alphaHi * (persp ? (D * cz2 - 1) / Math.sqrt(D * D - 2 * D * cz2 + 1) : cz2);
+        }
+        if (flags) {
+          const hi = flags[i / 9] === 1;
+          if (hi !== currentHi) {
+            ctx.fillStyle = hi ? hiColor : baseColor;
+            currentHi = hi;
+          }
+        }
+        // The east and north half-edges through the same rotation.
+        const ex1 = tiles[i + 3] * cosR + tiles[i + 5] * sinR, ez1 = -tiles[i + 3] * sinR + tiles[i + 5] * cosR;
+        const ey2 = tiles[i + 4] * cosT - ez1 * sinT, ez2 = tiles[i + 4] * sinT + ez1 * cosT;
+        const nx1 = tiles[i + 6] * cosR + tiles[i + 8] * sinR, nz1 = -tiles[i + 6] * sinR + tiles[i + 8] * cosR;
+        const ny2 = tiles[i + 7] * cosT - nz1 * sinT, nz2 = tiles[i + 7] * sinT + nz1 * cosT;
+
+        let k = 1, m = 1;
+        if (anim) {
+          const j = (i / 9) * 2;
+          const d = (anim.cycle - anim.phases[j] + 1) % 1;
+          if (d < anim.w) {
+            const bump = Math.sin(Math.PI * (d / anim.w)) * anim.phases[j + 1];
+            if (anim.mode === "sparkle") m = 1 + 0.45 * bump;
+            else k = 1 + (anim.heightPx * bump) / R;
+          }
+        }
+        const depth = persp ? D - cz2 * k : 1;
+        const scale = persp ? F / depth : R;
+        const dx = cx1 * k * scale, dy = -cy2 * k * scale;
+        const sx = cx + dx * cosRo - dy * sinRo, sy = cy + dx * sinRo + dy * cosRo;
+        // The half-edges on screen. Under a camera an edge's screen length is
+        // not just its sideways part scaled by depth: the part of it that runs
+        // toward or away from the camera moves its end across the screen too,
+        // by x·dz/(D − z). That term is what folds a tile to a sliver at the
+        // camera's horizon (where the sideways part alone would still be 1/D of
+        // the side); leaving it out piles full-width tiles on the limb.
+        const pe = persp ? ez2 / depth : 0, pn = persp ? nz2 / depth : 0;
+        const exs = (ex1 + cx1 * k * pe) * scale * m, eys = -(ey2 + cy2 * k * pe) * scale * m;
+        const nxs = (nx1 + cx1 * k * pn) * scale * m, nys = -(ny2 + cy2 * k * pn) * scale * m;
+        ctx.setTransform(
+          (exs * cosRo - eys * sinRo) * 2 * dpr, (exs * sinRo + eys * cosRo) * 2 * dpr,
+          (nxs * cosRo - nys * sinRo) * 2 * dpr, (nxs * sinRo + nys * cosRo) * 2 * dpr,
+          sx * dpr, sy * dpr);
+        ctx.globalAlpha = alpha;
+        ctx.fillRect(-0.5, -0.5, 1, 1);
+      }
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   _scratch = new Float64Array(3);
@@ -944,12 +1280,15 @@ export class GlobeRenderer {
     const { ctx, side } = this;
     if (!ctx || !side) return;
     const o = this.o;
+    this._dirty = false;
     ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0);
     ctx.clearRect(0, 0, side, side);
 
-    const cx = side / 2;
-    const cy = side / 2;
-    const R = side * 0.40; // breathing room — the halo must not kiss the edges
+    const T = this.#frame();
+    const { cx, cy, R } = T;
+    // Kept so locate() answers about the frame on screen right now, not
+    // about where the sphere was when someone last asked.
+    this._T = T;
 
     // Solid planet: a uniform disc behind the dots.
     if (o.background && o.background !== "none") {
@@ -969,23 +1308,6 @@ export class GlobeRenderer {
       ctx.stroke();
     }
 
-    const rot = (this.angle * Math.PI) / 180;
-    const tilt = ((o.tilt || 0) * Math.PI) / 180;
-    const sinR = Math.sin(rot), cosR = Math.cos(rot);
-    const sinT = Math.sin(tilt), cosT = Math.cos(tilt);
-    // roll: the LEAN. tilt leans the axis away from the viewer (a
-    // foreshortening, in 3D); roll turns the finished disc in the plane of
-    // the screen, which is the "globe sitting at an angle" look. They are
-    // different gestures and compose — so roll is applied last, to the
-    // projected point, where it is a plain 2D rotation about the centre.
-    const roll = ((o.roll || 0) * Math.PI) / 180;
-    const sinRo = Math.sin(roll), cosRo = Math.cos(roll);
-
-    const T = { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo };
-    // Kept so locate() answers about the frame on screen right now, not
-    // about where the sphere was when someone last asked.
-    this._T = T;
-
     // Graticule under the dots: it is the grid the world sits on, not an
     // overlay drawn across it.
     this.#drawGraticule(T);
@@ -994,13 +1316,7 @@ export class GlobeRenderer {
     // so the front hemisphere shows cols/2 dots across 2R.
     const base = Math.max(0.75, (4 * R) / (o.cols ?? 170)) * o.dotSize * 1.6;
     const shape = o.dotShape === "circle" || o.dotShape === "triangle" ? o.dotShape : "square";
-
-    // Ground first — smaller, dimmer, same transform — so the figure reads on
-    // top. The ground never animates: it is ground, the figure is figure.
-    if (this.groundPoints) {
-      ctx.fillStyle = this._c(o.groundColor);
-      this.#drawPoints(this.groundPoints, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, base: base * 0.62, shape, alphaLo: 0.15, alphaHi: 0.55 });
-    }
+    const tiles = o.dotShape === "tile" && this.tiles;
 
     // The animation modes on a sphere: the phase/amp fields decide when and
     // how far each dot lifts RADIALLY off the surface (sparkle scales size
@@ -1014,11 +1330,22 @@ export class GlobeRenderer {
       phases: this.phases
     } : null;
 
+    // Ground first — smaller, dimmer, same transform — so the figure reads on
+    // top. The ground never animates: it is ground, the figure is figure.
+    if (this.groundPoints) {
+      const ground = this._c(o.groundColor);
+      ctx.fillStyle = ground;
+      if (tiles && this.groundTiles) this.#drawTiles(this.groundTiles, T, { alphaLo: 0.15, alphaHi: 0.55, baseColor: ground });
+      else this.#drawPoints(this.groundPoints, T, { base: base * 0.62, shape, alphaLo: 0.15, alphaHi: 0.55 });
+    }
+
     const figureStyle = parseFigureStyle(o.figure);
     if (figureStyle.dots) {
-      ctx.fillStyle = this._c(o.figureColor);
-      this.#drawPoints(this.points, { cx, cy, R, sinR, cosR, sinT, cosT, sinRo, cosRo, base, shape, alphaLo: 0.25, alphaHi: 0.75, anim,
-        flags: this.highlightFlags, baseColor: this._c(o.figureColor), hiColor: this._c(o.highlightColor) });
+      const color = this._c(o.figureColor);
+      ctx.fillStyle = color;
+      const paint = { alphaLo: 0.25, alphaHi: 0.75, anim, flags: this.highlightFlags, baseColor: color, hiColor: this._c(o.highlightColor) };
+      if (tiles) this.#drawTiles(this.tiles, T, paint);
+      else this.#drawPoints(this.points, T, { base, shape, ...paint });
     } else {
       this.#drawFigure(T, figureStyle);
     }
@@ -1026,16 +1353,12 @@ export class GlobeRenderer {
     // Hovered dot re-draws bigger in the hover colour (cheap overdraw).
     if (this._hover?.kind === "dot") {
       const hp = latLonToXYZ(this._hover.detail.lat, this._hover.detail.lon);
-      const x1 = hp.x * cosR + hp.z * sinR;
-      const z1 = -hp.x * sinR + hp.z * cosR;
-      const y2 = hp.y * cosT - z1 * sinT;
-      const z2 = hp.y * sinT + z1 * cosT;
-      if (z2 > 0.01) {
+      const s = this._scratch;
+      if (this.#projectXYZ(hp.x, hp.y, hp.z, T, s)) {
         ctx.fillStyle = this._c(o.dotHoverColor) ?? hoverShade(this._c(o.figureColor));
         ctx.globalAlpha = 1;
-        const s = base * (0.45 + 0.55 * z2) * o.dotHoverScale;
-        const hdx = x1 * R, hdy = -y2 * R;
-        this.#drawShape(cx + hdx * cosRo - hdy * sinRo, cy + hdx * sinRo + hdy * cosRo, s, shape);
+        const grow = T.persp ? Math.sqrt(T.D * T.D - 1) / (T.D - s[2]) : 1;
+        this.#drawShape(s[0], s[1], base * (0.45 + 0.55 * this.#facing(s[2], T)) * o.dotHoverScale * grow, shape);
       }
     }
 
@@ -1043,18 +1366,15 @@ export class GlobeRenderer {
     // the hovered one swells by markerHoverScale.
     ctx.fillStyle = this._c(o.markerColor);
     const mshape = [ "circle", "square", "triangle", "pin" ].includes(o.markerShape) ? o.markerShape : "circle";
+    const s = this._scratch;
     for (const place of this.placeData) {
-      const x1 = place.p.x * cosR + place.p.z * sinR;
-      const z1 = -place.p.x * sinR + place.p.z * cosR;
-      const y2 = place.p.y * cosT - z1 * sinT;
-      const z2 = place.p.y * sinT + z1 * cosT;
-      if (z2 <= 0.01) continue;
+      if (!this.#projectXYZ(place.p.x, place.p.y, place.p.z, T, s)) continue;
       const hovered = this._hover?.kind === "place" && this._hover.detail.name === place.name;
       ctx.globalAlpha = 1;
       if (place.color) ctx.fillStyle = this._c(place.color);
-      const ms = base * o.markerScale * 0.6 * (hovered ? o.markerHoverScale : 1);
-      const mdx = x1 * R, mdy = -y2 * R;
-      this.#drawShape(cx + mdx * cosRo - mdy * sinRo, cy + mdx * sinRo + mdy * cosRo, ms * 2, mshape);
+      const grow = T.persp ? Math.sqrt(T.D * T.D - 1) / (T.D - s[2]) : 1;
+      const ms = base * o.markerScale * 0.6 * (hovered ? o.markerHoverScale : 1) * grow;
+      this.#drawShape(s[0], s[1], ms * 2, mshape);
       if (place.color) ctx.fillStyle = this._c(o.markerColor);
     }
     ctx.globalAlpha = 1;

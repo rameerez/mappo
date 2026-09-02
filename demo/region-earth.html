@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Region: Earth — mappo</title>
+<meta name="description" content="Cloudflare's “Region: Earth” section, rebuilt on mappo: a glass globe of uniform tiles under fog, seen through a perspective camera, with DOM pins, captions and arcs positioned by the library.">
+<link rel="icon" href="../favicon/favicon-32x32.png">
+<style>
+  /* ── the tokens, as cloudflare.com names them ──────────────────────────
+     Two themes, the same names. The values are the site's own (read off its
+     stylesheet on 2026-09-02); --graticule is what its globe code makes of
+     --color-border-100 after stripping the alpha channel. */
+  :root{
+    --spacing:.25rem;
+    --font-sans:"FT Kunst Grotesk","Helvetica Neue",Helvetica,Arial,ui-sans-serif,system-ui,sans-serif;
+    --color-accent-100:#ff5e1f; --color-accent-200:#ff7038; --color-dark-accent:#d63c01;
+    --color-background-100:#fff; --color-background-200:#fdfdfc; --color-background-300:#f9f7f6;
+    --color-foreground-100:#262626; --color-foreground-200:#262626;
+    --color-border-100:#f0f0f0; --color-border-200:#ccc;
+    --graticule:#f0f0f0; --graticule-alpha:1;
+    --ease-out:cubic-bezier(.19,1,.22,1); --ease-default:cubic-bezier(.4,0,.2,1);
+    --px-section:calc(var(--spacing) * 4); --gap-section:calc(var(--spacing) * 12);
+    color-scheme:light;
+  }
+  html[data-theme="dark"]{
+    --color-accent-100:#ff5e1f; --color-accent-200:#ff7038; --color-dark-accent:#d63c01;
+    --color-background-100:#151414; --color-background-200:#191817; --color-background-300:#2a2927;
+    --color-foreground-100:#f0e3de; --color-foreground-200:#f0e3de;
+    --color-border-100:#f0e3de20; --color-border-200:#f0e3de;
+    --graticule:#f0e3de; --graticule-alpha:.04;
+    color-scheme:dark;
+  }
+  @media (min-width:64rem){ :root{ --px-section:calc(var(--spacing) * 6); --gap-section:calc(var(--spacing) * 16) } }
+  @media (min-width:80rem){ :root{ --px-section:calc(var(--spacing) * 8); --gap-section:calc(var(--spacing) * 20) } }
+
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--color-background-100);color:var(--color-foreground-100);
+    font:16px/1.2 var(--font-sans);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+    min-height:100dvh;overflow-x:clip}
+  button{font:inherit}
+
+  .theme{position:fixed;top:12px;right:12px;z-index:50;font-size:12px;padding:5px 10px;border-radius:8px;
+    border:1px solid var(--color-border-200);background:var(--color-background-200);color:var(--color-foreground-100);cursor:pointer;opacity:.7}
+  .theme:hover{opacity:1}
+
+  /* ── the section, class for class ────────────────────────────────────── */
+  .region{position:relative;z-index:10;padding-top:var(--gap-section)}
+  .inner{margin-inline:auto;width:100%}
+  .head{padding-inline:var(--px-section);position:relative;z-index:10;margin-inline:auto;display:flex;width:100%;max-width:1200px;
+    flex-direction:column;align-items:center;justify-content:center;gap:calc(var(--spacing) * 4);text-align:center}
+  /* heading-visual-h3 / h5 / h6, at the site's :root type scale */
+  .h3{font-family:var(--font-sans);font-size:2rem;line-height:1;letter-spacing:-.025em;font-weight:500;margin:0;
+    color:var(--color-foreground-100);text-wrap:balance;white-space:nowrap}
+  .h5{font-family:var(--font-sans);font-size:1.3rem;line-height:1.2;letter-spacing:-.025em;font-weight:400;margin:0;
+    color:color-mix(in oklab,var(--color-foreground-100) 70%,transparent)}
+  .h6{font-family:var(--font-sans);font-size:1.125rem;line-height:1.2;letter-spacing:-.025em;font-weight:500;margin:0}
+  @media (min-width:48rem){ .h3{font-size:3rem} .h5{font-size:1.2rem} }
+
+  /* The copy-link button that lives inside the heading: hidden until the
+     heading is hovered, and only on md and up. */
+  .copylink{position:relative;display:none;padding:calc(var(--spacing) * 3) calc(var(--spacing) * 2);margin-left:calc(var(--spacing) * -10);
+    translate:calc(var(--spacing) * 9) 0;align-items:center;justify-content:center;border:0;background:none;cursor:pointer;flex-shrink:0;
+    color:color-mix(in oklab,var(--color-foreground-100) 40%,transparent);opacity:0;
+    transition:all .2s var(--ease-out)}
+  .h3:hover .copylink{opacity:1}
+  .copylink:hover{color:color-mix(in oklab,var(--color-foreground-100) 70%,transparent)}
+  .copylink:active{scale:.9}
+  .copylink svg{display:inline-block;flex-shrink:0;width:calc(var(--spacing) * 6.5);height:calc(var(--spacing) * 6.5);user-select:none;transition:all .2s var(--ease-out)}
+  .copylink .check{position:absolute;top:50%;left:50%;translate:-50% -50%;scale:0;opacity:0}
+  .copylink.copied .link{scale:0;opacity:0}
+  .copylink.copied .check{scale:1;opacity:1}
+  @media (min-width:48rem){ .copylink{display:inline} }
+
+  /* ── the globe box ────────────────────────────────────────────────────── */
+  .globe-box{position:relative;isolation:isolate;z-index:0;margin-inline:auto;height:420px;width:100%;
+    translate:0 calc(var(--spacing) * -4);padding-inline:1px;clip-path:inset(0 0 0 0)}
+  @media (min-width:48rem){ .globe-box{height:500px;translate:0 0} }
+  /* The entrance: the site's exact choreography — 0.97 and transparent until
+     the scene reports ready, 900 ms out on cubic-bezier(0.22,1,0.36,1), a
+     failsafe at 1800 ms, will-change released 900 ms later. */
+  .enter{position:relative;width:100%;height:100%;overflow:hidden;transform-origin:50%;transform:translateZ(0);
+    transition:opacity .9s cubic-bezier(.22,1,.36,1),scale .9s cubic-bezier(.22,1,.36,1);scale:.97;opacity:0;will-change:opacity,transform}
+  .enter.ready{scale:1;opacity:1}
+  @media (prefers-reduced-motion:reduce){ .enter{scale:1;transition:none} }
+  .stage{position:relative;width:100%;height:100%;overflow:hidden;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+
+  /* Two mappo globes, one over the other: the world, and a graticule-only
+     twin that draws the twelve meridians the original draws three times (see
+     the script). Both are sized and placed by the script from the camera model,
+     so the disc lands where a 45° camera 2.8 units out would put it. */
+  .stage mappo-world{position:absolute;display:block;width:300px;left:0;top:0}
+  #lattice{pointer-events:none;z-index:1}
+  #globe .mappo-overlay{z-index:3}
+  .arcs{position:absolute;inset:0;z-index:2;pointer-events:none;width:100%;height:100%}
+
+  /* ── pins (48 px discs) and captions (240 px dashed boxes) ────────────── */
+  .poi-root,.cap-root{pointer-events:none}
+  .pin{display:flex;aspect-ratio:1;width:calc(var(--spacing) * 12);align-items:center;justify-content:center;border-radius:9999px;
+    border:1px solid;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    transition:opacity .2s var(--ease-default),transform .2s var(--ease-default);
+    opacity:0;pointer-events:none;transform:translate(-50%,-50%) scale(0)}
+  .pin--user{border-color:var(--color-accent-100);background:color-mix(in oklab,var(--color-background-200) 90%,transparent);color:var(--color-accent-100)}
+  .pin--product{border-color:var(--color-background-100);background:color-mix(in oklab,var(--color-accent-100) 90%,transparent);color:var(--color-background-100)}
+  html[data-theme="dark"] .pin--product{border-color:color-mix(in oklab,var(--color-background-100) 20%,transparent)}
+  .pin svg{display:inline-block;flex-shrink:0;width:calc(var(--spacing) * 6);height:auto}
+  .cap{pointer-events:none;position:absolute;left:0;top:0;width:240px;border:1px dashed var(--color-accent-100);
+    background:color-mix(in oklab,var(--color-background-100) 80%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    padding:calc(var(--spacing) * 3);opacity:0;transform:translate(0,0) scale(0);will-change:transform}
+  .cap.has-value{padding:calc(var(--spacing) * 2) calc(var(--spacing) * 3)}
+  .cap-text{user-select:none;transition:opacity .2s var(--ease-out);opacity:0}
+  .cap h6{color:var(--color-foreground-200)}
+  .cap p{margin:0;color:color-mix(in oklab,var(--color-foreground-200) 70%,transparent)}
+  html[data-theme="dark"] .cap h6,html[data-theme="dark"] .cap p{color:var(--color-accent-100)}
+  .cap .c{position:absolute;pointer-events:none;background:var(--color-accent-100)}
+  .cap .c.h{height:2px;width:calc(var(--spacing) * 4)} .cap .c.v{height:calc(var(--spacing) * 4);width:2px}
+  .cap .c.tl{left:-1.5px;top:-1.5px} .cap .c.tr{right:-1.5px;top:-1.5px} .cap .c.bl{left:-1.5px;bottom:-1.5px} .cap .c.br{right:-1.5px;bottom:-1.5px}
+
+  /* ── the three columns under the globe ───────────────────────────────── */
+  .cols-wrap{padding-inline:var(--px-section);position:relative;z-index:10}
+  .cols{position:relative;z-index:10;margin-inline:auto;display:grid;max-width:1200px;grid-template-columns:repeat(1,minmax(0,1fr));
+    border:1px solid var(--color-border-100)}
+  @media (min-width:48rem){ .cols{grid-template-columns:repeat(3,minmax(0,1fr))} }
+  .handles{position:absolute;inset:0;z-index:10;pointer-events:none;user-select:none}
+  .handle{position:absolute;width:14px;height:14px;border:1px solid var(--color-border-100);border-radius:3px;background:var(--color-background-100)}
+  html[data-theme="dark"] .handle{background:var(--color-background-200)}
+  .handle.tl{left:-7px;top:-7px} .handle.tr{right:-7px;top:-7px} .handle.bl{left:-7px;bottom:-7px} .handle.br{right:-7px;bottom:-7px}
+  .col{background:var(--color-background-100);padding:calc(var(--spacing) * 6);
+    transition:color .4s var(--ease-out),background-color .4s var(--ease-out),border-color .4s var(--ease-out)}
+  .col + .col{border-top:1px solid var(--color-border-100)}
+  @media (min-width:48rem){ .col{padding:calc(var(--spacing) * 8)} .col + .col{border-top:0;border-left:1px solid var(--color-border-100)} }
+  .col > div{color:var(--color-foreground-200);display:flex;flex-direction:column;align-items:flex-start}
+  .col .ico{display:inline-flex;flex-shrink:0;align-items:center;justify-content:center;width:calc(var(--spacing) * 7);height:calc(var(--spacing) * 7)}
+  .col .ico svg{display:inline-block;flex-shrink:0;width:calc(var(--spacing) * 7);height:calc(var(--spacing) * 7)}
+  .col h3{margin:calc(var(--spacing) * 2) 0 0;padding:calc(var(--spacing) * 2) 0 calc(var(--spacing) * 1)}
+  .col p{margin:0;color:color-mix(in oklab,var(--color-foreground-100) 70%,transparent)}
+
+  /* ── the note, outside the replica ────────────────────────────────────── */
+  .note{margin:calc(var(--gap-section)) auto 90px;padding-inline:var(--px-section);max-width:72ch;font-size:13.5px;line-height:1.6;
+    color:color-mix(in oklab,var(--color-foreground-100) 70%,transparent)}
+  .note p{margin:0 0 10px}
+  .note a{color:var(--color-accent-100)}
+  .note code{font:.92em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--color-background-200);
+    border:1px solid var(--color-border-100);padding:.05em .35em;border-radius:4px}
+</style>
+</head>
+<body>
+
+<button id="theme" class="theme" type="button">Light</button>
+
+<section id="home-region-earth" class="region">
+  <div class="inner">
+    <div class="head">
+      <h2 class="h3" data-cms-path="pages.home.homeRegionEarth.title">Region: Earth
+        <button class="copylink" id="copylink" type="button" title="Copy link to clipboard" aria-hidden="true" tabindex="-1">
+          <svg class="link" viewBox="0 0 24 24" aria-hidden="true"><use href="#link"></use></svg>
+          <svg class="check" viewBox="0 0 24 24" aria-hidden="true"><use href="#checkmark"></use></svg>
+        </button>
+      </h2>
+      <p class="h5" data-cms-path="pages.home.homeRegionEarth.description">One smart network for workloads + security — close to users, close to data.</p>
+    </div>
+
+    <div class="globe-box" data-cms-preview-heavy="globe">
+      <div class="enter" id="enter">
+        <div class="stage" id="stage" aria-label="A glass globe of the Earth, turning, with points of presence marked on it">
+          <!-- The world: 49,920 candidate tiles on a Fibonacci lattice, the
+               ~14,400 that fall on land drawn as squares lying on the surface;
+               a perspective camera 2.37 radii out; fog from 0.67 radii in front
+               of the centre to 1.01 behind it, so the far side shows through,
+               faint. Nothing here is Earth-specific: the same attributes draw
+               a glass Mars. -->
+          <mappo-world id="globe" mode="globe" cols="396" lat-min="-90" lat-max="90"
+            distribution="uniform" dot-shape="tile" dot-size="0.382"
+            figure="dots" figure-color="var(--color-dark-accent)"
+            distance="2.366" fog="-0.669 1.014"
+            rotate-speed="0" interactive="false" background="none"
+            graticule meridians="24" parallels="23" graticule-color="var(--graticule)" equator-color="var(--graticule)"
+            graticule-opacity="0.04" equator-opacity="0.04" graticule-width="0.5"></mappo-world>
+          <!-- The original draws twelve extra great circles through the poles
+               at 30° spacing, two per plane, on top of its 24 meridians — so
+               every other meridian is stroked three times. A graticule-only
+               twin, on a body that has no figure, reproduces the extra two. -->
+          <mappo-world id="lattice" mode="globe" body="void" cols="24" lat-min="-90" lat-max="90"
+            distance="2.366" fog="-0.669 1.014" rotate-speed="0" interactive="false" overlays="false"
+            graticule meridians="12" parallels="0" graticule-color="var(--graticule)"
+            graticule-opacity="0.0784" equator-opacity="0" graticule-width="0.5"></mappo-world>
+          <canvas class="arcs" id="arcs" aria-hidden="true"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="cols-wrap">
+      <div class="cols">
+        <div class="handles" aria-hidden="true">
+          <div class="handle tl"></div><div class="handle tr"></div><div class="handle bl"></div><div class="handle br"></div>
+        </div>
+        <div class="col"><div>
+          <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#earth"></use></svg></span>
+          <h3 class="h6">Run everywhere</h3>
+          <p>Security, connectivity, and code run in 335+ cities around the world, within 50ms of 95% of the world's population.</p>
+        </div></div>
+        <div class="col"><div>
+          <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#pin"></use></svg></span>
+          <h3 class="h6">Run anywhere</h3>
+          <p>Our network is close to your users, applications, and sites. It optimizes all your traffic from source to destination for low latency.</p>
+        </div></div>
+        <div class="col"><div>
+          <span class="ico"><svg viewBox="0 0 56 56" aria-hidden="true"><use href="#scale"></use></svg></span>
+          <h3 class="h6">Run at massive scale</h3>
+          <p>No more capacity planning. Ever.</p>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="note">
+  <p>A rebuild of the <em>Region: Earth</em> section of cloudflare.com, to the pixel where mappo can reach it.
+  Theirs is three.js: 16,098 land points sampled from a texture on a 50,000-point Fibonacci lattice, drawn as
+  squares tangent to a sphere, no sphere behind them, linear fog from the page background, a 45° camera and
+  OrbitControls locked to the equator. Here the same picture is four attributes on one element:
+  <code>distribution="uniform"</code>, <code>dot-shape="tile"</code>, <code>distance="2.37"</code> and
+  <code>fog="-0.67 1.01"</code>, with the land coming from mappo's own Natural Earth mask instead of a picture.</p>
+  <p>The pins and captions are ordinary DOM inside the element, positioned by mappo; the arcs are drawn on a
+  canvas from <code>locate()</code>. The spin is the original's: the camera orbits the screen's vertical while
+  the globe leans 14.3°, so the pole slowly wanders — that motion is decomposed each frame into mappo's
+  <code>focus</code>, <code>tilt</code> and <code>roll</code>. Drag the globe. <a href="./">More demos</a>.</p>
+</div>
+
+<!-- The icon shapes as the section uses them. -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="productWorkers" viewBox="0 0 25 24" fill="none">
+    <path d="M9.87182 18.3256L5.14774 12.0072L9.84586 5.86857L8.93876 4.63086L3.64504 11.5551L3.6377 12.4407L8.95688 19.5633L9.87182 18.3256Z" fill="currentColor"/>
+    <path d="M11.5208 3.18359H9.70264L16.2595 12.1469L9.85692 20.8162H11.6863L18.0855 12.1503L11.5208 3.18359Z" fill="currentColor"/>
+    <path d="M15.0365 3.18359H13.1958L19.856 12.0401L13.1958 20.8162H15.0399L21.3622 12.4848V11.5993L15.0365 3.18359Z" fill="currentColor"/>
+  </symbol>
+  <symbol id="productR2" viewBox="0 0 25 24" fill="none">
+    <path fill-rule="evenodd" clip-rule="evenodd" d="M18.6734 3.8538C17.2154 3.366 15.0986 3.0366 12.6872 3.0366C10.2764 3.0366 8.1602 3.366 6.7016 3.8538C5.9648 4.0998 5.4818 4.359 5.2136 4.5708C5.1576 4.6152 5.1168 4.6512 5.0912 4.6788C5.1224 4.7814 5.2088 4.9158 5.4284 5.0808C5.7428 5.3172 6.2516 5.5506 6.9662 5.7522C8.387 6.1518 10.4048 6.366 12.6878 6.366C14.9708 6.366 16.988 6.1518 18.4088 5.7522C19.1234 5.5506 19.6328 5.3172 19.9466 5.0808C20.1662 4.9158 20.2526 4.7814 20.2838 4.6788C20.2455 4.64006 20.2046 4.60398 20.1614 4.5708C19.8932 4.359 19.4102 4.1004 18.6734 3.8538ZM6.5294 7.2282C5.9984 7.0782 5.5034 6.897 5.075 6.675V9.3108C5.075 9.4284 5.1332 9.6192 5.45 9.8754C5.771 10.1352 6.2846 10.3968 6.9956 10.6266C8.4116 11.085 10.4216 11.3598 12.6872 11.3598C14.954 11.3598 16.964 11.085 18.3794 10.6266C19.0904 10.3968 19.604 10.1346 19.925 9.8754C20.2418 9.6192 20.3 9.4284 20.3 9.3114V6.675C19.871 6.897 19.3766 7.0788 18.8456 7.2282C17.2256 7.6842 15.044 7.9026 12.6872 7.9026C10.3304 7.9026 8.1488 7.6842 6.5294 7.2282ZM21.875 9.3108V4.5732C21.875 2.8758 17.7614 1.5 12.6872 1.5C7.6142 1.5 3.5 2.8758 3.5 4.5732V19.4268C3.5 21.1242 7.6136 22.5 12.6878 22.5C17.7614 22.5 21.875 21.1242 21.875 19.4268V9.3108ZM20.3 11.4804C19.88 11.7162 19.397 11.916 18.875 12.0852C17.2502 12.6114 15.0602 12.8964 12.6872 12.8964C10.3148 12.8964 8.1248 12.6114 6.5 12.0852C5.978 11.916 5.4944 11.7162 5.075 11.4804V14.0484C5.075 14.166 5.1332 14.3568 5.45 14.6136C5.771 14.8728 6.2846 15.1344 6.9956 15.3648C8.4116 15.8226 10.4216 16.0974 12.6872 16.0974C14.954 16.0974 16.964 15.8226 18.3794 15.3648C19.0904 15.1344 19.604 14.8728 19.925 14.6136C20.2418 14.3568 20.3 14.166 20.3 14.049V11.4804ZM6.5 16.8228C5.978 16.6542 5.4944 16.4538 5.075 16.2186V19.3044C5.1014 19.3332 5.1446 19.3746 5.2136 19.4292C5.4818 19.641 5.9648 19.9002 6.7016 20.1462C8.1596 20.634 10.2764 20.9634 12.6872 20.9634C15.098 20.9634 17.2148 20.634 18.6734 20.1462C19.4102 19.9002 19.8932 19.641 20.1614 19.4292C20.2108 19.3913 20.2571 19.3495 20.3 19.3044V16.2186C19.88 16.4538 19.397 16.6542 18.875 16.8228C17.2502 17.349 15.0602 17.634 12.6872 17.634C10.3148 17.634 8.1248 17.349 6.5 16.8228ZM7.4372 9.8232C7.8722 9.8232 8.225 9.4794 8.225 9.0552C8.225 8.631 7.8722 8.2866 7.4372 8.2866C7.0028 8.2866 6.65 8.6304 6.65 9.0546C6.65 9.4788 7.0022 9.8232 7.4372 9.8232ZM8.225 13.9212C8.225 14.3448 7.8722 14.6892 7.4372 14.6892C7.0028 14.6892 6.65 14.3448 6.65 13.9212C6.65 13.4964 7.0028 13.1526 7.4378 13.1526C7.8722 13.1526 8.225 13.497 8.225 13.9212ZM7.4372 19.4268C7.8722 19.4268 8.225 19.083 8.225 18.6588C8.225 18.2346 7.8722 17.8908 7.4372 17.8908C7.0028 17.8908 6.65 18.234 6.65 18.6588C6.65 19.083 7.0022 19.4268 7.4372 19.4268Z" fill="currentColor"/>
+  </symbol>
+  <symbol id="shieldPlus" viewBox="0 0 24 24" fill="none">
+    <path d="M12 14.4999V8.49987M9 11.4999H15M20 11.9999C20 16.9083 14.646 20.4783 12.698 21.6147C12.4766 21.7439 12.3659 21.8085 12.2097 21.842C12.0884 21.868 11.9116 21.868 11.7903 21.842C11.6341 21.8085 11.5234 21.7439 11.302 21.6147C9.35396 20.4783 4 16.9083 4 11.9999V7.21747C4 6.41796 4 6.0182 4.13076 5.67457C4.24627 5.37101 4.43398 5.10015 4.67766 4.8854C4.9535 4.64231 5.3278 4.50195 6.0764 4.22122L11.4382 2.21054C11.6461 2.13258 11.75 2.0936 11.857 2.07815C11.9518 2.06444 12.0482 2.06444 12.143 2.07815C12.25 2.0936 12.3539 2.13258 12.5618 2.21054L17.9236 4.22122C18.6722 4.50195 19.0465 4.64231 19.3223 4.8854C19.566 5.10015 19.7537 5.37101 19.8692 5.67457C20 6.0182 20 6.41796 20 7.21747V11.9999Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="user2" viewBox="0 0 24 24" fill="none">
+    <path fill-rule="evenodd" clip-rule="evenodd" d="M2.27242 19.314C4.77828 16.6562 8.20525 15 12 15C15.7948 15 19.2218 16.6562 21.7276 19.314C22.0014 19.6044 22.0763 20.0298 21.9182 20.3962C21.76 20.7627 21.3991 21 21 21H3.00002C2.60091 21 2.24001 20.7627 2.08187 20.3962C1.92373 20.0298 1.99863 19.6044 2.27242 19.314Z" stroke="currentColor" stroke-width="1.5"/>
+    <path fill-rule="evenodd" clip-rule="evenodd" d="M6.50002 7.5C6.50002 4.46243 8.96246 2 12 2C15.0376 2 17.5 4.46243 17.5 7.5C17.5 10.5376 15.0376 13 12 13C8.96246 13 6.50002 10.5376 6.50002 7.5Z" stroke="currentColor" stroke-width="1.5"/>
+  </symbol>
+  <symbol id="earth" viewBox="0 0 24 24" fill="none">
+    <path fill="currentColor" d="M12 1.5A10.5 10.5 0 1 0 22.5 12 10.51 10.51 0 0 0 12 1.5m3.75 2.33c.794.365 1.53.845 2.187 1.424l-.31.746H15.75zm-5.716 16.947A8.983 8.983 0 0 1 6.087 5.232L7.099 6.75h2.506l-1.125 3H5.46l-1.037 3.11 1.926 2.89h3.75l1.073 1.61zM12 21c-.152 0-.301-.015-.452-.023l1.048-3.142a1.49 1.49 0 0 0-.175-1.306l-1.074-1.61a1.5 1.5 0 0 0-1.248-.669H7.15l-1.074-1.61.464-1.39H8.25v1.5h1.5v-2.114l2.202-5.873-1.404-.526-.38 1.013H7.9l-.605-.908a8.85 8.85 0 0 1 6.954-1.046V6a1.5 1.5 0 0 0 1.5 1.5h1.94a1.5 1.5 0 0 0 1.06-.44l.105-.105.212-.51A9 9 0 0 1 20.475 9h-3.526a1.495 1.495 0 0 0-1.479 1.249l-.447 2.58a1.49 1.49 0 0 0 .743 1.565l1.623 1.098 1.094 2.735A8.97 8.97 0 0 1 12 21m6.61-6.492-2.035-1.376-.075-.045.449-2.587h3.915a8.8 8.8 0 0 1-1.308 6.371z"/>
+  </symbol>
+  <symbol id="pin" viewBox="0 0 24 24" fill="none">
+    <path d="M5 14.2864C3.14864 15.1031 2 16.2412 2 17.5C2 19.9853 6.47715 22 12 22C17.5228 22 22 19.9853 22 17.5C22 16.2412 20.8514 15.1031 19 14.2864M18 8C18 12.0637 13.5 14 12 17C10.5 14 6 12.0637 6 8C6 4.68629 8.68629 2 12 2C15.3137 2 18 4.68629 18 8ZM13 8C13 8.55228 12.5523 9 12 9C11.4477 9 11 8.55228 11 8C11 7.44772 11.4477 7 12 7C12.5523 7 13 7.44772 13 8Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="scale" viewBox="0 0 56 56" fill="none">
+    <path d="M32.6665 51.3334H15.8665M15.8665 51.3334C11.9461 51.3334 9.98595 51.3334 8.48857 50.5705C7.17144 49.8993 6.10057 48.8285 5.42946 47.5113C4.6665 46.014 4.6665 44.0538 4.6665 40.1334M15.8665 51.3334H16.7998C20.7202 51.3334 22.6804 51.3334 24.1778 50.5705C25.4949 49.8993 26.5658 48.8285 27.2369 47.5113C27.9998 46.014 27.9998 44.0538 27.9998 40.1334V39.2001C27.9998 35.2797 27.9998 33.3195 27.2369 31.8221C26.5658 30.505 25.4949 29.4342 24.1778 28.763C22.6804 28.0001 20.7202 28.0001 16.7998 28.0001H15.8665C11.9461 28.0001 9.98595 28.0001 8.48857 28.763C7.17144 29.4342 6.10057 30.505 5.42946 31.8221C4.6665 33.3195 4.6665 35.2797 4.6665 39.2001V40.1334M4.6665 40.1334V23.3334M23.3332 4.66675H32.6665M51.3332 23.3334V32.6667M41.9998 51.3334C44.1698 51.3334 45.2547 51.3334 46.1449 51.0949C48.5606 50.4476 50.4474 48.5608 51.0947 46.1452C51.3332 45.255 51.3332 44.17 51.3332 42.0001M51.3332 14.0001C51.3332 11.8301 51.3332 10.7452 51.0947 9.85502C50.4474 7.43937 48.5606 5.55254 46.1449 4.90527C45.2547 4.66675 44.1698 4.66675 41.9998 4.66675M13.9998 4.66675C11.8299 4.66675 10.7449 4.66675 9.85477 4.90527C7.43913 5.55254 5.55229 7.43937 4.90502 9.85502C4.6665 10.7452 4.6665 11.8301 4.6665 14.0001" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="link" viewBox="0 0 24 24" fill="none">
+    <path d="M12.7076 18.3639L11.2933 19.7781C9.34072 21.7308 6.1749 21.7308 4.22228 19.7781C2.26966 17.8255 2.26966 14.6597 4.22228 12.7071L5.63649 11.2929M18.3644 12.7071L19.7786 11.2929C21.7312 9.34024 21.7312 6.17441 19.7786 4.22179C17.826 2.26917 14.6602 2.26917 12.7076 4.22179L11.2933 5.636M8.50045 15.4999L15.5005 8.49994" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="checkmark" viewBox="0 0 24 24" fill="none">
+    <path d="M20 6L9 17L4 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+</svg>
+
+<script type="module">
+import { bindThemeToggle } from "../assets/theme.js";
+bindThemeToggle(document.getElementById("theme"));
+
+const RAD = Math.PI / 180, DEG = 180 / Math.PI;
+const $ = (id) => document.getElementById(id);
+const stage = $("stage"), globeEl = $("globe"), latticeEl = $("lattice"), arcsCanvas = $("arcs");
+
+// ── the points of presence, as the section ships them ────────────────────────
+// Eighteen points: infrastructure (Workers, R2) in four groups, users in four
+// groups wired to them, and one shield. Captions sit on five. Verbatim.
+const POIS = [
+  { lat: 40.7128, lon: -74.006, icon: "productWorkers", group: "ny-infra" },
+  { lat: 44.7128, lon: -70.006, icon: "productR2", group: "ny-infra" },
+  { lat: 51.5074, lon: -0.1278, icon: "productWorkers", group: "uk-infra" },
+  { lat: 55.3781, lon: -3.436, icon: "productR2", group: "uk-infra" },
+  { lat: 30.076, lon: 69.8777, icon: "productWorkers", group: "india-infra" },
+  { lat: 22.2048, lon: 57.2708, icon: "productWorkers", group: "india-infra", caption: "Compute close to users reduces network latency.", side: "left" },
+  { lat: 12.9716, lon: 77.5946, icon: "productR2", group: "india-infra" },
+  { lat: 35.6762, lon: 139.6503, icon: "productWorkers", group: "japan-infra", caption: "Smart Placement moves your Worker closer to your data for optimized end-to-end latency.", side: "right" },
+  { lat: 34.6937, lon: 135.5023, icon: "productR2", group: "japan-infra" },
+  { lat: 37.7749, lon: -122.4194, icon: "user2", group: "group1", value: "4.5x faster", caption: "Faster for 95% of round trips by running Workers near your backend, not you.", side: "left" },
+  { lat: 20.1619, lon: -80.8515, icon: "user2", group: "group1", caption: "95% of the world’s Internet-connected population is reached by Cloudflare within 50ms.", side: "right" },
+  { lat: 40.4168, lon: -3.7038, icon: "user2", group: "group2" },
+  { lat: 52.2297, lon: 21.0122, icon: "user2", group: "group2" },
+  { lat: 28.076, lon: 72.8777, icon: "user2", group: "group3" },
+  { lat: 25.2048, lon: 55.2708, icon: "user2", group: "group3" },
+  { lat: 14.5995, lon: 120.9842, icon: "user2", group: "group4" },
+  { lat: 21.0285, lon: 105.8542, icon: "user2", group: "group4" },
+  { lat: 37.5074, lon: -7.1278, icon: "shieldPlus", value: "310B", caption: "Daily cyber threats blocked.", side: "left" }
+].map((p) => ({ ...p, id: `poi-${p.lat}-${p.lon}` }));
+const LINKS = { "ny-infra": [ "group1" ], "uk-infra": [ "group2" ], "india-infra": [ "group3" ], "japan-infra": [ "group4" ] };
+const isProduct = (p) => p.icon === "productWorkers" || p.icon === "productR2";
+
+// ── the camera, in mappo's terms ─────────────────────────────────────────────
+// The original: a 45° camera at (0, −0.5, 2.75) aimed at the origin, orbit
+// controls that clamp it onto the equatorial plane (so it sits at z = 2.795),
+// a globe of radius 1.2 × 0.99 = 1.188 placed 0.3 below the target, and linear
+// fog from depth 2 to 4. Everything below follows from those numbers:
+//   distance   camera → globe centre, in radii: √(2.795² + 0.3²) / 1.188
+//   fog        (depth − 2) / 2 with depth = 2.795 − 1.188·z, rewritten in radii
+//              from the centre plane: near = −0.669, far = 1.014
+//   radius     the disc on screen: tan(asin(1.188 / 2.811)) / tan(22.5°) × H/2
+//   centre     0.3 below the target → the disc sits 0.1296·H below the middle
+//   tilt       the camera looks down at the globe by atan(0.3 / 2.795)
+// Under 768 px the camera stands at z = 4 with fog 3.25–6, and the same
+// arithmetic gives the second row.
+const CAM = {
+  desktop: { distance: 2.366, fog: "-0.669 1.014", radius: 0.5629, centre: 0.6296, tilt: 6.126 },
+  mobile:  { distance: 3.402, fog: "-0.657 1.657", radius: 0.3711, centre: 0.5898, tilt: 4.257 }
+};
+const LEAN = -0.25;                    // the group's rotation.z, in radians: the north pole leans right
+const SPIN = (2 * Math.PI / 60) * 0.3; // OrbitControls autoRotateSpeed 0.3 → 1.8°/s, eastward
+const mobileQuery = matchMedia("(max-width: 767px)");
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const isMobile = () => mobileQuery.matches;
+
+// ── pins and captions: DOM children the element will position ────────────────
+// Built before mappo loads, so they are there when the element upgrades and
+// harvests its data-lat/data-lon children.
+const pinEls = new Map(), capEls = new Map(), capTextEls = new Map(), capRootEls = new Map();
+for (const p of POIS) {
+  const root = document.createElement("div");
+  root.className = "poi-root"; root.dataset.lat = p.lat; root.dataset.lon = p.lon;
+  const pin = document.createElement("div");
+  pin.className = `pin ${p.icon === "user2" ? "pin--user" : "pin--product"}`;
+  pin.setAttribute("aria-hidden", "true");
+  pin.innerHTML = `<svg viewBox="0 0 ${p.icon === "productWorkers" || p.icon === "productR2" ? 25 : 24} 24" aria-hidden="true"><use href="#${p.icon}"></use></svg>`;
+  root.appendChild(pin);
+  globeEl.appendChild(root);
+  pinEls.set(p.id, pin);
+  if (!p.caption) continue;
+  const croot = document.createElement("div");
+  croot.className = "cap-root"; croot.dataset.lat = p.lat; croot.dataset.lon = p.lon;
+  const cap = document.createElement("div");
+  cap.className = `cap${p.value ? " has-value" : ""}`;
+  cap.dataset.captionId = `caption-${p.lat}-${p.lon}`;
+  cap.setAttribute("aria-hidden", "true");
+  cap.innerHTML = `<div class="cap-text">${p.value ? `<h6 class="h6">${p.value}</h6>` : ""}<p>${p.caption}</p></div>` +
+    `<span class="c h tl"></span><span class="c v tl"></span><span class="c h tr"></span><span class="c v tr"></span>` +
+    `<span class="c h bl"></span><span class="c v bl"></span><span class="c h br"></span><span class="c v br"></span>`;
+  croot.appendChild(cap);
+  globeEl.appendChild(croot);
+  capEls.set(p.id, cap); capTextEls.set(p.id, cap.firstElementChild); capRootEls.set(p.id, croot);
+}
+
+// ── placing the globe in its box ─────────────────────────────────────────────
+// mappo's canvas is square and its disc is 0.40 of the side, so the element is
+// sized from the disc the camera model asks for and centred where that camera
+// puts it. Both globes get the same box.
+let geom = { side: 300, left: 0, top: 0, W: 0, H: 0, cam: CAM.desktop };
+function layout() {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  if (!W || !H) return;
+  const cam = isMobile() ? CAM.mobile : CAM.desktop;
+  const R = cam.radius * H, side = R / 0.4;
+  geom = { side, left: W / 2 - side / 2, top: cam.centre * H - side / 2, W, H, cam, R };
+  for (const el of [ globeEl, latticeEl ]) {
+    el.style.width = `${side.toFixed(2)}px`;
+    el.style.left = `${geom.left.toFixed(2)}px`;
+    el.style.top = `${geom.top.toFixed(2)}px`;
+    if (el.getAttribute("distance") !== String(cam.distance)) el.setAttribute("distance", String(cam.distance));
+    if (el.getAttribute("fog") !== cam.fog) el.setAttribute("fog", cam.fog);
+  }
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  arcsCanvas.width = Math.round(W * dpr); arcsCanvas.height = Math.round(H * dpr);
+  // WebGL lines are one device pixel wide whatever the screen; so are these.
+  const hairline = String(1 / dpr);
+  for (const el of [ globeEl, latticeEl ]) if (el.getAttribute("graticule-width") !== hairline) el.setAttribute("graticule-width", hairline);
+}
+layout();
+
+// mappo arrives now, after the children exist and the boxes have a size.
+const { registerBody } = await import("../dist/mappo.js");
+// The graticule twin draws on a world with no figure at all.
+registerBody({ id: "void", name: "Void", latRange: [ -90, 90 ], figure: () => false });
+
+const ready = (el) => el.map ? Promise.resolve() : customElements.whenDefined(el.localName).then(() => new Promise(queueMicrotask));
+await Promise.all([ ready(globeEl), ready(latticeEl) ]);
+const map = globeEl.map, lattice = latticeEl.map;
+new ResizeObserver(() => { layout(); paint(true); }).observe(stage);
+
+// ── the graticule's theme: 4% on dark, full on light ─────────────────────────
+function themeGraticule() {
+  const a = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--graticule-alpha")) || 1;
+  globeEl.setAttribute("graticule-opacity", String(a));
+  globeEl.setAttribute("equator-opacity", String(a));
+  latticeEl.setAttribute("graticule-opacity", String(1 - (1 - a) ** 2));   // two more strokes over the base one
+  arcColor = getComputedStyle(document.documentElement).getPropertyValue("--color-accent-200").trim() || "#ff7038";
+}
+let arcColor = "#ff7038";
+themeGraticule();
+new MutationObserver(themeGraticule).observe(document.documentElement, { attributes: true, attributeFilter: [ "class", "style", "data-theme" ] });
+
+// ── orientation: the original's kinematics, decomposed for mappo ─────────────
+// The original spins the CAMERA about the screen's vertical while the globe is
+// rolled by −0.25 rad about the view axis, so the leaning pole slowly circles.
+// mappo spins a globe about its own polar axis and then rolls the picture. The
+// two agree only frame by frame: the original's full rotation is built here
+// and factored into mappo's roll · tilt · spin.
+const rx = (a) => [ [ 1, 0, 0 ], [ 0, Math.cos(a), -Math.sin(a) ], [ 0, Math.sin(a), Math.cos(a) ] ];
+const ry = (a) => [ [ Math.cos(a), 0, Math.sin(a) ], [ 0, 1, 0 ], [ -Math.sin(a), 0, Math.cos(a) ] ];
+const rz = (a) => [ [ Math.cos(a), -Math.sin(a), 0 ], [ Math.sin(a), Math.cos(a), 0 ], [ 0, 0, 1 ] ];
+const mul = (A, B) => A.map((row, i) => [ 0, 1, 2 ].map((j) => row[0] * B[0][j] + row[1] * B[1][j] + row[2] * B[2][j]));
+function orientation(alpha, tiltDeg) {
+  // three.js's sphere has 90°W facing +z where mappo has 0°: Ry(90°) first.
+  const M = mul(rx(tiltDeg * RAD), mul(ry(alpha), mul(rz(LEAN), ry(Math.PI / 2))));
+  // M = Rz(−roll) · Rx(tilt) · Ry(spin): the pole's image gives roll and tilt,
+  // what is left is the spin.
+  const tilt = Math.asin(Math.max(-1, Math.min(1, M[2][1])));
+  const roll = Math.atan2(M[0][1], M[1][1]);
+  const N = mul(rx(-tilt), mul(rz(roll), M));
+  const spin = Math.atan2(N[0][2], N[0][0]);
+  return { roll: roll * DEG, tilt: tilt * DEG, focus: { lat: 0, lon: -spin * DEG } };
+}
+
+// ── the frame ────────────────────────────────────────────────────────────────
+// ?lon=100 starts with that longitude facing the viewer and ?still holds the
+// spin, so a frame can be reproduced exactly (for comparing against a screenshot).
+const params = new URLSearchParams(location.search);
+const startLon = Number(params.get("lon"));
+let alpha = Number.isFinite(startLon) ? -(startLon + 90) * RAD : 0;   // at α = 0 it is 90°W that faces the viewer
+const still = params.has("still");
+let lastT = null, speed = 0, dragging = false, dragX = 0;
+const visible = new Set();               // pin ids currently shown
+const arcs = buildArcs();
+const arcState = new Map();
+const capState = new Map();              // id → { growing, since, shown }
+const t0 = performance.now();
+let active = true;
+
+function paint(force = false) {
+  const now = performance.now();
+  const dt = lastT == null ? 1 / 60 : Math.min(0.1, (now - lastT) / 1000);
+  lastT = now;
+  const t = (now - t0) / 1000;
+  const before = alpha;
+  if (!dragging && !reduceMotion.matches && !still) alpha += SPIN * dt;
+  // The camera "moves fast" when the smoothed per-frame turn exceeds 0.05 rad;
+  // pins and captions hide while it does.
+  speed = speed * 0.7 + Math.abs(alpha - before) * 0.3;
+  const fast = speed > 0.05;
+
+  const o = orientation(alpha, geom.cam.tilt);
+  map.update(o);
+  lattice.update(o);
+
+  // Visibility with hysteresis: appear above 0.12 facing, stay down to 0.02.
+  const D = geom.cam.distance;
+  const facingOf = (z) => (D * z - 1) / Math.sqrt(D * D - 2 * D * z + 1);
+  const located = new Map();
+  for (const p of POIS) {
+    const q = map.locate(p.lat, p.lon);
+    if (!q) continue;
+    located.set(p.id, q);
+    const f = facingOf(q.z);
+    const shown = (visible.has(p.id) ? f > 0.02 : f > 0.12) && !fast;
+    if (shown) visible.add(p.id); else visible.delete(p.id);
+  }
+  const groupsLit = new Set();
+  for (const p of POIS) if (p.group && p.icon === "user2" && visible.has(p.id)) groupsLit.add(p.group);
+  for (const [ infra, users ] of Object.entries(LINKS)) if (users.some((g) => groupsLit.has(g))) groupsLit.add(infra);
+  const pinShown = (p) => visible.has(p.id) && (!p.group || !isProduct(p) || groupsLit.has(p.group));
+
+  const mobile = isMobile();
+  for (const p of POIS) {
+    const pin = pinEls.get(p.id), q = located.get(p.id);
+    const on = !!q && pinShown(p);
+    pin.style.opacity = on ? "1" : "0";
+    pin.style.transform = `translate(-50%, -50%) scale(${on ? (mobile ? 0.8 : 1) : 0})`;
+    pin.setAttribute("aria-hidden", on ? "false" : "true");
+    if (p.caption) caption(p, on, q, t, mobile);
+  }
+  drawArcs(dt, located, pinShown);
+}
+
+// A caption grows out of its pin's side of the screen and bobs gently. Right-
+// sided captions show only while their pin is on the right half, left-sided on
+// the left; northern pins (above 30°) get theirs below, the rest above.
+function caption(p, pinOn, q, t, mobile) {
+  const cap = capEls.get(p.id), text = capTextEls.get(p.id);
+  const north = Math.sin(p.lat * RAD) > 0.5;
+  const isRight = q ? q.x > q.cx : false;
+  const base = north ? (mobile ? 160 : 100) : (mobile ? -200 : -160);
+  const bob = Math.sin(t * 0.6 + p.lat + p.lon) * 6;
+  const y = Math.max(mobile ? -80 : -60, Math.min(mobile ? 180 : 120, base + bob));
+  const show = pinOn && (mobile || (p.side === "right" && isRight) || (p.side === "left" && !isRight));
+  const onRight = mobile ? p.side === "right" : isRight;
+  const x = (onRight ? 1 : -1) * (onRight ? (mobile ? 84 : 92) : (mobile ? 112 : 280));
+  const state = capState.get(p.id) ?? { shown: false, since: 0 };
+  if (show && !state.shown) {
+    state.since = t;
+    cap.style.transformOrigin = `${north ? "top" : "bottom"} ${onRight ? "left" : "right"}`;
+    text.style.opacity = "0";
+  }
+  state.shown = show;
+  capState.set(p.id, state);
+  if (!show) {
+    cap.style.opacity = "0";
+    cap.style.transform = `translate(${x}px, ${y}px) scale(0)`;
+    cap.setAttribute("aria-hidden", "true");
+    return;
+  }
+  const k = Math.min(1, (t - state.since) / 0.2);
+  const s = 1 - (1 - k) ** 3;
+  if (k >= 1) text.style.opacity = "1";
+  cap.style.opacity = "1";
+  cap.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  cap.setAttribute("aria-hidden", "false");
+}
+
+// ── arcs: user → Workers, Workers → R2, drawn from locate() ──────────────────
+// The original's curve: twenty chord samples between the two surface points,
+// each pushed outward by 0.3·(b − b²) — a bulge of 0.075 radii at the middle —
+// run through a Catmull-Rom spline and swept into a tube 0.002 radii thick.
+// Its reveal: the head races ahead, the tail follows, the colour fades with
+// the arc's own length. Here the same points are projected by mappo every
+// frame, with the fog's alpha at each depth.
+function buildArcs() {
+  const unit = (p) => { const c = Math.cos(p.lat * RAD); return [ c * Math.sin(p.lon * RAD), Math.sin(p.lat * RAD), c * Math.cos(p.lon * RAD) ]; };
+  const curve = (a, b) => {
+    const A = unit(a), B = unit(b), pts = [];
+    for (let g = 0; g <= 20; g++) {
+      const s = g / 20, lift = 0.3 * (s - s * s);
+      const m = [ 0, 1, 2 ].map((i) => A[i] * (1 - s) + B[i] * s);
+      const len = Math.hypot(...m) || 1;
+      pts.push(m.map((v, i) => v + (v / len) * lift));
+    }
+    return resample(catmullRom(pts), 64).map(([ x, y, z ]) => {
+      const r = Math.hypot(x, y, z);
+      return { lat: Math.asin(y / r) * DEG, lon: Math.atan2(x, z) * DEG, r };
+    });
+  };
+  const out = [];
+  const byGroup = new Map();
+  for (const p of POIS) if (p.group) (byGroup.get(p.group) ?? byGroup.set(p.group, []).get(p.group)).push(p);
+  for (const [ infra, userGroups ] of Object.entries(LINKS)) {
+    const infraPts = byGroup.get(infra) ?? [];
+    const workers = infraPts.filter((p) => p.icon === "productWorkers"), r2s = infraPts.filter((p) => p.icon === "productR2");
+    for (const g of userGroups) {
+      for (const u of (byGroup.get(g) ?? []).filter((p) => p.icon === "user2")) {
+        for (const w of workers) out.push({ id: `user-worker:${u.id}->${w.id}`, from: u, to: w, pts: curve(u, w) });
+      }
+    }
+    for (const w of workers) for (const r of r2s) out.push({ id: `worker-r2:${w.id}->${r.id}`, from: w, to: r, pts: curve(w, r) });
+  }
+  return out;
+}
+// Centripetal Catmull-Rom through the points, as three.js's CatmullRomCurve3 does it.
+function catmullRom(P, per = 10) {
+  const out = [];
+  const n = P.length;
+  const pt = (i) => P[Math.max(0, Math.min(n - 1, i))];
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = pt(i - 1), p1 = pt(i), p2 = pt(i + 1), p3 = pt(i + 2);
+    const d = (a, b) => Math.sqrt(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])) || 1e-4;
+    const dt0 = d(p0, p1), dt1 = d(p1, p2), dt2 = d(p2, p3);
+    for (let k = 0; k < per || (i === n - 2 && k === per); k++) {
+      const s = k / per;
+      out.push([ 0, 1, 2 ].map((c) => {
+        const t1 = ((p1[c] - p0[c]) / dt0 - (p2[c] - p0[c]) / (dt0 + dt1) + (p2[c] - p1[c]) / dt1) * dt1;
+        const t2 = ((p2[c] - p1[c]) / dt1 - (p3[c] - p1[c]) / (dt1 + dt2) + (p3[c] - p2[c]) / dt2) * dt1;
+        const c0 = p1[c], c1 = t1, c2 = -3 * p1[c] + 3 * p2[c] - 2 * t1 - t2, c3 = 2 * p1[c] - 2 * p2[c] + t1 + t2;
+        return c0 + c1 * s + c2 * s * s + c3 * s * s * s;
+      }));
+    }
+  }
+  return out;
+}
+// Equal steps of arc length — what TubeGeometry's getPointAt gives.
+function resample(pts, segments) {
+  const cum = [ 0 ];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]));
+  const total = cum[cum.length - 1], out = [];
+  let j = 0;
+  for (let s = 0; s <= segments; s++) {
+    const target = (s / segments) * total;
+    while (j < cum.length - 2 && cum[j + 1] < target) j++;
+    const span = cum[j + 1] - cum[j] || 1, f = (target - cum[j]) / span;
+    out.push([ 0, 1, 2 ].map((c) => pts[j][c] + (pts[j + 1][c] - pts[j][c]) * f));
+  }
+  return out;
+}
+const ease = (t) => 1 - (1 - t) ** 3, clamp01 = (v) => Math.max(0, Math.min(1, v));
+function drawArcs(dt, located, pinShown) {
+  const ctx = arcsCanvas.getContext("2d");
+  const dpr = arcsCanvas.width / geom.W;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, geom.W, geom.H);
+  const D = geom.cam.distance, pxPerRadius = geom.R * Math.sqrt(D * D - 1);
+  ctx.strokeStyle = arcColor;
+  ctx.lineCap = "round";
+  for (const arc of arcs) {
+    const endpoint = (p) => pinShown(p);
+    const startOn = endpoint(arc.from), endOn = endpoint(arc.to), on = startOn && endOn;
+    let st = arcState.get(arc.id);
+    if (!st) arcState.set(arc.id, st = { start: 0, end: 0, active: on, exitFrom: "end", startWas: startOn, endWas: endOn });
+    if (on !== st.active) { st.active = on; if (!on) st.exitFrom = st.startWas && !startOn ? "start" : "end"; }
+    else if (!on) { if (st.startWas && !startOn) st.exitFrom = "start"; else if (st.endWas && !endOn) st.exitFrom = "end"; }
+    const step = dt / (on ? 1.5 : 0.55);
+    if (on) { st.start = clamp01(st.start - step); st.end = clamp01(st.end + step); }
+    else if (st.exitFrom === "start") st.start = clamp01(Math.min(st.end, st.start + step));
+    else st.end = clamp01(Math.max(st.start, st.end - step));
+    st.startWas = startOn; st.endWas = endOn;
+    const a = ease(st.start), b = ease(st.end), w = Math.max(0, b - a);
+    if (w <= 0) continue;
+    // The visible slice of the tube, in arc length.
+    const pts = arc.pts, n = pts.length - 1;
+    const from = a * n, to = b * n;
+    const sample = (u) => {
+      const i = Math.min(n - 1, Math.floor(u)), f = u - i;
+      const p = pts[i], q = pts[i + 1];
+      const lat = p.lat + (q.lat - p.lat) * f, lon = p.lon + (q.lon - p.lon) * f, r = p.r + (q.r - p.r) * f;
+      const L = map.locate(lat, lon, r);
+      return L && { x: L.x + geom.left, y: L.y + geom.top, fade: L.fade, k: pxPerRadius / (D - L.z * r) };
+    };
+    let prev = sample(from);
+    for (let u = Math.floor(from) + 1; u <= to + 1e-9; u++) {
+      const cur = sample(Math.min(u, to));
+      if (prev && cur) {
+        ctx.globalAlpha = 0.8 * w * (prev.fade + cur.fade) / 2;
+        ctx.lineWidth = 0.004 * (prev.k + cur.k) / 2;
+        ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(cur.x, cur.y); ctx.stroke();
+      }
+      prev = cur;
+      if (u >= to) break;
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ── drag: the camera walks round the equator, a full turn per canvas height ──
+stage.addEventListener("pointerdown", (e) => { dragging = true; dragX = e.clientX; stage.setPointerCapture?.(e.pointerId); });
+stage.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  alpha += (2 * Math.PI * (e.clientX - dragX)) / geom.H;
+  dragX = e.clientX;
+});
+const release = () => { dragging = false; };
+stage.addEventListener("pointerup", release);
+stage.addEventListener("pointercancel", release);
+
+// ── the loop, only while the section is near the viewport ────────────────────
+let raf = null;
+function frame() { raf = null; paint(); if (active) raf = requestAnimationFrame(frame); }
+new IntersectionObserver(([ entry ]) => {
+  active = entry.isIntersecting;
+  if (active && !raf) { lastT = null; raf = requestAnimationFrame(frame); }
+}, { rootMargin: "160px" }).observe(stage);
+paint(true);
+if (!raf) raf = requestAnimationFrame(frame);
+
+// ── entrance ─────────────────────────────────────────────────────────────────
+const enter = $("enter");
+let entered = false;
+const markReady = () => {
+  if (entered) return;
+  entered = true;
+  enter.classList.add("ready");
+  setTimeout(() => { enter.style.willChange = "auto"; }, 900);
+};
+requestAnimationFrame(() => requestAnimationFrame(markReady));
+setTimeout(markReady, 1800);
+
+// ── the copy-link button in the heading ──────────────────────────────────────
+$("copylink").addEventListener("click", async () => {
+  const url = `${location.origin}${location.pathname}#home-region-earth`;
+  try { await navigator.clipboard.writeText(url); } catch {}
+  const b = $("copylink");
+  b.classList.add("copied");
+  setTimeout(() => b.classList.remove("copied"), 1500);
+});
+</script>
+</body>
+</html>

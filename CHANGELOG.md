@@ -50,8 +50,10 @@ borders, highlights and the graticule use the forward mapping. Exported:
 - **Vector outlines are stitched** back into whole rings once per body and cut
   at the current projection's seam. The globe no longer draws the packs'
   closure edges along the 180° meridian as coastline (a visible line along 180°
-  across Chukotka, Wrangel Island and Antarctica before). Fills get closed pieces, the edge
-  stroke gets open arcs, so no seam is ever stroked.
+  across Chukotka, Wrangel Island and Antarctica before). Fills get closed
+  pieces, the edge stroke gets open arcs, so no seam is ever stroked. Curved
+  cylindrical seams follow sampled boundary points rather than one straight
+  fill chord; graticules meet shifted seams at the exact frame boundary.
 - **The graticule draws on the flat map** too: `.mappo-graticule` and
   `.mappo-equator` inside `.mappo-graticule-group`, clipped to the world.
 - **Breaking:** `.mappo-figure-path` is now two paths, `.mappo-figure-fill` and
@@ -68,8 +70,60 @@ borders, highlights and the graticule use the forward mapping. Exported:
   rim would be the opposite pole. A rejected `update()` changes nothing.
 - `projection` and `center-lon` are geometry-tier for the flat map and ignored
   by the globe, which is a physical view rather than a map projection.
-- The bundle is 91 KB gzipped, from 81 KB: the projection module and the
-  seam-aware outline geometry are the difference.
+- Custom projection aspects, outlines and coordinates are validated; their
+  default ±180° seam is cut without a chord, and incomplete no-seam vectors
+  fall back to screen-grid contours. Fresh projection objects compare by
+  identity rather than JSON that silently discards their functions.
+- d3 projections use `projection.stream`, so rotation, antimeridian and
+  small-circle clipping, Cartesian clipping, interrupted outlines and adaptive
+  resampling match d3 itself. The streamed world is the frame instead of a
+  sampled rectangle. Mutable d3 state invalidates Mappo's geometry cache.
+- Projection latitude ranges cannot leave the physical `[-90, 90]` domain;
+  custom aspects must be positive and finite. Dots are clipped to curved
+  frames, and snapped markers can no longer land in an off-world corner cell.
+- Globe framing no longer inherits a polar flat-map hemisphere. An invalid
+  flat projection option is ignored while the map is a globe and validated
+  atomically if it switches to flat mode.
+- The current bundle is 100 KB gzipped, from 81 KB before this release's
+  projection and globe-camera work. Moon and Mars remain separate 11 KB and
+  8.5 KB body packs.
+
+### The globe: a camera, fog, a lattice and tiles
+
+Four opt-in options; the defaults draw exactly what they drew.
+
+- `distance` — a perspective camera that many body radii from the centre
+  (`Infinity`, the default, is the orthographic view). The limb stays on the
+  disc; the near side grows and the far side shrinks.
+- `fog="near far"` — depth fade in radii from the centre plane, positive away
+  from the viewer. Set, the globe is glass: the far hemisphere is drawn too and
+  everything fades from opaque at `near` to gone at `far`, as a smoothstep in
+  linear light (the curve a WebGL fog has), converted to canvas alpha.
+- `distribution="uniform"` — dots on a Fibonacci lattice, equal area per dot,
+  `round(cols²/π)` candidates so `cols` keeps its meaning at the equator.
+- `dot-shape="tile"` — squares lying on the surface, foreshortening into
+  slivers along the limb; a square on the flat map.
+- `graticule-width` — line width on the globe in CSS px (a multiplier of the
+  flat hairline).
+- `locate()` also returns `z` (depth toward the viewer, in radii) and `fade`
+  (the alpha the globe draws at that depth).
+- For renderers of your own, `src/globe.js` exports `forEachSample`,
+  `uniformCount` and `buildGlobeTiles`; `buildGlobePoints`, `buildGlobeFlags`
+  and `buildGlobePhases` take a trailing `distribution`.
+
+`demo/region-earth.html` is why these exist: cloudflare.com's "Region: Earth"
+section rebuilt on mappo, to the pixel where mappo can reach it.
+
+### Fixed: the globe
+
+- A parked globe (`rotate-speed="0"`, no animation, no pointer) redrew at
+  60 fps for nothing. The loop draws only when something moved; an option
+  change draws exactly one frame.
+- The globe sized its canvas from its bounding box, so an ancestor's transform
+  (a section scaling in as it appears) shrank the backing store and moved
+  every `locate()` answer. It sizes from layout now.
+- Every alpha-banded batch (fills, strokes) uses 24 bands instead of 6–7, so a
+  depth fade reads as a gradient.
 
 ### Breaking: the body interface
 

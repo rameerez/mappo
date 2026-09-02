@@ -253,6 +253,22 @@ label.classList.toggle("is-night", solarElevation(lat, lon, dec, sunLon) &lt; 0)
   </div>
 </div>
 
+<!-- ─────────────────────── REGION: EARTH ─────────────────────── -->
+<h2>Region: Earth <span>— cloudflare.com's glass globe, rebuilt on four attributes</span></h2>
+<div class="card">
+  <div class="meta">
+    <h3><a href="./region-earth.html">Region: Earth →</a></h3>
+    <p>The see-through globe from cloudflare.com's home page, to the pixel where mappo can reach it:
+    fourteen thousand tiles lying on the surface of a Fibonacci lattice, a perspective camera 2.4 radii
+    out, fog that lets the far side show through, the pins, the captions and the arcs — with the
+    original's exact points, copy and kinematics, and mappo's own coastline under it.</p>
+    <span class="tag">distribution="uniform"</span><span class="tag">dot-shape="tile"</span><span class="tag">distance="2.37"</span><span class="tag">fog="-0.67 1.01"</span><span class="tag">locate().fade</span><span class="tag">data-lat/data-lon</span>
+    <pre><code>&lt;mappo-world mode="globe" cols="396" lat-min="-90" lat-max="90"
+  distribution="uniform" dot-shape="tile" dot-size="0.38"
+  distance="2.37" fog="-0.67 1.01" graticule meridians="24" parallels="23"&gt;&lt;/mappo-world&gt;</code></pre>
+  </div>
+</div>
+
 <!-- ─────────────────────── SATELLITES ─────────────────────── -->
 <h2>Ten thousand satellites <span>— the whole Starlink constellation, live</span></h2>
 <div class="card">

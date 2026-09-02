@@ -22,9 +22,9 @@
  .note{color:var(--faint);font-size:12.5px;max-width:76ch;margin:0 0 16px}
  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:20px}
  .row.three{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
- .card{background:rgb(9 14 22 / .8);border:1px solid var(--line);border-radius:16px;padding:15px}
+ .card{min-width:0;background:rgb(9 14 22 / .8);border:1px solid var(--line);border-radius:16px;padding:15px}
  .card h3{margin:0 0 3px;font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
-   letter-spacing:.07em;text-transform:uppercase;color:var(--dim)}
+   letter-spacing:.07em;text-transform:uppercase;color:var(--dim);overflow-wrap:anywhere}
  .card p{margin:0 0 11px;color:var(--faint);font-size:12.5px}
  mappo-world,mappo-moon,mappo-mars,mappo-earth{display:block;width:100%}
  .disc{max-width:420px;margin:0 auto}
@@ -44,6 +44,10 @@
  .sites .pin[data-mappo-behind]{visibility:hidden}
  .legend{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 0;font:11px/1.5 ui-monospace,monospace;color:var(--faint)}
  .legend b{color:var(--ink);font-weight:600}
+ @media (max-width:520px){
+   .wrap{padding:28px 16px 64px}
+   .row,.row.three{grid-template-columns:minmax(0,1fr)}
+ }
 </style>
 </head>
 <body>
@@ -166,8 +170,10 @@ map.locate(45, 0);                        // → null: the far hemisphere has no
 the unit frame (or <code>null</code>), <code>inverse(x, y)</code> back to a coordinate (or
 <code>null</code> off the world), an <code>aspect</code>, and optionally an
 <code>outline()</code> for the clip. The dot field, the contours and the highlights come from
-the inverse alone. Below, a sinusoidal projection written in eight lines; a d3-geo projection
-works unchanged, because mappo recognises the shape.</p>
+the inverse alone. A custom projection is antimeridian-cut by default; set
+<code>seam: false</code> only when it has no cylindrical seam. Below, a sinusoidal projection
+written in eight lines. A d3-geo projection works unchanged: mappo uses its stream, including
+rotation, clipping and adaptive resampling.</p>
 <div class="row">
   <div class="card">
     <h3>a { forward, inverse } object — sinusoidal</h3>
@@ -190,7 +196,7 @@ const sinusoidal = {
 };
 new Mappo(el, { projection: sinusoidal, latRange: [-90, 90] });
 
-// a d3-geo projection is accepted as it is
+// a d3-geo projection is accepted as it is (.invert + .stream)
 import { geoMollweide } from "d3-geo-projection";
 new Mappo(el, { projection: geoMollweide(), latRange: [-90, 90] });</code></pre>
   </div>

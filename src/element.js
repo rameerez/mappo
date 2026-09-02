@@ -84,8 +84,18 @@ const ATTR_MAP = {
   "equator-color":      [ "equatorColor", String ],
   "graticule-opacity":  [ "graticuleOpacity", Number ],
   "equator-opacity":    [ "equatorOpacity", Number ],
+  "graticule-width":    [ "graticuleWidth", Number ],
   "overlays":           [ "overlays", flag ],
   "max-dpr":            [ "maxDpr", Number ],
+  // The globe's camera and atmosphere (the flat map ignores both): the camera's
+  // distance in body radii, and fog as "near far" in radii from the centre plane.
+  "distance":           [ "distance", Number ],
+  "fog":                [ "fog", (v) => {
+                          const m = v.trim().split(/[\s,]+/).map(Number);
+                          return m.length === 2 && m.every(Number.isFinite) && m[0] < m[1] ? m : null;
+                        } ],
+  // How the globe's dots sample the sphere: "grid" (default) or "uniform".
+  "distribution":       [ "distribution", String ],
   // The hero look and motion
   "tilt":               [ "tilt", Number ],
   "rotate":             [ "rotate", Number ],

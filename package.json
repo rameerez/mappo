@@ -69,6 +69,8 @@
     }
   },
   "devDependencies": {
+    "d3-geo": "3.1.1",
+    "d3-geo-projection": "4.0.0",
     "jpeg-js": "0.4.4",
     "jsdom": "30.0.1",
     "pngjs": "7.0.0"

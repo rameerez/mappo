@@ -160,3 +160,10 @@ test("hover: a figure style without dots has no dots to hover", () => {
   assert.equal(parseFigureStyle(undefined).dots, true);
   assert.equal(parseFigureStyle("").dots, true);
 });
+
+test("defaults: the globe's camera, fog and distribution are opt-in", () => {
+  assert.equal(DEFAULTS.distance, Infinity, "orthographic unless a distance is given");
+  assert.equal(DEFAULTS.fog, null, "opaque unless fog is given");
+  assert.equal(DEFAULTS.distribution, "grid");
+  assert.equal(DEFAULTS.graticuleWidth, 1);
+});

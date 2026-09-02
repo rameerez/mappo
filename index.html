@@ -295,6 +295,14 @@ and an Earth in orbit — in the <a href="./demo/">demo gallery</a>.</p>
 </div>
 <div class="card">
   <div class="meta" style="padding:20px 22px 22px">
+    <h3 style="font-size:17px"><a href="./demo/region-earth.html">Region: Earth →</a></h3>
+    <p style="font-size:14px;max-width:76ch">cloudflare.com's glass globe, rebuilt: fourteen thousand tiles on a
+    Fibonacci lattice, a perspective camera, fog that lets the far side show through, and the pins, captions
+    and arcs positioned by mappo — four attributes on one element.</p>
+  </div>
+</div>
+<div class="card">
+  <div class="meta" style="padding:20px 22px 22px">
     <h3 style="font-size:17px"><a href="./demo/worlds.html">The Moon and Mars →</a></h3>
     <p style="font-size:14px;max-width:76ch">The same flat and globe renderers drawing
     lunar maria and Martian lowlands from opt-in body packs—plus landing sites and all
@@ -512,7 +520,7 @@ import "mappo"</code></pre>
   <h3>Dots</h3>
   <table>
     <tr><th>attribute</th><th>what it does</th></tr>
-    <tr><td>dot-shape</td><td>circle · square · triangle · a custom SVG path (24×24 units).</td></tr>
+    <tr><td>dot-shape</td><td>circle · square · triangle · <em>tile</em>, a square lying on the surface (a sliver at the globe's limb, a square on the flat map) · a custom SVG path (24×24 units).</td></tr>
     <tr><td>dot-size</td><td>Fraction of a grid cell the dot fills (default <code>0.55</code>).</td></tr>
     <tr><td>dot-hover-color / -scale</td><td>Hover colour auto-derives as a contrast-aware shade of <code>figure-color</code> — darker for light dots, lighter for dark. Override either.</td></tr>
   </table>
@@ -529,6 +537,10 @@ import "mappo"</code></pre>
     <tr><td>meridians / parallels</td><td>How many of each (12 and 11). The equator is drawn separately, so it can carry its own weight.</td></tr>
     <tr><td>graticule-color / -opacity</td><td>Default to <code>figure-color</code> at <code>0.28</code>.</td></tr>
     <tr><td>equator-color / -opacity</td><td>Default to the graticule at <code>0.36</code> — a touch above its neighbours, never a stripe.</td></tr>
+    <tr><td>graticule-width</td><td>Line width, CSS px on the globe (<code>0.5</code> is one device pixel on a 2× screen); a multiplier of the flat map's hairline.</td></tr>
+    <tr><td>distance</td><td>A perspective camera that many body radii from the centre. Default <em>Infinity</em>, the orthographic view; <code>2.4</code> is a globe seen from close by — near side larger, far side smaller, the limb on the same disc.</td></tr>
+    <tr><td>fog</td><td><code>"near far"</code> in radii from the centre plane. Set, the globe is glass: the far hemisphere shows through and everything fades from opaque at <em>near</em> to gone at <em>far</em>.</td></tr>
+    <tr><td>distribution</td><td><em>grid</em> (the lat/lon grid) · <em>uniform</em>, a Fibonacci lattice with equal area per dot and no bunching at the poles.</td></tr>
   </table>
 
   <h3>Markers and overlays</h3>

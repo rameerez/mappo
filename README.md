@@ -353,17 +353,28 @@ const sinusoidal = {
 new Mappo(el, { projection: sinusoidal, latRange: [-90, 90] });
 
 import { geoMollweide } from "d3-geo-projection";
-new Mappo(el, { projection: geoMollweide(), latRange: [-90, 90] });   // recognised by its .invert
+new Mappo(el, { projection: geoMollweide(), latRange: [-90, 90] });   // recognised by .invert + .stream
 ```
 
 `forward(lat, lon)` returns a point in the unit frame (0…1 across, 0…1 down)
 or `null`; `inverse(x, y)` returns `{ lat, lon }` or `null`. The dot field,
-contours and highlights come from the inverse alone. For a d3 projection the
-frame is the bounding box of the sphere as it draws it, found by sampling, and
-a frame point is off the world when d3's inverse does not round-trip. A
-projection of your own draws vector rings as the body stores them, cut at
-±180°, which is right for anything centred on 0°; `center-lon` applies to the
-built-ins only.
+contours and highlights come from the inverse alone. A custom projection needs
+a positive finite `aspect`; every returned point and optional `outline()` ring
+must stay in the unit frame. Its seam defaults to ±180°, so vector rings are
+cut correctly for the usual projection centred on 0°. Set `seam: false` for a
+mapping without that cylindrical seam. If such a mapping returns `null` in the
+middle of a vector ring, mappo uses its screen-grid contour rather than joining
+the surviving vertices with a false chord. `center-lon` applies to built-ins
+only.
+
+For d3, mappo uses `projection.stream`: the same pipeline d3 uses for spherical
+rotation, antimeridian or small-circle clipping, Cartesian clipping and
+adaptive resampling. The streamed sphere (or requested latitude band) is the
+actual outline and frame; points hidden by an orthographic clip are therefore
+`null`, curved frames do not become rectangles, and vector fills and strokes
+are cut by d3 itself. Mutable d3 state such as `rotate`, `clipAngle`,
+`parallels`, or projection-specific setters is fingerprinted on `update()` so
+cached geometry cannot survive a projection mutation.
 
 `map.projection` is the resolved instance the flat map is drawing with —
 `id`, `aspect`, `forward`, `inverse`, `outline()` — and `null` on the globe.
@@ -404,6 +415,35 @@ unit-sphere typed arrays, and frames rotate those coordinates into short-lived
 canvas paths. Several globes on one page is a first-class case — each instance
 owns its stylesheet, its SVG ids and its caches, and bodies' decoded geometry
 is shared between them.
+
+### Glass, a camera, and a lattice
+
+Four more knobs turn the hero globe into the see-through kind — the sphere
+you look *through*, with the far side showing faintly behind the near:
+
+```html
+<mappo-world mode="globe" cols="396" lat-min="-90" lat-max="90"
+             distribution="uniform" dot-shape="tile" dot-size="0.38"
+             distance="2.37" fog="-0.67 1.01"></mappo-world>
+```
+
+| Option | Default | What it does |
+|---|---|---|
+| `distance` | `Infinity` | The camera's distance from the globe's centre, in body radii. Infinity is the orthographic view every version has drawn; a finite value (2 to 4 reads as a globe seen from close by) is a perspective camera: the near side grows, the far side shrinks, the visible cap is smaller than a hemisphere. The limb stays on the same disc, so nothing else on the page moves. |
+| `fog` | none | `"near far"`, in radii from the centre plane, positive away from you. Set, the globe is glass: the far hemisphere is drawn too, and everything fades from opaque at `near` to gone at `far` — dots, tiles, outlines, borders and the graticule alike. The fade is a renderer's fog: a smoothstep between the two, mixed in linear light and converted to the alpha a canvas needs, so it reads like a WebGL fog over a dark ground. `fog="-0.67 1.01"` leaves the front third untouched and lets the far side show through. |
+| `distribution` | `grid` | How the dots sample the sphere. `grid` is the lat/lon grid the flat map draws; `uniform` is a Fibonacci lattice — equal area per dot everywhere, no bunching at the poles, `round(cols²/π)` candidates so `cols` still means the spacing at the equator. The lattice's two convergence points sit on the equator at ±90°, in open ocean on Earth. |
+| `dot-shape="tile"` | | A square lying *on* the surface rather than facing the screen. Tiles foreshorten into slivers along the limb, as a real tangent square does; on the flat map a tile is a square. |
+| `graticule-width` | `1` | Line width of the grid, in CSS pixels on the globe (a multiplier of the flat map's hairline). `0.5` is one device pixel on a 2× screen. |
+
+`locate()` also reports `z`, the point's depth toward you in radii, and
+`fade`, the alpha the globe draws at that depth — under fog, the fog's — so a
+layer of your own can sink into the same haze. Budget a fogged globe at twice
+the dots (both hemispheres are drawn); tiles cost about what squares do. A
+parked globe (`rotate-speed="0"`, nothing animating, no pointer) draws no
+frames at all, and an option change draws exactly one.
+
+[The Region: Earth demo](https://rameerez.github.io/mappo/demo/region-earth.html)
+is all four together.
 
 ## Pointing at places
 

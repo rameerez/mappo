@@ -113,7 +113,7 @@ export const DEFAULTS = {
   bordersWidth: 0.5,
   bordersOpacity: 0.55,
   // Dots
-  dotShape: "circle",         // "circle" | "square" | "triangle" | an SVG path string (24×24 units)
+  dotShape: "circle",         // "circle" | "square" | "triangle" | "tile" (a square lying on the surface) | an SVG path string (24×24 units)
   dotSize: 0.55,              // fraction of a grid cell the dot fills
   dotHoverColor: null,        // auto: a contrast-aware shade of figureColor
   dotHoverScale: 2.6,
@@ -145,11 +145,28 @@ export const DEFAULTS = {
   // weight option so it CAN be emphasised, but emphasising it by default reads
   // as a bug — one parallel inexplicably darker than its neighbours.
   equatorOpacity: 0.36,
+  graticuleWidth: 1,          // line width: CSS px on the globe; a multiplier of the flat map's hairline
   // Position host DOM carrying data-lat/data-lon over the map.
   overlays: true,
   // Cap the canvas backing store. 3× devices buy no visible detail on a dot
   // field and pay full fill-rate for it.
   maxDpr: 2,
+  // The globe's camera: its distance from the centre in body radii. Infinity
+  // (the default) is the orthographic view; a finite value is a perspective
+  // camera that far away — the near side grows, the far side shrinks and the
+  // visible cap is smaller than a hemisphere. 2 to 4 reads as a globe seen
+  // from close by.
+  distance: Infinity,
+  // Fog, as [near, far] in body radii from the globe's centre plane, positive
+  // away from the viewer. Set, it makes the globe GLASS: the far hemisphere is
+  // drawn too, and everything fades from opaque at near to gone at far. null
+  // keeps the opaque globe with its built-in facing fade.
+  fog: null,
+  // How the globe's dots sample the sphere: "grid" — the lat/lon grid the
+  // flat map draws, cells bunching toward the poles — or "uniform", a
+  // Fibonacci lattice with equal area per dot and round(cols²/π) candidates,
+  // so `cols` still means the spacing at the equator.
+  distribution: "grid",
   // Plane transform (degrees; the classic hero skew)
   tilt: 0,
   rotate: 0,
@@ -176,12 +193,14 @@ export const DEFAULTS = {
 const STYLE_KEYS = new Set([
   "figureColor", "figureStroke", "figureStrokeWidth", "dotHoverColor", "dotHoverScale",
   "bordersColor", "bordersWidth", "bordersOpacity", "highlightColor",
-  "graticuleColor", "equatorColor", "graticuleOpacity", "equatorOpacity",
+  "graticuleColor", "equatorColor", "graticuleOpacity", "equatorOpacity", "graticuleWidth",
   "markerColor", "markerHoverScale", "tilt", "rotate", "perspective",
   "animation", "animationPeriod", "animationHeight", "animationWidth", "cursor", "markerCursor",
   // Backdrop knobs are pure stylesheet in flat mode: the bg shape and the
   // pattern-filled ground always exist; only their fills change.
-  "background", "globeRing"
+  "background", "globeRing",
+  // Globe-only camera knobs: the flat map ignores them, so there is nothing to rebuild.
+  "distance", "fog"
 ]);
 const DEF_KEYS = new Set([ "dotShape", "dotSize", "markerShape", "markerScale", "groundColor" ]);
 const MARKER_KEYS = new Set([ "places", "markerPulse", "interactive" ]);
@@ -315,7 +334,9 @@ export class Mappo {
     // Bodies compare by identity (a replacement pack with the same id is a
     // different world); everything else structurally.
     const changed = Object.keys(options).filter((k) =>
-      k === "body" ? options.body !== this.options.body : !sameOption(options[k], this.options[k]));
+      k === "body" || k === "projection"
+        ? options[k] !== this.options[k]
+        : !sameOption(options[k], this.options[k]));
     let nextOverride = [ ...this._latRangeOverride ];
     if ("latRange" in options) {
       nextOverride = [ options.latRange?.[0] ?? null, options.latRange?.[1] ?? null ];
@@ -336,8 +357,18 @@ export class Mappo {
     // projection built on it (a north polar map cannot reach the south pole).
     const nextProjection = "projection" in options ? options.projection : this.options.projection;
     const nextCenter = "centerLon" in options ? options.centerLon : this.options.centerLon;
-    const nextRange = this.#rangeFor(nextBody, nextOverride, nextProjection);
-    resolveProjection(nextProjection, { latRange: nextRange, centerLon: nextCenter });
+    const nextMode = "mode" in options ? options.mode : this.options.mode;
+    const nextRange = this.#rangeFor(nextBody, nextOverride, nextProjection, nextMode);
+    // Projection has no meaning on a globe. In flat mode, resolving up front
+    // makes the update atomic and also fingerprints mutable d3 projection
+    // state, so a rotate()/clipAngle()/parallels() mutation cannot reuse stale
+    // geometry merely because the function identity stayed the same.
+    const resolvedNext = nextMode === "flat"
+      ? resolveProjection(nextProjection, { latRange: nextRange, centerLon: nextCenter })
+      : null;
+    if (resolvedNext && this.grid?.projection && resolvedNext.key !== this.grid.projection.key && !changed.includes("projection")) {
+      changed.push("projection");
+    }
     this._latRangeOverride = nextOverride;
     Object.assign(this.options, options);
     this.options.latRange = nextRange;
@@ -427,14 +458,14 @@ export class Mappo {
   }
 
   #applyLatRange() {
-    this.options.latRange = this.#rangeFor(this._body, this._latRangeOverride, this.options.projection);
+    this.options.latRange = this.#rangeFor(this._body, this._latRangeOverride, this.options.projection, this.options.mode);
   }
 
   // The band drawn: explicit bounds win; the rest comes from the body's own
   // framing, or from the projection when it has an opinion (a polar map wants
   // a hemisphere, not Earth's −58…84).
-  #rangeFor(body, override, projection) {
-    const inherited = projectionDefaultRange(projection, bodyLatRange(body));
+  #rangeFor(body, override, projection, mode = this.options.mode) {
+    const inherited = mode === "globe" ? bodyLatRange(body) : projectionDefaultRange(projection, bodyLatRange(body));
     const range = [ override[0] ?? inherited[0], override[1] ?? inherited[1] ];
     const [ min, max ] = range;
     if (!Number.isFinite(min) || !Number.isFinite(max) || min < -90 || max > 90 || min >= max) {
@@ -446,7 +477,7 @@ export class Mappo {
   #setBody(body) {
     const bodyChanged = body !== this._body;
     const oldRange = this.options.latRange;
-    const nextRange = this.#rangeFor(body, this._latRangeOverride, this.options.projection);
+    const nextRange = this.#rangeFor(body, this._latRangeOverride, this.options.projection, this.options.mode);
     this._body = body;
     this.options.latRange = nextRange;
     if (bodyChanged) {
@@ -510,7 +541,8 @@ export class Mappo {
 
     const projection = resolveProjection(o.projection, { latRange: o.latRange, centerLon: o.centerLon });
     const colsWanted = o.cols ?? 120; // auto default for the flat map
-    const cols = Math.min(colsWanted, MAX_COLS);
+    if (!Number.isFinite(colsWanted) || colsWanted <= 0) throw new RangeError("cols must be a positive finite number");
+    const cols = Math.min(Math.max(1, Math.round(colsWanted)), MAX_COLS);
     if (colsWanted > MAX_COLS) console.warn(`[mappo] cols capped at ${MAX_COLS} (asked for ${colsWanted}) — beyond that SVG interaction degrades (mode="globe" already renders on canvas; a flat canvas renderer is on the roadmap)`);
     // Cells are square on screen; the frame's aspect sets the row count. For
     // equirectangular that is round(cols · Δφ / 360), as it always was.
@@ -664,6 +696,7 @@ export class Mappo {
     const fill = `fill="${escapeAttr(o.groundColor)}"`;
     switch (o.dotShape) {
       case "square":
+      case "tile":
         return `<rect x="${c - r}" y="${c - r}" width="${r * 2}" height="${r * 2}" rx="${(r * 0.25).toFixed(2)}" ${fill}/>`;
       case "triangle":
         return `<path d="M${c} ${c - r} L${c + r} ${c + r} L${c - r} ${c + r} Z" ${fill}/>`;
@@ -692,7 +725,8 @@ export class Mappo {
   #shapeMarkup(id, shape, size) {
     const r = (CELL * size) / 2;
     switch (shape) {
-      case "square": {
+      case "square":
+      case "tile": {   // a tile lies flat on a flat map: a square
         return `<rect id="${id}" x="${-r}" y="${-r}" width="${r * 2}" height="${r * 2}" rx="${(r * 0.25).toFixed(2)}"/>`;
       }
       case "triangle":
@@ -743,26 +777,30 @@ export class Mappo {
       const borders = o.borders ? figureBorders(this._body) : null;
       geom = { cells, fill: "", complements: [], edge: "", borders: "" };
       if (vector) {
-        const { fill, edge } = projectRings(stitchRings(vector), grid.projection);
-        geom.fill = fill.filter((p) => !p.complement).map((p) => this.#pathFrom(p.points, grid, true)).join("");
-        // A ring whose interior holds the far pole of an azimuthal map is the
-        // OUTSIDE of its projected curve: fill it as the frame minus the ring,
-        // in its own path so the winding cannot interact with the others.
-        geom.complements = fill.filter((p) => p.complement).map((p) => {
-          const frame = signedArea(p.points) > 0
-            ? [ [ 0, 0 ], [ 0, 1 ], [ 1, 1 ], [ 1, 0 ] ]
-            : [ [ 0, 0 ], [ 1, 0 ], [ 1, 1 ], [ 0, 1 ] ];
-          return this.#pathFrom(frame, grid, true) + this.#pathFrom(p.points, grid, true);
-        });
-        geom.edge = edge.map((arc) => this.#pathFrom(arc, grid, false)).join("");
-      } else {
+        const projected = projectRings(stitchRings(vector), grid.projection);
+        if (projected.complete !== false) {
+          geom.fill = projected.fill.filter((p) => !p.complement).map((p) => this.#pathFrom(p.points, grid, true)).join("");
+          // A ring whose interior holds the far pole of an azimuthal map is the
+          // OUTSIDE of its projected curve: fill it as the frame minus the ring,
+          // in its own path so the winding cannot interact with the others.
+          geom.complements = projected.fill.filter((p) => p.complement).map((p) => {
+            const frame = signedArea(p.points) > 0
+              ? [ [ 0, 0 ], [ 0, 1 ], [ 1, 1 ], [ 1, 0 ] ]
+              : [ [ 0, 0 ], [ 1, 0 ], [ 1, 1 ], [ 0, 1 ] ];
+            return this.#pathFrom(frame, grid, true) + this.#pathFrom(p.points, grid, true);
+          });
+          geom.edge = projected.edge.map((arc) => this.#pathFrom(arc, grid, false)).join("");
+        }
+      }
+      if (!vector || (!geom.fill && !geom.complements.length && !geom.edge)) {
         // Grid contours are traced in screen space, so they have no seam.
         const d = loops.map((loop) => `M${loop.map(([ x, y ]) => `${x * CELL} ${y * CELL}`).join("L")}Z`).join("");
         geom.fill = d;
         geom.edge = d;
       }
       if (borders?.length) {
-        geom.borders = projectRings(stitchRings(borders), grid.projection).edge.map((arc) => this.#pathFrom(arc, grid, false)).join("");
+        const projected = projectRings(stitchRings(borders), grid.projection);
+        if (projected.complete !== false) geom.borders = projected.edge.map((arc) => this.#pathFrom(arc, grid, false)).join("");
       }
       this._figureCache.set(key, geom);
       if (this._figureCache.size > 8) this._figureCache.delete(this._figureCache.keys().next().value);
@@ -819,7 +857,7 @@ export class Mappo {
 
     let dots = 0;
     const shape = this.#id("mappo-dot-shape");
-    const parts = [ `<g class="mappo-dots">` ];
+    const parts = [ `<g class="mappo-dots" clip-path="url(#${this.#id("mappo-frame")})">` ];
     for (let row = 0; row < grid.rows; row++) {
       for (let col = 0; col < grid.cols; col++) {
         const c = cellCenter(col, row, grid);
@@ -969,8 +1007,8 @@ export class Mappo {
         stroke-width: ${o.bordersWidth}; stroke-linejoin: round; stroke-linecap: round; opacity: ${o.bordersOpacity};
       }
       .mappo-figure-highlight { fill: ${o.highlightColor}; }
-      .mappo-graticule { fill: none; stroke: ${graticule}; stroke-width: 0.6; opacity: ${o.graticuleOpacity}; pointer-events: none; }
-      .mappo-equator { fill: none; stroke: ${o.equatorColor ?? graticule}; stroke-width: 0.6; opacity: ${o.equatorOpacity}; pointer-events: none; }
+      .mappo-graticule { fill: none; stroke: ${graticule}; stroke-width: ${0.6 * o.graticuleWidth}; opacity: ${o.graticuleOpacity}; pointer-events: none; }
+      .mappo-equator { fill: none; stroke: ${o.equatorColor ?? graticule}; stroke-width: ${0.6 * o.graticuleWidth}; opacity: ${o.equatorOpacity}; pointer-events: none; }
       .mappo-marker {
         fill: ${o.markerColor};
         cursor: ${o.markerCursor};
@@ -1166,6 +1204,7 @@ export function snapToFigure(lat, lon, grid, body) {
   const col0 = Math.min(grid.cols - 1, Math.max(0, Math.floor(x)));
   const row0 = Math.min(grid.rows - 1, Math.max(0, Math.floor(y)));
 
+  let nearestWorld = null;
   for (let radius = 0; radius <= 3; radius++) {
     let best = null;
     for (let dr = -radius; dr <= radius; dr++) {
@@ -1174,16 +1213,21 @@ export function snapToFigure(lat, lon, grid, body) {
         const col = col0 + dc, row = row0 + dr;
         if (col < 0 || col >= grid.cols || row < 0 || row >= grid.rows) continue;
         const c = cellCenter(col, row, grid);
-        if (!c || !body.figure(c.lat, c.lon)) continue;
-        const d = (col - x) ** 2 + (row - y) ** 2;
-        if (!best || d < best.d) best = { col, row, d };
+        if (!c) continue;
+        const d = (col + 0.5 - x) ** 2 + (row + 0.5 - y) ** 2;
+        const tie = Math.abs(col - col0) + Math.abs(row - row0);
+        if (!nearestWorld || d < nearestWorld.d - 1e-12 || (Math.abs(d - nearestWorld.d) <= 1e-12 && tie < nearestWorld._tie)) {
+          nearestWorld = { col, row, d, _tie: tie };
+        }
+        if (!body.figure(c.lat, c.lon)) continue;
+        if (!best || d < best.d - 1e-12 || (Math.abs(d - best.d) <= 1e-12 && tie < best._tie)) best = { col, row, d, _tie: tie };
       }
     }
-    if (best) return best;
+    if (best) return { col: best.col, row: best.row, d: best.d };
   }
   // Deep-ocean coordinates render where they are — honest, and it makes
   // custom places like ships or islands-below-resolution still work.
-  return { col: col0, row: row0 };
+  return nearestWorld && { col: nearestWorld.col, row: nearestWorld.row, d: nearestWorld.d };
 }
 
 // Option equality for the differential update. Structural for arrays and

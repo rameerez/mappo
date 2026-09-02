@@ -244,12 +244,41 @@ projection's own seam by linear interpolation of the crossing latitude — an
 error of at most one vertex spacing (1/32° in the packs) along the seam line
 itself, and zero elsewhere.
 
-**Custom and d3 projections.** A `{ forward, inverse }` object is used as
-given. A d3-geo projection is wrapped: its frame is the bounding box of the
-sphere as d3 draws it, found by sampling 361 × 37 graticule points plus the
-bounding meridians at 0.5°, so a projection whose extreme point falls between
-samples has a frame short by up to that sampling step; a frame point is off
-the world when d3's own inverse fails to round-trip within 10⁻⁶ of the frame.
+**Custom and d3 projections.** A `{ forward, inverse }` object is validated at
+the boundary: its aspect must be positive and finite; geographic results must
+stay within the requested physical latitude band; frame points and
+`outline()` vertices must be finite and in 0…1. Its seam defaults to ±180°.
+When `seam: false` is set, an incomplete vector ring falls back to the traced
+screen-grid contour rather than bridging a projection cut with a chord.
+
+A d3-geo projection is wrapped through `projection.stream`, which is where d3
+applies rotation, spherical and Cartesian clipping, antimeridian cutting and
+adaptive resampling. Streaming `Sphere` gives the exact projected outline and
+bounding box for the full globe; a spherical polygon whose latitude edges are
+segmented every 0.25° gives a cropped `latRange` band (the segments are great
+circle arcs, so only that cropped boundary has the sub-segment approximation).
+A
+frame point is on-world only when d3's inverse returns a physical coordinate,
+that coordinate is in the requested band, and the streamed point round-trips
+within 10⁻⁶ of the native d3 frame. Vector rings and graticules use that same
+stream, so clipped hemispheres and interrupted or rotated projections retain
+d3's own topology.
+
+### 3.8 The glass globe
+
+With `distance` the globe is a perspective view: a unit-sphere point `(X, Y, Z)`
+in view space (Z toward the camera, which sits at `D` radii) lands at
+`F·X/(D − Z)`, `F·Y/(D − Z)` from the centre with `F = R·√(D² − 1)`, so the
+sphere's horizon `Z = 1/D` falls exactly on the disc of radius `R`; the visible
+cap is `acos(1/D)` from the sub-camera point (65° at `D = 2.37`, against 90°
+for the orthographic view). A tile's edges are projected with the same
+division, including the term `X·dZ/(D − Z)` from the edge's depth component;
+this is what folds a tile to nothing at the horizon.
+
+With `fog="near far"` alpha is `(1 − s)^(1/2.2)` where `s = smoothstep(near,
+far, −Z)`, the curve of a three.js `Fog` mixed in linear light and converted
+to sRGB alpha over a dark ground; over a light ground the far side reads
+stronger than the linear-light mix would give.
 
 ## 4. The data mappo carries
 

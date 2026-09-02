@@ -541,3 +541,120 @@ test("projection: overlays follow the projection and off-map points are parked a
   assert.ok(far.hasAttribute("data-mappo-behind"), "a point the projection cannot place is behind");
   unmount(el);
 });
+
+test("glass globe: fog draws the far side, and locate() reports depth and fade", () => {
+  const el = mount("mappo-world", { mode: "globe", cols: 24, "rotate-speed": 0, "lat-min": -90, "lat-max": 90 });
+  // Opaque by default: the antipode is behind and invisible, the facing point full.
+  const behind = el.map.locate(0, 180);
+  assert.equal(behind.front, false);
+  assert.ok(behind.z < -0.99, `antipode depth ${behind.z}`);
+  assert.equal(behind.fade, 0);
+  const facing = el.map.locate(0, 0);
+  assert.equal(facing.front, true);
+  assert.ok(Math.abs(facing.z - 1) < 1e-9 && Math.abs(facing.fade - 1) < 1e-9);
+  // Fog: the far side is faint, not gone; the near third is untouched. The
+  // curve is a renderer's: smoothstep between near and far, in linear light,
+  // expressed as the sRGB alpha with the same brightness over a dark ground.
+  el.setAttribute("fog", "-0.6 1.1");
+  assert.deepEqual(el.map.options.fog, [ -0.6, 1.1 ]);
+  const fogged = (z) => { const t = Math.min(1, Math.max(0, (-z + 0.6) / 1.7)); return Math.pow(1 - t * t * (3 - 2 * t), 1 / 2.2); };
+  assert.ok(Math.abs(el.map.locate(0, 180).fade - fogged(-1)) < 1e-9, "the antipode keeps a little alpha");
+  assert.ok(el.map.locate(0, 180).fade > 0.1 && el.map.locate(0, 180).fade < 0.15, `antipode fade ${el.map.locate(0, 180).fade}`);
+  assert.ok(Math.abs(el.map.locate(0, 0).fade - 1) < 1e-9);
+  assert.ok(Math.abs(el.map.locate(0, 90).fade - fogged(0)) < 1e-9, "the limb sits 0.6 radii into a 1.7-radii fog");
+  assert.ok(el.map.locate(0, 90).fade > 0.85 && el.map.locate(0, 90).fade < 0.87);
+  assert.ok(Math.abs(el.map.locate(0, -50).fade - 1) < 1e-9, "everything nearer than `near` is opaque");
+  assert.ok(el.map.locate(0, 120).fade > el.map.locate(0, 150).fade && el.map.locate(0, 150).fade > el.map.locate(0, 180).fade, "monotonic into the fog");
+  // A malformed fog is no fog.
+  el.setAttribute("fog", "banana");
+  assert.equal(el.map.options.fog, null);
+  el.setAttribute("fog", "2 1");
+  assert.equal(el.map.options.fog, null, "near must be less than far");
+  unmount(el);
+});
+
+test("perspective: a camera at `distance` keeps the limb on the disc and folds the far side inward", () => {
+  const el = mount("mappo-world", { mode: "globe", cols: 24, "rotate-speed": 0, "lat-min": -90, "lat-max": 90 });
+  const R = el.map.locate(0, 0).r;
+  const ortho = el.map.locate(0, 90);
+  assert.ok(Math.abs(ortho.x - (ortho.cx + R)) < 1e-6, "orthographic: 90° east is the disc edge");
+  el.setAttribute("distance", "2");
+  const D = 2, horizonLon = Math.acos(1 / D) * 180 / Math.PI;   // depth 1/D is where the surface turns away
+  const limb = el.map.locate(0, horizonLon);
+  assert.ok(Math.abs(limb.z - 1 / D) < 1e-9);
+  assert.ok(Math.abs(limb.x - (limb.cx + R)) < 1e-6, `the horizon lands exactly on the disc edge (${limb.x} vs ${limb.cx + R})`);
+  assert.equal(el.map.locate(0, 30).front, true);
+  assert.equal(el.map.locate(0, 80).front, false, "past the horizon is hidden, though 80° is still in front of the centre plane");
+  // The mirror point on the far side projects inside the disc at R·(D²−1)/(D²+1).
+  const back = el.map.locate(0, 180 - horizonLon);
+  assert.ok(Math.abs((back.x - back.cx) - R * (D * D - 1) / (D * D + 1)) < 1e-6, "the far side is drawn smaller");
+  assert.equal(back.front, false);
+  // Something in orbit over the far side still shows when the body is not in the way.
+  assert.equal(el.map.locate(60, 180, 3).front, true, "three radii out over the far side, off the axis, stands beside the disc");
+  assert.equal(el.map.locate(0, 180, 3).front, false, "three radii out on the axis behind the antipode is behind the body");
+  assert.equal(el.map.locate(0, 180, 1.05).front, false, "just above the antipode is hidden by the body");
+  // Not a distance: back to orthographic, once, with a warning.
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(" "));
+  try {
+    el.setAttribute("distance", "0.5");
+    assert.ok(Math.abs(el.map.locate(0, 90).x - (ortho.cx + R)) < 1e-6);
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /distance must be/);
+  unmount(el);
+});
+
+test("a parked globe draws no frames; a spinning one does", async () => {
+  // The harness pins prefers-reduced-motion on, which means a globe never
+  // starts its frame loop. This test is about the loop, so it gets motion and
+  // the window's requestAnimationFrame for its duration.
+  const savedMatchMedia = globalThis.matchMedia, savedRaf = globalThis.requestAnimationFrame, savedCaf = globalThis.cancelAnimationFrame;
+  globalThis.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
+  globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
+  const el = mount("mappo-world", { mode: "globe", cols: 24, "rotate-speed": 0 });
+  const original = canvasContext.clearRect;
+  let clears = 0;
+  canvasContext.clearRect = () => clears++;
+  try {
+    assert.ok(el.map._globe._raf !== null, "the loop is running");
+    await settle(200);
+    const parked = clears;
+    await settle(300);
+    assert.equal(clears, parked, "nothing moved, nothing drawn");
+    el.setAttribute("figure-color", "#123456");
+    assert.equal(clears, parked + 1, "an option change draws exactly one frame");
+    el.setAttribute("rotate-speed", "30");
+    await settle(300);
+    assert.ok(clears > parked + 4, `a spinning globe keeps drawing (${clears - parked} frames)`);
+  } finally {
+    if (original === undefined) delete canvasContext.clearRect;
+    else canvasContext.clearRect = original;
+    unmount(el);
+    globalThis.matchMedia = savedMatchMedia;
+    if (savedRaf === undefined) delete globalThis.requestAnimationFrame; else globalThis.requestAnimationFrame = savedRaf;
+    if (savedCaf === undefined) delete globalThis.cancelAnimationFrame; else globalThis.cancelAnimationFrame = savedCaf;
+  }
+});
+
+test("uniform tiles: the element rebuilds the dot field for distribution and dot-shape, and the flat map draws tiles as squares", () => {
+  const el = mount("mappo-world", { mode: "globe", cols: 40, "rotate-speed": 0, distribution: "uniform", "dot-shape": "tile", "lat-min": -90, "lat-max": 90 });
+  const g = el.map._globe;
+  const n = Math.round((40 * 40) / Math.PI);
+  assert.ok(g.points.length / 3 > 0.25 * n && g.points.length / 3 < 0.33 * n, "about 29% of the lattice is land");
+  assert.equal(g.tiles.length / 9, g.points.length / 3, "one tile per point");
+  el.setAttribute("distribution", "grid");
+  assert.equal(g.points.length, api.buildFigure({ cols: 40, rows: 20, latRange: [ -90, 90 ] }, { body: api.EARTH }).cells.length * 3, "back on the grid, the dots are the grid's cells");
+  el.setAttribute("dot-shape", "circle");
+  assert.equal(g.tiles, null);
+  unmount(el);
+
+  const flat = mount("mappo-world", { cols: 24, "dot-shape": "tile", graticule: "", "graticule-width": "2" });
+  assert.equal(flat.querySelector("defs > :first-child").tagName.toLowerCase(), "rect", "a tile on a flat map is a square");
+  assert.match(flat.querySelector("style").textContent, /\.mappo-graticule\s*\{[^}]*stroke-width: 1.2/, "graticule-width scales the hairline");
+  unmount(flat);
+});

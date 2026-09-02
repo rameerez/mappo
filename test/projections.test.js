@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { geoEquirectangular } from "d3-geo";
 import {
   EARTH, resolveProjection, knownProjections, projectNormalized, buildFigure, snapToFigure, cellCenter, project
 } from "../dist/mappo.js";
@@ -224,25 +225,27 @@ test("graticule lines project and break at the seam and the edge of the world", 
   const eq = resolveProjection("equirectangular", { latRange: FULL, centerLon: 100 });
   const pieces = projectPolyline(parallel, eq);
   assert.equal(pieces.length, 2, "a parallel crossing the shifted seam breaks into two");
+  assert.ok(close(pieces[0][pieces[0].length - 1][0], 1) && close(pieces[1][0][0], 0),
+    "both pieces meet the exact frame boundary, not the nearest graticule sample");
   const north = resolveProjection("stereographic-north", { latRange: [ 0, 90 ] });
   assert.equal(projectPolyline(parallel, north).length, 1, "and stays whole on a polar map");
 });
 
 test("a d3-shaped projection (a function with .invert) is accepted and normalised", () => {
-  // A stand-in for d3.geoEquirectangular(): lon/lat degrees → pixels with a
-  // scale and translate, and an invert.
-  const scale = 100, tx = 300, ty = 150;
-  const d3like = ([ lon, lat ]) => [ tx + lon * scale / 180, ty - lat * scale / 180 ];
-  d3like.invert = ([ x, y ]) => [ (x - tx) * 180 / scale, (ty - y) * 180 / scale ];
+  const d3like = geoEquirectangular();
   const p = resolveProjection(d3like, { latRange: FULL });
-  assert.equal(p.kind, "custom");
+  assert.equal(p.kind, "d3");
   assert.ok(close(p.aspect, 2));
   const c = p.forward(0, 0);
   assert.ok(close(c.x, 0.5) && close(c.y, 0.5));
   const back = p.inverse(0.25, 0.25);
   assert.ok(close(back.lon, -90) && close(back.lat, 45));
   assert.equal(resolveProjection(d3like, { latRange: FULL }).key, p.key, "the same function keeps its key");
+  const incompleteFake = ([ lon, lat ]) => [ lon, lat ];
+  incompleteFake.invert = ([ lon, lat ]) => [ lon, lat ];
+  assert.throws(() => resolveProjection(incompleteFake, { latRange: FULL }), /needs \.stream/,
+    "point-call lookalikes are rejected because they cannot apply d3's clipping and resampling contract");
   const custom = resolveProjection({ forward: (lat, lon) => ({ x: (lon + 180) / 360, y: (90 - lat) / 180 }), inverse: (x, y) => ({ lat: 90 - y * 180, lon: x * 360 - 180 }), aspect: 2 }, { latRange: FULL });
-  assert.equal(custom.kind, "custom");
+  assert.equal(custom.kind, "cylindrical");
   assert.ok(close(custom.forward(45, 90).x, 0.75));
 });

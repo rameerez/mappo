@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { latLonToXYZ, buildGlobePoints, buildGlobePhases } from "../src/globe.js";
+import { latLonToXYZ, buildGlobePoints, buildGlobePhases, buildGlobeFlags, buildGlobeTiles, forEachSample, uniformCount } from "../src/globe.js";
 import { EARTH } from "../src/bodies/earth.js";
 import { hoverShade } from "../src/color.js";
 
@@ -73,6 +73,66 @@ test("animation phases align one-to-one with globe points", () => {
     for (let i = 0; i < ph.length; i += 2) {
       assert.ok(ph[i] >= 0 && ph[i] <= 1.01, `${mode}: phase in [0,1]`);
       assert.ok(ph[i + 1] >= 0.55 && ph[i + 1] <= 1, `${mode}: amp in [0.55,1]`);
+    }
+  }
+});
+
+// ── the uniform distribution and tiles ──────────────────────────────────────
+
+test("uniform distribution: an equal-area lattice with the grid's equatorial spacing", () => {
+  const cols = 120, n = uniformCount(cols);
+  assert.equal(n, Math.round((cols * cols) / Math.PI));
+  let count = 0;
+  const bands = new Array(6).fill(0);
+  let first = null;
+  forEachSample(cols, [ -90, 90 ], "uniform", (lat, lon) => {
+    first ??= [ lat, lon ];
+    count++;
+    assert.ok(lat >= -90 && lat <= 90 && lon >= -180 && lon < 180, `sample in range: ${lat}, ${lon}`);
+    bands[Math.min(5, Math.floor((lat + 90) / 30))]++;
+  });
+  assert.equal(count, n, "every candidate is visited once");
+  // Equal area: a 30° band holds (sin top − sin bottom) / 2 of the sphere.
+  const RAD = Math.PI / 180;
+  for (let i = 0; i < 6; i++) {
+    const share = (Math.sin((-90 + 30 * (i + 1)) * RAD) - Math.sin((-90 + 30 * i) * RAD)) / 2;
+    assert.ok(Math.abs(bands[i] / n - share) < 0.01, `band ${i}: ${(bands[i] / n).toFixed(3)} of the samples for ${share.toFixed(3)} of the area`);
+  }
+  // The lattice's axis is the first sample, and it lies on the equator at 90°W.
+  assert.ok(Math.abs(first[0]) < 1e-9 && Math.abs(first[1] + 90) < 1e-9, `axis at ${first}`);
+  // Figure and ground partition the lattice exactly, as they do the grid.
+  const figure = buildGlobePoints(cols, [ -90, 90 ], EARTH, false, "uniform").length / 3;
+  const ground = buildGlobePoints(cols, [ -90, 90 ], EARTH, true, "uniform").length / 3;
+  assert.equal(figure + ground, n);
+  assert.ok(figure / n > 0.25 && figure / n < 0.33, `Earth is about 29% land (${(100 * figure / n).toFixed(1)}%)`);
+  // latRange still crops the field.
+  let north = 0;
+  forEachSample(cols, [ 0, 90 ], "uniform", () => north++);
+  assert.ok(Math.abs(north / n - 0.5) < 0.01, "half the samples lie north of the equator");
+  // Flags and phases stay index-aligned with the points.
+  assert.equal(buildGlobeFlags(cols, [ -90, 90 ], (lat) => lat > 0, EARTH, "uniform").length, figure);
+  assert.equal(buildGlobePhases(cols, [ -90, 90 ], "wave", EARTH, "uniform").length, figure * 2);
+  // The default is the grid, unchanged.
+  assert.equal(buildGlobePoints(60, [ -58, 84 ], EARTH).length, buildGlobePoints(60, [ -58, 84 ], EARTH, false, "grid").length);
+});
+
+test("tiles: a unit centre and two orthogonal half-side tangents per dot, aligned with the points", () => {
+  const h = 0.01;
+  for (const distribution of [ "grid", "uniform" ]) {
+    const tiles = buildGlobeTiles(60, [ -90, 90 ], EARTH, h, false, distribution);
+    const pts = buildGlobePoints(60, [ -90, 90 ], EARTH, false, distribution);
+    assert.equal(tiles.length / 9, pts.length / 3, `${distribution}: one tile per point`);
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const len = (a) => Math.hypot(a[0], a[1], a[2]);
+    for (let i = 0; i < tiles.length; i += 9) {
+      const c = [ tiles[i], tiles[i + 1], tiles[i + 2] ];
+      const e = [ tiles[i + 3], tiles[i + 4], tiles[i + 5] ];
+      const n = [ tiles[i + 6], tiles[i + 7], tiles[i + 8] ];
+      assert.ok(Math.abs(len(c) - 1) < 1e-5, "the centre is on the unit sphere");
+      assert.ok(Math.abs(c[0] - pts[i / 3]) < 1e-6 && Math.abs(c[2] - pts[i / 3 + 2]) < 1e-6, "the centre is the point");
+      assert.ok(Math.abs(len(e) - h) < 1e-6 && Math.abs(len(n) - h) < 1e-6, "tangents are half a side long");
+      assert.ok(Math.abs(dot(c, e)) < 1e-6 && Math.abs(dot(c, n)) < 1e-6 && Math.abs(dot(e, n)) < 1e-6, "tangents lie in the tangent plane, at right angles");
+      assert.ok(Math.abs(e[1]) < 1e-9 && n[1] >= -1e-9, "east is level, north points up");
     }
   }
 });

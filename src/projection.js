@@ -14,18 +14,25 @@
 // Bodies whose native maps use another convention (Mars's 0–360°E) are
 // converted when their pack is generated, never at draw time.
 
-import { resolveProjection } from "./projections.js";
+import { resolveProjection, wrapLon } from "./projections.js";
+
+const validGrid = (grid) => grid && Number.isFinite(grid.cols) && grid.cols > 0 && Number.isFinite(grid.rows) && grid.rows > 0;
+const validLocation = (lat, lon, grid) => validGrid(grid) && Number.isFinite(lat) && Number.isFinite(lon) &&
+  Array.isArray(grid.latRange) && grid.latRange.length === 2 && lat >= grid.latRange[0] - 1e-9 && lat <= grid.latRange[1] + 1e-9 &&
+  lat >= -90 && lat <= 90;
 
 // Map a lat/lon to fractional grid coordinates, or null when the point has no
 // place on this map.
 export function project(lat, lon, grid) {
+  if (!validLocation(lat, lon, grid)) return null;
   if (grid.projection) {
     const p = grid.projection.forward(lat, lon);
     return p ? { x: p.x * grid.cols, y: p.y * grid.rows } : null;
   }
   const [ latMin, latMax ] = grid.latRange;
+  const normalizedLon = lon >= -180 && lon <= 180 ? lon : wrapLon(lon);
   return {
-    x: ((lon + 180) / 360) * grid.cols,
+    x: ((normalizedLon + 180) / 360) * grid.cols,
     y: ((latMax - lat) / (latMax - latMin)) * grid.rows
   };
 }
@@ -33,6 +40,7 @@ export function project(lat, lon, grid) {
 // The centre lat/lon of a grid cell — where the figure is sampled and where a
 // dot is drawn — or null for a cell that is off the world.
 export function cellCenter(col, row, grid) {
+  if (!validGrid(grid) || !Number.isFinite(col) || !Number.isFinite(row) || col < 0 || col >= grid.cols || row < 0 || row >= grid.rows) return null;
   if (grid.projection) return grid.projection.inverse((col + 0.5) / grid.cols, (row + 0.5) / grid.rows);
   const [ latMin, latMax ] = grid.latRange;
   return {
@@ -44,6 +52,7 @@ export function cellCenter(col, row, grid) {
 // The lat/lon of a grid CORNER — where cell boundaries live, and therefore
 // where contour geometry lives. Same mapping as cellCenter, no +0.5 offset.
 export function cellCorner(col, row, grid) {
+  if (!validGrid(grid) || !Number.isFinite(col) || !Number.isFinite(row) || col < 0 || col > grid.cols || row < 0 || row > grid.rows) return null;
   if (grid.projection) return grid.projection.inverse(col / grid.cols, row / grid.rows);
   const [ latMin, latMax ] = grid.latRange;
   return {
@@ -71,13 +80,6 @@ export function cellCorner(col, row, grid) {
 export function projectNormalized(lat, lon, { latRange, projection = "equirectangular", centerLon = 0 } = {}) {
   if (!Array.isArray(latRange) || latRange.length !== 2) {
     throw new TypeError("projectNormalized needs { latRange: [min, max] } — the map's own range, e.g. EARTH.latRange");
-  }
-  if (projection === "equirectangular" && centerLon === 0) {
-    // The linear fast path: exact, and the same contract as every projection:
-    // null for a point outside the band this map shows.
-    const [ latMin, latMax ] = latRange;
-    if (!(lat >= latMin - 1e-9 && lat <= latMax + 1e-9) || !Number.isFinite(lon)) return null;
-    return { x: (lon + 180) / 360, y: (latMax - lat) / (latMax - latMin) };
   }
   return resolveProjection(projection, { latRange, centerLon }).forward(lat, lon);
 }
