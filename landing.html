@@ -1,18 +1,30 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mappo — maps of any world</title>
+<title>mappo — beautiful web maps</title>
 <link rel="icon" href="./favicon/favicon-32x32.png">
 <meta name="description" content="A world map as a zero-dependency web component. Dots or coastlines, flat or a rotating globe, Earth or the Moon or Mars — in 22 KB.">
 <style>
   /* Dark first, and on purpose: the demos below span red, orange, blue and
      green, so the page they sit on has to be a neutral that lets each of them
      own its colour rather than competing with all four. */
+  /* Light is the default and dark is opt-in, because assets/theme.js works that
+     way and the choice has to survive walking from here into the demos. */
   :root{
-    --bg:#06080b; --panel:#0b0f15; --ink:#e8edf4; --muted:#8b98a8; --faint:#556374;
-    --line:#161d26; --accent:#ff7a45; --accent-dim:#9d4a2a;
+    --bg:#fffbf5; --panel:#fff; --ink:#16181d; --muted:#6b7280; --faint:#9aa1ac;
+    --line:#e8e2d8; --accent:#c2410c; --on-accent:#fff5ee;
+    --globe-dot:#c2410c; --globe-grid:#a08d7c; --tint:#00000008;
+    --logo-filter:none;
     --sans:-apple-system,"SF Pro Display","Segoe UI",system-ui,sans-serif;
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --bg:#06080b; --panel:#0b0f15; --ink:#e8edf4; --muted:#8b98a8; --faint:#556374;
+    --line:#161d26; --accent:#ff7a45; --on-accent:#160800;
+    --globe-dot:#ff7a45; --globe-grid:#38485c; --tint:#ffffff0a;
+    /* The wordmark is dark ink on transparent — invisible on a dark ground
+       until it is flipped. One asset, both themes. */
+    --logo-filter:invert(1) brightness(1.9);
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
@@ -20,6 +32,33 @@
     -webkit-font-smoothing:antialiased;overflow-x:hidden}
   a{color:inherit}
   .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+
+  /* ── navbar ───────────────────────────────────────────────────────────── */
+  .nav{position:sticky;top:0;z-index:40;background:color-mix(in oklab,var(--bg) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid transparent;transition:border-color .2s}
+  .nav.stuck{border-bottom-color:var(--line)}
+  .nav .wrap{display:flex;align-items:center;gap:20px;height:62px}
+  .brand{display:flex;align-items:center;text-decoration:none;margin-right:auto}
+  .brand img{height:21px;width:auto;display:block;filter:var(--logo-filter)}
+  .nav a.link{color:var(--muted);text-decoration:none;font-size:14px;font-weight:520}
+  .nav a.link:hover{color:var(--ink)}
+  .icon-btn{display:grid;place-items:center;width:34px;height:34px;flex:none;
+    border:1px solid var(--line);border-radius:9px;background:none;color:var(--muted);
+    cursor:pointer;padding:0}
+  .icon-btn:hover{color:var(--ink)}
+  .icon-btn svg{width:16px;height:16px;display:block}
+  /* One button, two glyphs: it shows the theme you would GET, not the one you
+     are already in. */
+  .icon-btn .moon{display:none}
+  :root[data-theme="dark"] .icon-btn .moon{display:block}
+  :root[data-theme="dark"] .icon-btn .sun{display:none}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+  /* GitHub carries the star count and stands beside the primary call. */
+  .gh{display:inline-flex;align-items:center;gap:9px}
+  .gh .count{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:6px;
+    background:var(--tint);font:600 12px/1 var(--mono);font-variant-numeric:tabular-nums}
+  .gh .count svg{width:11px;height:11px}
 
   /* ── hero ─────────────────────────────────────────────────────────────── */
   .hero{position:relative;min-height:96vh;display:flex;flex-direction:column;
@@ -34,24 +73,24 @@
   .hero-copy::before{content:"";position:absolute;left:50%;top:50%;
     transform:translate(-50%,-50%);width:190%;height:210%;z-index:-1;
     background:radial-gradient(ellipse at center,
-      rgb(6 8 11 / .96) 0%, rgb(6 8 11 / .82) 46%, rgb(6 8 11 / 0) 74%)}
+      color-mix(in oklab, var(--bg) 96%, transparent) 0%,
+      color-mix(in oklab, var(--bg) 80%, transparent) 46%,
+      color-mix(in oklab, var(--bg) 0%, transparent) 74%)}
   .hero-globe mappo-world{display:block;width:100%}
   .hero-copy{position:relative;z-index:2;text-align:center;max-width:44ch}
-  .eyebrow{font:600 11.5px/1 var(--mono);letter-spacing:.19em;text-transform:uppercase;
-    color:var(--accent);margin:0 0 20px}
   h1{margin:0 0 16px;font-size:clamp(42px,7.2vw,78px);line-height:1.02;
     letter-spacing:-.035em;font-weight:680}
   .hero-copy p{margin:0 auto 26px;color:var(--muted);font-size:clamp(16px,1.7vw,19px);
     max-width:38ch}
-  .install{display:inline-flex;align-items:center;gap:10px;background:#0d131b;
+  .install{display:inline-flex;align-items:center;gap:10px;background:var(--tint);
     border:1px solid var(--line);border-radius:10px;padding:9px 14px;
     font:13px/1 var(--mono);color:var(--ink)}
   .install b{color:var(--faint);font-weight:400}
   .cta{display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap}
   .cta a{font:600 13.5px/1 var(--sans);padding:11px 18px;border-radius:10px;
     text-decoration:none;border:1px solid var(--line);color:var(--ink)}
-  .cta a.primary{background:var(--accent);border-color:var(--accent);color:#160800}
-  .cta a:hover{border-color:#2b3644}
+  .cta a.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+  .cta a:hover{border-color:var(--muted)}
   .cta a.primary:hover{filter:brightness(1.08)}
 
   /* The band that cuts the globe off. Opaque, so the sphere really is clipped
@@ -84,7 +123,7 @@
   .tile .meta p{margin:0;color:var(--muted);font-size:13.5px;max-width:62ch;line-height:1.55}
   .tile .meta a{flex:none;font:600 12.5px/1 var(--sans);text-decoration:none;
     border:1px solid var(--line);border-radius:9px;padding:9px 14px;white-space:nowrap}
-  .tile .meta a:hover{border-color:#2b3644}
+  .tile .meta a:hover{border-color:var(--muted)}
   .tag{display:inline-block;font:600 10px/1 var(--mono);letter-spacing:.13em;
     text-transform:uppercase;padding:4px 7px;border-radius:5px;margin-bottom:9px}
 
@@ -107,36 +146,62 @@
   .all-demos{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 0}
   .all-demos a{font:12.5px/1 var(--mono);text-decoration:none;color:var(--muted);
     border:1px solid var(--line);border-radius:8px;padding:8px 11px}
-  .all-demos a:hover{color:var(--ink);border-color:#2b3644}
+  .all-demos a:hover{color:var(--ink);border-color:var(--muted)}
   .foot-note{color:var(--faint);font-size:12.5px;margin:26px 0 0;max-width:70ch;line-height:1.6}
-  code{font-family:var(--mono);font-size:.9em;background:#0d131b;padding:.12em .36em;
+  code{font-family:var(--mono);font-size:.9em;background:var(--tint);padding:.12em .36em;
     border-radius:4px}
 </style>
 
+<nav class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="./landing.html" aria-label="mappo">
+      <img src="./assets/mappo-logo.webp" alt="mappo" width="1263" height="194">
+    </a>
+    <a class="link" href="./demo/">Demos</a>
+    <a class="link" href="https://github.com/rameerez/mappo">GitHub</a>
+    <a class="link" href="https://www.npmjs.com/package/mappo">npm</a>
+    <button class="icon-btn" id="theme" type="button" aria-label="Toggle dark mode">
+      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+           stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path
+           d="M12 2.3v2.4M12 19.3v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.3 12h2.4M19.3 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>
+      <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path
+           d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.6 8.6 0 1 0 11.1 11.1Z"/></svg>
+    </button>
+  </div>
+</nav>
+
 <header class="hero">
   <div class="hero-globe">
+    <!-- graticule-opacity is a literal, not a custom property: mappo resolves
+         var() for COLOURS, and Number("var(--x)") is NaN — silently, with a
+         fallback. So the theme difference lives in the colour, which resolves,
+         and the opacity stays a number. -->
     <!-- The hero is the Cloudflare composition: a uniform lattice of tangent
          squares, a graticule at 4% and a fog that takes the far side toward the
          page. Four attributes on one element; the land is mappo's own mask. -->
     <mappo-world id="hero" mode="globe" cols="380" lat-min="-90" lat-max="90"
       distribution="uniform" dot-shape="tile" dot-size="0.38"
-      figure="dots" figure-color="#ff7a45"
+      figure="dots" figure-color="var(--globe-dot)"
       distance="2.42" fog="-0.62 1.02"
       rotate-speed="1.6" interactive="false" background="none"
       graticule meridians="24" parallels="23"
-      graticule-color="#8fa2b8" equator-color="#8fa2b8"
-      graticule-opacity="0.05" equator-opacity="0.05" graticule-width="0.5"></mappo-world>
+      graticule-color="var(--globe-grid)" equator-color="var(--globe-grid)"
+      graticule-opacity="0.18" equator-opacity="0.18" graticule-width="0.5"></mappo-world>
   </div>
 
   <div class="hero-copy">
-    <p class="eyebrow">Zero dependencies · MIT</p>
-    <h1>Maps of any world</h1>
+    <h1>Beautiful web maps</h1>
     <p>A world map as a web component. Dots or coastlines, flat or a rotating
-      globe, Earth or the Moon or Mars — in 22&nbsp;KB.</p>
+      globe, Earth or the Moon or Mars — in 22&nbsp;KB, with no dependencies.</p>
     <span class="install"><b>npm i</b> mappo</span>
     <div class="cta">
       <a class="primary" href="./demo/">See the demos</a>
-      <a href="https://github.com/rameerez/mappo">GitHub</a>
+      <a class="gh" href="https://github.com/rameerez/mappo">
+        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        GitHub
+        <span class="count" id="stars" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 .25l2.06 4.18 4.61.67-3.33 3.25.78 4.6L8 10.78l-4.12 2.17.78-4.6L1.33 5.1l4.61-.67L8 .25Z"/></svg><span id="stars-n"></span></span>
+      </a>
     </div>
   </div>
 
@@ -250,8 +315,52 @@ registerBody(MARS);
 import { earthAt } from "./demo/astro.js";
 import { nightRings } from "./demo/terminator.js";
 import { regions } from "./demo/countries.js";
+import { bindThemeToggle } from "./assets/theme.js";
 
 const $ = (id) => document.getElementById(id);
+
+// ── theme ───────────────────────────────────────────────────────────────────
+// assets/theme.js owns the storage key, the data-theme attribute and the
+// before-paint apply, so the choice survives walking into the demos. It writes
+// a word into whatever element it is given, though, which would eat an icon —
+// so it drives an offscreen button and this one forwards to it.
+const themeState = document.createElement("button");
+themeState.className = "sr";
+document.body.appendChild(themeState);
+bindThemeToggle(themeState);
+const themeBtn = $("theme");
+themeBtn.addEventListener("click", () => {
+  themeState.click();
+  themeBtn.setAttribute("aria-pressed", themeState.getAttribute("aria-pressed"));
+});
+themeBtn.setAttribute("aria-pressed", themeState.getAttribute("aria-pressed") ?? "false");
+
+// A hairline under the navbar, but only once the page has left the top.
+const nav = $("nav");
+const onScroll = () => nav.classList.toggle("stuck", scrollY > 8);
+addEventListener("scroll", onScroll, { passive: true });
+onScroll();
+
+// ── stars ───────────────────────────────────────────────────────────────────
+// Cached for the session: the unauthenticated API allows sixty calls an hour
+// per address, and a landing page reloaded while it is being written would eat
+// them. A count that will not load simply does not appear.
+(async () => {
+  try {
+    const KEY = "mappo-stars";
+    let n = Number(sessionStorage.getItem(KEY));
+    if (!Number.isFinite(n) || sessionStorage.getItem(KEY) === null) {
+      const res = await fetch("https://api.github.com/repos/rameerez/mappo");
+      if (!res.ok) return;
+      n = (await res.json()).stargazers_count;
+      sessionStorage.setItem(KEY, String(n));
+    }
+    if (!Number.isFinite(n)) return;
+    $("stars-n").textContent = n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k` : String(n);
+    $("stars").hidden = false;
+  } catch {}
+})();
+
 // Each panel is built inside a guard: a demo that throws should cost its own
 // panel, not the page.
 const panel = (name, fn) => { try { fn(); } catch (e) { console.warn(`[landing] ${name}`, e); } };
