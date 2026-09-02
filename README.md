@@ -1043,6 +1043,7 @@ npm run weight                  # where the bytes are, per module and per Earth 
 npm run serve                   # the repo on http://localhost:8099 — the demos, and what the two harnesses below drive
 node scripts/review-pages.mjs http://localhost:8099 /tmp/review index.html demo/worlds.html   # real-time review: errors, per-map frame cost, screenshots
 node scripts/drag-harness.mjs http://localhost:8099/demo/worlds.html 'mappo-moon[mode="globe"]' # a real pointer drag on a globe, sampled to rest
+node scripts/shot.mjs http://localhost:8099/demo/github-globe.html /tmp/globe.png 14000 '#stage'  # one element, after 14 s of real time
 
 npm run generate                # regenerate every body pack from the pinned sources
 npm run generate:earth          # or one at a time; sources are cached in .cache/
