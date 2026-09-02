@@ -199,10 +199,9 @@ registerBody(MARS);
 upgrades every `<mappo-world body="moon">` on the page before your own first
 line has run — so a pack always arrives late. A map that asks for a body by
 name before its pack has registered draws **nothing** (not Earth: drawing the
-wrong planet for a frame would be worse than drawing none, and a typo in
-`body=""` should look broken rather than look like Earth). It adopts the body
+wrong planet for a frame would be worse than drawing none). It adopts the body
 the moment `registerBody()` runs. A name that never registers warns after two
-seconds.
+seconds. Omitting `body`, or leaving it empty, selects the default Earth body.
 
 The tag is a default, the attribute is the truth: `<mappo-moon body="mars">`
 is a strange thing to write, but it means Mars.
@@ -217,7 +216,7 @@ import { registerBody } from "mappo";
 registerBody({
   id: "arrakis",                                   // ^[a-z][a-z0-9-]*$; also names <mappo-arrakis>
   name: "Arrakis",
-  radiusKm: 6100,                                  // optional; scales locate()'s orbit argument
+  radiusKm: 6100,                                  // optional; lets consumers convert km to body radii
   latRange: [-90, 90],                             // optional default framing
   terms: { figure: "rock", ground: "sand" },       // optional; used in the accessible label
   figure(lat, lon) {                               // REQUIRED: the classification
@@ -243,7 +242,7 @@ keeps the object it was given.
 Prefer a tag name of your own? `defineBodyElement("dune-map", ARRAKIS)`
 registers the body and defines `<dune-map>`.
 
-The interface is deliberately six things. Everything a renderer asks a body is
+The surface seam is deliberately small. Everything a renderer asks a body is
 in it, and nothing a renderer does is in a body: the Moon pack contains no
 drawing code, and the renderers contain no Moon.
 
@@ -308,11 +307,12 @@ grabbable: drag to spin it, flick for momentum, and the spin relaxes back to
 `rotate-speed` on its own. Flat-only for now: marker pulse. Custom SVG path
 dot shapes fall back to squares on canvas.
 
-Nothing on the sphere is allocated per frame: dots, figure quads, contours and
-vector outlines are precomputed unit-sphere coordinates in typed arrays, and a
-frame only rotates them. Several globes on one page is a first-class case —
-each instance owns its stylesheet, its SVG ids and its caches, and bodies'
-decoded geometry is shared between them.
+The expensive spherical geometry and trigonometry are moved out of the frame
+loop: dots, figure quads, contours and vector outlines are precomputed as
+unit-sphere typed arrays, and frames rotate those coordinates into short-lived
+canvas paths. Several globes on one page is a first-class case — each instance
+owns its stylesheet, its SVG ids and its caches, and bodies' decoded geometry
+is shared between them.
 
 ## Pointing at places
 
@@ -553,10 +553,10 @@ mappo is a symbolic map, and it is precise about what it draws:
 - **Latitude** is positive north; **longitude** is positive east and runs
   −180…180 with 0 at the centre of the frame. 180 and −180 are the same
   meridian, and longitude is periodic: `figure(lat, 190)` is `figure(lat, −170)`.
-- **Latitude is planetocentric** on every body — the IAU/USGS convention for
-  the Moon (Mean Earth/polar axis frame) and Mars (IAU 2000). Earth's data is
-  geodetic WGS 84, as Natural Earth publishes it; the difference is below the
-  resolution of a 512×256 mask.
+- **Latitude is interpreted on a sphere**, using the convention of each
+  body's data: geodetic WGS 84 for Earth, and planetocentric for the Moon
+  (Mean Earth/polar axis frame) and Mars (IAU 2000). The renderer does not
+  convert between geodetic and planetocentric latitude.
 - Bodies whose native maps use another convention are converted when their
   pack is **generated**, never at draw time. Mars's 0–360°E is rolled to
   −180…180; a 0–360 figure above 180 becomes negative.
@@ -573,6 +573,28 @@ mappo is a symbolic map, and it is precise about what it draws:
   degrees. A dot is drawn where `figure()` is true at the cell's centre.
 - **Masks** are 512×256 bits (0.7°/cell); **vector outlines** are quantised
   to 1/32° (about 3.5 km on Earth).
+
+### Precision, in numbers
+
+mappo is an exact renderer of coarse, symbolic worlds. What it computes is
+correct to double precision on a sphere; what it carries is generalised to
+tens of kilometres, and the Moon and Mars figures are interpretations of
+pictures. The bounds that matter, with the derivations, live in
+[docs/precision.md](https://github.com/rameerez/mappo/blob/main/docs/precision.md):
+
+| What | Bound |
+|---|---|
+| `locate()`, `projectNormalized`, overlays | exact for a sphere, double precision (measured round trip 2×10⁻¹³°) |
+| Place markers on the **flat map** | snapped to the dot grid: typically half a cell (167 km on Earth at `cols="120"`), never on the globe |
+| `figure(lat, lon)` | a 0.703° cell: 78 km on Earth, 21 km on the Moon, 42 km on Mars |
+| Vector outlines | 1/32° quantisation plus 0.08–0.22° simplification; Natural Earth 110m generalisation on Earth |
+| Sphere instead of ellipsoid | true surface within 14 km of the sphere on Earth and Mars, 1.4 km on the Moon |
+| Latitude type | spherical; Earth data is geodetic, so feed geodetic (a geocentric input is off by up to 0.19°) |
+| Limb visibility | points within 0.573° of the limb are treated as hidden |
+| Time, rotation, frames, ephemerides | not modelled; you supply body-fixed coordinates |
+
+For exact points, compute them yourself and place them with overlays or
+`locate()`; never read a position off the figure.
 
 ## Design notes
 
@@ -615,11 +637,10 @@ physics fit.
 
 Rendering knows nothing about any particular world. The renderers ask a body
 `figure(lat, lon)` and, when they need them, `outlines()`, `borders()`,
-`places`, `latRange`, `terms`, `radiusKm` — and never a seventh thing. Earth
-is generated by the very same template and pipeline as the Moon and Mars; it
-is simply concatenated into the bundle. That is the test of the abstraction:
-adding a body changes no renderer code, and the body that ships in the box is
-not a special case.
+`places`, `latRange`, `terms`, and `radiusKm`. Earth is generated by the very
+same template and pipeline as the Moon and Mars; it is simply concatenated
+into the bundle. That is the test of the abstraction: adding a body changes no
+renderer code, and the body that ships in the box is not a special case.
 
 ## Performance
 
@@ -638,6 +659,28 @@ machine's measured frame cost), style/colour/animation knobs never rebuild
 geometry, and SVG stays the renderer up to 260 cols — dots are real,
 hoverable, restylable elements. A canvas mode for extreme flat grids is on the
 roadmap behind the same options.
+
+### Performance, in numbers
+
+Measured on an M1 Max in headless Chrome (CPU rasterisation, so canvas costs
+are pessimistic); the cost model, the method and the road to more are in
+[docs/performance.md](https://github.com/rameerez/mappo/blob/main/docs/performance.md).
+
+| What | Cost |
+|---|---|
+| Dots on a grid | 0.119 × cols² on Earth's default framing: 1 699 at 120, 8 148 at 260 |
+| Flat map, first render | ≈ 8 µs per SVG node (2 per dot): 31 ms at cols 120, 126 ms at cols 260 |
+| Flat map, a colour change | the same style recalculation: 33 ms at cols 120, 128 ms at cols 260 |
+| Flat map, static, per frame | 0 ms (16 maps, 54k nodes, 60 fps) |
+| Globe, `dots`, per frame | 0.2–0.3 µs per point: 1.1 ms at cols 260, 8.5 ms at cols 600 (60 fps), 38 ms at cols 1000 |
+| Globe, `outline` vector + borders + graticule | ≈ 1 ms per frame at any cols |
+| Globe, `solid` (grid fill) | 2.3 ms at cols 170, 11 ms at cols 260, 54 ms at cols 400: the style to budget for |
+| Many globes | costs add: 2.9 ms per rich globe, so about five at 60 fps, twelve at 30 |
+| Build (any body, any cols) | ≤ 3 ms at cols 260, 25 ms at cols 1000; paid once and cached |
+
+No configuration tried crashed; the failure mode is a falling frame rate,
+linear in the work. The flat renderer clamps `cols` at 260; the globe has no
+cap.
 
 ## Data
 
@@ -665,6 +708,15 @@ and none of that is part of the package or its supported API. A body is a
 surface classification, its outlines, its regions and its places — nothing in
 the seam knows about time, orbits or ephemerides, and that is what keeps the
 seam small enough to survive the next body.
+
+## Roadmap
+
+What comes next — the performance work with its measured gains, the precision
+work toward research-grade data, flat projections beyond equirectangular
+(polar stereographic and Equal Earth first), regions with identities, and
+more bodies — is in
+[docs/roadmap.md](https://github.com/rameerez/mappo/blob/main/docs/roadmap.md),
+each item with its evidence and sources.
 
 ## Development
 
