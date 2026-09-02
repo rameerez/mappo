@@ -14,6 +14,7 @@
     --bg:#fffbf5; --panel:#fff; --ink:#16181d; --muted:#6b7280; --faint:#9aa1ac;
     --line:#e8e2d8; --accent:#c2410c; --on-accent:#fff5ee;
     --globe-dot:#c2410c; --globe-grid:#a08d7c; --tint:#00000008;
+    --arc:#0b7285; --area:#0b7285; --pin:#111418;
     --logo-filter:none;
     --sans:-apple-system,"SF Pro Display","Segoe UI",system-ui,sans-serif;
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
@@ -22,6 +23,7 @@
     --bg:#06080b; --panel:#0b0f15; --ink:#e8edf4; --muted:#8b98a8; --faint:#556374;
     --line:#161d26; --accent:#ff7a45; --on-accent:#160800;
     --globe-dot:#ff7a45; --globe-grid:#38485c; --tint:#ffffff0a;
+    --arc:#38d9c0; --area:#38d9c0; --pin:#ffffff;
     /* The wordmark is dark ink on transparent — invisible on a dark ground
        until it is flipped. One asset, both themes. */
     --logo-filter:invert(1) brightness(1.9);
@@ -135,6 +137,27 @@
     .cta{justify-content:center}
   }
 
+  /* The floating cards. They are page furniture, not map furniture: placed in
+     the globe's own box so they follow it as it resizes, but never projected,
+     so the sphere turns underneath while they hold still and drift. */
+  .gcards{position:absolute;inset:0;pointer-events:none;z-index:4}
+  .gcard{position:absolute;left:var(--x);top:var(--y);display:flex;
+    align-items:center;gap:9px;white-space:nowrap;
+    font:600 12.5px/1 var(--sans);letter-spacing:-.005em;color:var(--ink);
+    background:color-mix(in oklab, var(--bg) 82%, transparent);
+    border:1px solid var(--line);border-radius:10px;padding:9px 12px;
+    box-shadow:0 6px 22px -12px #0000004d;backdrop-filter:blur(7px);
+    animation:gfloat 7.5s var(--delay,0s) ease-in-out infinite}
+  .gcard i{font-style:normal;font-size:10px;font-weight:640;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--faint)}
+  .gcard-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 0 4px color-mix(in oklab, var(--accent) 20%, transparent)}
+  @keyframes gfloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+  /* Below this the globe has moved under the copy and there is nowhere for a
+     card to sit that is not on top of the headline. */
+  @media (max-width:1180px){.gcards{display:none}}
+  @media (prefers-reduced-motion:reduce){.gcard{animation:none}}
+
   /* The band that cuts the globe off. Opaque, so the sphere really is clipped
      by it rather than fading out behind a gradient. */
   .band{position:relative;z-index:3;background:var(--bg);border-top:1px solid var(--line);
@@ -232,7 +255,28 @@
         rotate-speed="1.6" background="none"
         graticule meridians="24" parallels="23"
         graticule-color="var(--globe-grid)" equator-color="var(--globe-grid)"
-        graticule-opacity="0.18" equator-opacity="0.18" graticule-width="0.5"></mappo-world>
+        graticule-opacity="0.18" equator-opacity="0.18" graticule-width="0.5"
+        marker-color="var(--pin)" marker-scale="1.15" marker-pulse
+        places="London,New York,Tokyo,Sydney,Lagos,São Paulo,Mumbai"></mappo-world>
+
+      <!-- Cloudflare-style floating cards: they belong to the page, not to a
+           coordinate, so they sit still while the globe turns under them.
+           Outside <mappo-world> on purpose, or the renderer would harvest
+           them as overlays and pin them to the sphere. -->
+      <div class="gcards" aria-hidden="true">
+        <div class="gcard" style="--x:-2%;--y:20%;--delay:0s">
+          <b class="gcard-dot"></b><span>This is a mappo globe</span>
+        </div>
+        <div class="gcard" style="--x:72%;--y:9%;--delay:-2.6s">
+          <i>Links</i><span id="gc-arcs">3 live arcs</span>
+        </div>
+        <div class="gcard" style="--x:60%;--y:82%;--delay:-1.3s">
+          <i>Places</i><span id="gc-pins">7 pinpoints</span>
+        </div>
+        <div class="gcard" style="--x:0%;--y:66%;--delay:-3.9s">
+          <i>Regions</i><span id="gc-areas">3 outlined</span>
+        </div>
+      </div>
     </div>
     <div class="hero-copy">
       <h1>F*ck ugly geo maps</h1>
@@ -410,6 +454,131 @@ onScroll();
 // Each panel is built inside a guard: a demo that throws should cost its own
 // panel, not the page.
 const panel = (name, fn) => { try { fn(); } catch (e) { console.warn(`[landing] ${name}`, e); } };
+
+
+// ── the hero globe, demonstrating the library on itself ─────────────────────
+// Four features on the one element the page leads with: pinned markers (the
+// `places` attribute), arcs whose `range` is animated into travelling comets,
+// and filled regions drawn in a layer. The floating cards beside it are page
+// furniture, deliberately NOT projected onto the sphere.
+panel("hero", () => {
+  const el = $("hero");
+
+  const ROUTES = [
+    [ "London", "New York" ], [ "Tokyo", "Sydney" ], [ "São Paulo", "Lagos" ]
+  ];
+  const AREA_IDS = [ "BR", "IN", "AU" ];
+  const TAIL = 0.24;          // how much of a route the comet occupies
+  const SPEED = 0.17;         // routes travelled per second
+
+  customElements.whenDefined("mappo-world").then(() => requestAnimationFrame(() => {
+    const map = el.map;
+    if (!map) return;
+
+    // ── arcs ────────────────────────────────────────────────────────────────
+    // Each route is two links: a faint one at full length so the path is
+    // legible even between comets, and a bright one whose `range` is a window
+    // sliding from 0 to 1. Only `range` changes per frame, which costs nothing
+    // to rebuild — the curve itself is decided once, when the link is added.
+    const layer = links(map, { blend: "lighter", fade: true });
+    const comets = ROUTES.map(([ from, to ], i) => {
+      layer.add({ from, to, color: "var(--arc)", width: 0.9, opacity: 0.28 });
+      const c = layer.add({ from, to, color: "var(--arc)", width: 1.7, tip: 2.4 });
+      c.t = i / ROUTES.length;      // staggered, so they never fly in lockstep
+      return c;
+    });
+
+    // A still globe never redraws, so a sliding range would leave the comets
+    // frozen mid-flight and mostly invisible. Under reduced motion they are
+    // drawn whole instead, and the routes simply sit there.
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (still) {
+      for (const c of comets) c.range = [ 0, 1 ];
+      layer.redraw();
+    }
+
+    let last = performance.now();
+    const fly = (now) => {
+      // Clamped: a backgrounded tab resumes with a huge delta and every comet
+      // would jump a whole lap at once.
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      for (const c of comets) {
+        c.t = (c.t + SPEED * dt) % (1 + TAIL);
+        c.range = [ Math.max(0, c.t - TAIL), Math.min(1, c.t) ];
+      }
+      requestAnimationFrame(fly);
+    };
+    if (!still) requestAnimationFrame(fly);
+
+    // ── areas ───────────────────────────────────────────────────────────────
+    // Drawn in a layer rather than with highlight-polygon: that attribute
+    // flags every dot with a point-in-rings test, which at cols=380 measured
+    // 560ms for Brazil and 1062ms for Russia — a visible freeze. Projecting a
+    // few hundred ring points per frame with locate() is free by comparison.
+    const areas = regions().filter((r) => AREA_IDS.includes(r.id) && r.rings.length);
+    map.addLayer((ctx) => {
+      for (const a of areas) {
+        // A ring crossing the limb would otherwise be closed with a straight
+        // chord across the sphere, so the shape fades out as it turns away
+        // and is gone before the tear could show.
+        let seen = 0, total = 0, disc = null;
+        const rings = a.rings.map((ring) => {
+          const pts = [];
+          for (const [ lat, lon ] of ring) {
+            const q = map.locate(lat, lon);
+            total++;
+            if (!q) continue;
+            disc ??= q;
+            if (q.front) { seen++; pts.push(q); }
+          }
+          return pts;
+        });
+        if (!total || !disc) continue;
+        const vis = seen / total;
+        const alpha = Math.max(0, Math.min(1, (vis - 0.72) / 0.28));
+        if (alpha <= 0) continue;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(disc.cx, disc.cy, disc.r, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.beginPath();
+        for (const pts of rings) {
+          pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+          if (pts.length) ctx.closePath();
+        }
+        ctx.globalAlpha = alpha * 0.26;
+        ctx.fillStyle = AREA_COLOR();
+        ctx.fill("evenodd");
+        ctx.globalAlpha = alpha * 0.85;
+        ctx.strokeStyle = AREA_COLOR();
+        ctx.lineWidth = 1.1;
+        ctx.lineJoin = "round";
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
+
+    // ── the cards' figures ──────────────────────────────────────────────────
+    // Read back from what was actually built, so the copy cannot drift from
+    // the demo the way a hardcoded number would.
+    const say = (id, n, one, many) => {
+      const t = document.getElementById(id);
+      if (t) t.textContent = `${n} ${n === 1 ? one : many}`;
+    };
+    say("gc-arcs", comets.length, "live arc", "live arcs");
+    say("gc-pins", (map.options.places || []).length, "pinpoint", "pinpoints");
+    say("gc-areas", areas.length, "outlined", "outlined");
+  }));
+});
+
+// mappo resolves CSS custom properties in COLOUR options, but a canvas layer
+// paints for itself, so the layer reads the token the same way the stylesheet
+// would and re-reads it on every frame — that is what repaints it on a theme flip.
+function AREA_COLOR() {
+  return getComputedStyle(document.documentElement).getPropertyValue("--area").trim() || "#0b7285";
+}
 
 // ── the gallery, from one list ──────────────────────────────────────────────
 const DEMOS = [
