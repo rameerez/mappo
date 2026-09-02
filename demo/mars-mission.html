@@ -24,6 +24,10 @@
   /* The globe sits under the overlay and is sized square, centred in the clear
      part of the frame — the same clear part the 3D scenes centre on. */
   .globe{position:absolute;top:0;left:0;pointer-events:none}
+  /* The overlay lives INSIDE the wrapper, so a tilt on the wrapper carries the
+     trajectory with the geography and locate()'s answers stay usable unchanged.
+     Tilting only the globe would slide the two apart. */
+  .globe .oc{position:absolute;inset:0;width:100%;height:100%}
   .hud{z-index:3}
   .globe mappo-world{display:block;width:100%}
 
@@ -68,6 +72,17 @@
 
   .tc-wrap{position:absolute;right:22px;bottom:22px}
   .note{margin:0;color:var(--faint);font-size:10.5px;line-height:1.55}
+  .src{color:var(--faint);font-size:10.5px}
+  .src summary{cursor:pointer;color:var(--dim);padding:2px 0;list-style:none}
+  .src summary::before{content:"▸ ";color:var(--faint)}
+  .src[open] summary::before{content:"▾ "}
+  .src summary:hover{color:var(--ink)}
+  .src dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:8px 0 0;
+    max-height:38vh;overflow:auto;padding-right:6px}
+  .src dt{color:var(--dim);white-space:nowrap}
+  .src dd{margin:0}
+  .src a{color:var(--faint);text-decoration:underline;text-underline-offset:2px}
+  .src a:hover{color:var(--ship)}
   a{color:var(--dim)}
   @media (max-width:900px){.panel,#window{display:none}}
 </style>
@@ -84,6 +99,7 @@
     figure-stroke="#5b9ae0" figure-stroke-width="0.6"
     borders borders-color="#33587f" borders-opacity="0.55"
     ground-color="#0a1725" background="none" interactive="false"></mappo-world>
+  <canvas class="oc"></canvas>
 </div>
 <div class="globe" id="marsWrap" hidden>
   <mappo-world id="marsGlobe" body="mars" mode="globe" cols="220"
@@ -91,6 +107,7 @@
     figure="outline" figure-source="vector"
     figure-stroke="#e08a5c" figure-stroke-width="0.6"
     ground-color="#7c3f24" background="none" interactive="false"></mappo-world>
+  <canvas class="oc"></canvas>
 </div>
 <canvas id="view"></canvas>
 
@@ -116,6 +133,9 @@
 
   <div class="bl">
     <p class="note" id="note"></p>
+    <details class="src"><summary>Sources — every number on this page</summary>
+      <div id="srcbody"></div>
+    </details>
     <div class="phases" id="phases"></div>
   </div>
   <div class="tc-wrap"><div id="tc"></div></div>
@@ -149,7 +169,7 @@ const clearX = (w) => w > 900 ? (w - 290) / 2 : w / 2;
 // low enough in latitude for power, low enough in elevation for the atmosphere
 // to slow a 100-tonne ship down, and with the propellant feedstock already
 // there. These are the coordinates of one of those HiRISE frames.
-const PAD = { name: "Starbase, TX", lat: 25.997, lon: -97.155 };
+const PAD = { name: "Starbase, TX", lat: 25.9972, lon: -97.1560 };
 const SITE = { name: "Arcadia Planitia", lat: 39.09, lon: 189.79 - 360 };
 
 // ── the window, computed ────────────────────────────────────────────────────
@@ -213,6 +233,40 @@ function lerpTable(table, t) {
     }
   }
   return last.slice(1);
+}
+
+// ── where the ship is over the Earth ────────────────────────────────────────
+// Ascent comes off the table; after SECO the ship is in a 200 km circular
+// parking orbit and the ground track is the orbit turning under a rotating
+// planet — which is why successive passes march westward instead of repeating.
+const PARK_ALT = 200;
+const PARK_A = M.R_EARTH + PARK_ALT;
+const PARK_T = 2 * Math.PI * Math.sqrt(Math.pow(PARK_A, 3) / M.MU_EARTH);   // ~88 min
+const INC = 26.5 * RAD;              // what an eastward launch from 26°N gives
+const OMEGA_E = 360 / 86164.1;       // deg/s, sidereal
+
+// Anchored to the end of the ascent, so the orbit starts where the climb left
+// off rather than somewhere merely plausible.
+const SECO_T = 540;
+const SECO_GROUND = (() => {
+  const [ , dr ] = lerpTable(ASCENT, SECO_T);
+  return { dr, t: SECO_T };
+})();
+
+function shipGround(t) {
+  if (t <= SECO_T) {
+    const [ alt, dr ] = lerpTable(ASCENT, Math.max(0, t));
+    const [ lat, lon ] = downrangeTo(PAD.lat, PAD.lon, 93, dr);
+    return { lat, lon, alt };
+  }
+  const [ lat0, lon0 ] = downrangeTo(PAD.lat, PAD.lon, 93, SECO_GROUND.dr);
+  const u0 = Math.asin(Math.max(-1, Math.min(1, Math.sin(lat0 * RAD) / Math.sin(INC))));
+  const raan = lon0 + OMEGA_E * SECO_T -
+    Math.atan2(Math.cos(INC) * Math.sin(u0), Math.cos(u0)) / RAD;
+  const u = u0 + 2 * Math.PI * (t - SECO_T) / PARK_T;
+  const lat = Math.asin(Math.sin(INC) * Math.sin(u)) / RAD;
+  const lon = raan + Math.atan2(Math.cos(INC) * Math.sin(u), Math.cos(u)) / RAD - OMEGA_E * t;
+  return { lat, lon: ((lon % 360) + 540) % 360 - 180, alt: PARK_ALT };
 }
 
 // ── the transfer, sampled once ──────────────────────────────────────────────
@@ -286,6 +340,34 @@ function drawStars(w, h) {
 // ── the mappo globes ────────────────────────────────────────────────────────
 const earthWrap = $("earthWrap"), marsWrap = $("marsWrap");
 const globeOf = (wrap) => wrap.firstElementChild.map;
+const ocOf = (wrap) => wrap.querySelector(".oc");
+
+// NO CSS TILT — and the reason is worth writing down, because it looks like an
+// obvious win. mappo's globe sizes its backing store from
+// canvas.getBoundingClientRect(), and a 3D transform anywhere up the tree makes
+// that return the TRANSFORMED box: laying the wrapper back 64° reported 5,665 px
+// for an element set to 2,675, so the globe rebuilt itself at the wrong scale
+// and locate() answered in a space nothing was drawn in.
+//
+// The second reason is that it would be a lie anyway. The globe is an
+// orthographic render on a flat canvas; rotating that canvas foreshortens the
+// picture of a sphere rather than looking along the surface of one, and at the
+// angle needed to see "across the Gulf into the atmosphere" it reads as a
+// squashed disc, not a horizon. An oblique launch view wants a real camera —
+// which is what the heliocentric scenes use, and what mappo's globe, by design,
+// is not.
+
+// The overlay is wrapper-local, so locate() coordinates go straight in.
+function ocContext(wrap, px) {
+  const c = ocOf(wrap);
+  const dpr = Math.min(1.5, devicePixelRatio || 1);
+  const want = Math.round(px * dpr);
+  if (c.width !== want) { c.width = want; c.height = want; }
+  const g = c.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, px, px);
+  return g;
+}
 
 // Size a globe, then put a chosen PLACE at a chosen point on screen.
 //
@@ -298,16 +380,26 @@ const globeOf = (wrap) => wrap.firstElementChild.map;
 // however the projection behaves.
 function sizeGlobe(wrap, px, cx, cy, anchor) {
   const el = wrap.firstElementChild;
-  if (Math.abs((wrap._px ?? -1) - px) > 0.5) {
+  // Quantised, because every change re-rasterises the whole globe: only resize
+  // when the target has moved more than a few per cent.
+  if (!(wrap._px > 0) || Math.abs(wrap._px - px) / px > 0.04) {
     el.style.width = `${px}px`;
     wrap.style.width = `${px}px`;
     wrap._px = px;
+    // mappo's globe sizes from a ResizeObserver on its canvas, and it does not
+    // pick this up: it stays at the 300 px fallback it took when the element
+    // had no box yet, so locate() keeps answering in a space six times smaller
+    // than the one being drawn — which is what put Starbase in the wrong place.
+    // Poking _resize() directly is reaching inside; the library should notice
+    // its own element changing width, and that is worth fixing there.
+    el.map?._globe?._resize();
   }
   let dx = px / 2, dy = px / 2;
   const q = anchor && el.map?.locate(anchor[0], anchor[1], 1);
   if (q) { dx = q.x; dy = q.y; }
   wrap.style.left = `${cx - dx}px`;
   wrap.style.top = `${cy - dy}px`;
+  wrap._anchor = [ dx, dy ];
 }
 // Where a lat/lon/altitude lands on screen, via mappo's own projection.
 function onGlobe(wrap, lat, lon, radii) {
@@ -315,8 +407,10 @@ function onGlobe(wrap, lat, lon, radii) {
   if (!map) return null;
   const q = map.locate(lat, lon, radii);
   if (!q) return null;
-  const r = wrap.getBoundingClientRect();
-  return { x: r.left + q.x, y: r.top + q.y, front: q.front !== false };
+  // Wrapper coordinates, not page coordinates: the overlay is a child of the
+  // wrapper and shares its transform, so no offset belongs here.
+  const dx = q.x - q.cx, dy = q.y - q.cy, d = Math.hypot(dx, dy) || 1;
+  return { x: q.x, y: q.y, front: q.front !== false, up: { x: dx / d, y: dy / d } };
 }
 
 // The ground track: a great circle from the pad on a fixed azimuth.
@@ -333,37 +427,67 @@ function downrangeTo(lat0, lon0, bearingDeg, km) {
 // is exaggerated on purpose: 121 m against a 6,371 km globe is a hundredth of
 // a pixel, and a mission view that renders the rocket at true scale renders
 // nothing at all.
-function drawVehicle(m, at, px, { pitch = 0, yaw = 0.7 } = {}) {
+function drawVehicle(ctx, side, m, at, px, { pitch = 0, yaw = 0.7, up = null } = {}) {
   if (!at || !at.front) return;
+  // A rocket stands along the local vertical, which on a sphere points away
+  // from the centre of the disc and is only "up the screen" at one place on it.
+  // The mesh projects with +Z up the screen, so the whole drawing is rotated
+  // onto the radial instead.
+  let rolled = false;
+  if (up) {
+    const a = Math.atan2(up.x, -up.y);
+    if (Math.abs(a) > 1e-3) {
+      ctx.save();
+      ctx.translate(at.x, at.y); ctx.rotate(a); ctx.translate(-at.x, -at.y);
+      rolled = true;
+    }
+  }
   const zs = m.verts.map((v) => v[2]);
   const height = Math.max(...zs) - Math.min(...zs) || 1;
   const c = S.createCamera();
   c.target = [ 0, 0, height / 2 ]; c.az = yaw; c.el = pitch; c.fov = 30;
   // The distance that puts `height` metres onto exactly `px` pixels.
-  c.distance = height * ((view.clientHeight / 2) / Math.tan(15 * RAD)) / px;
-  const P = S.projector(c, view.clientWidth, view.clientHeight, at.x, at.y);
+  c.distance = height * ((side / 2) / Math.tan(15 * RAD)) / px;
+  const P = S.projector(c, side, side, at.x, at.y);
   S.drawMesh(ctx, m, P, { light: S.norm([ 0.75, 0.35, 0.55 ]), ambient: 0.52 });
+  if (rolled) ctx.restore();
 }
 
 // NEAR EARTH — launch through trans-Mars injection, over a mappo Earth.
 function sceneNearEarth(t, w, h) {
   earthWrap.hidden = false; marsWrap.hidden = true;
-  // Zoomed hard at the pad, easing out to the whole disc by orbit.
-  const k = Math.min(1, Math.max(0, (t - 120) / 900));
-  const px = (h * 3.1 * (1 - k) + h * 0.86 * k) * zoomBias;
-  sizeGlobe(earthWrap, px, clearX(w), h / 2, [ PAD.lat, PAD.lon ]);
-
-  const [ alt, dr, speed ] = lerpTable(ASCENT, Math.max(0, t));
-  const [ lat, lon ] = downrangeTo(PAD.lat, PAD.lon, 93, dr);
+  const [ , dr, speed ] = lerpTable(ASCENT, Math.max(0, t));
+  const g = shipGround(t);
+  const { lat, lon, alt } = g;
   const radii = 1 + alt / M.R_EARTH;
+
+  // Up to SECO the view is locked to the pad and the Earth is effectively held
+  // still under the climb. After it the camera follows the SHIP and the planet
+  // turns underneath — which is the thing worth seeing, because the ground
+  // track marching west IS the Earth rotating.
+  const follow = t > SECO_T ? [ g.lat, g.lon ] : [ PAD.lat, PAD.lon ];
+  const map = globeOf(earthWrap);
+  if (map) {
+    const f = map.options.focus;
+    if (!f || Math.abs(f.lat - follow[0]) > 0.05 || Math.abs(f.lon - follow[1]) > 0.05) {
+      map.update({ focus: { lat: follow[0], lon: follow[1] } });
+    }
+  }
+
+  // Zoomed hard at the pad, easing out to the whole disc by orbit. Sized after
+  // the focus moves, so the anchor is measured against the frame being drawn.
+  const k = Math.min(1, Math.max(0, (t - 120) / 700));
+  const px = (h * 3.1 * (1 - k) + h * 0.86 * k) * zoomBias;
+  sizeGlobe(earthWrap, px, clearX(w), h / 2, follow);
+  const ctx = ocContext(earthWrap, px);
 
   // The flown trail, sampled from the same table the vehicle rides.
   const trail = [];
-  for (let s = 0; s <= Math.max(1, t); s += Math.max(2, t / 90)) {
-    const [ a2, d2 ] = lerpTable(ASCENT, s);
-    const [ la, lo ] = downrangeTo(PAD.lat, PAD.lon, 93, d2);
-    const q = onGlobe(earthWrap, la, lo, 1 + a2 / M.R_EARTH);
-    if (q && q.front) trail.push(q); else trail.push(null);
+  const span = Math.min(t, SECO_T + PARK_T * 1.6);      // a couple of passes, no more
+  for (let s = Math.max(0, t - span); s <= Math.max(1, t); s += Math.max(1.5, span / 220)) {
+    const p2 = shipGround(s);
+    const q = onGlobe(earthWrap, p2.lat, p2.lon, 1 + p2.alt / M.R_EARTH);
+    trail.push(q && q.front ? q : null);
   }
   ctx.strokeStyle = "#ffd479"; ctx.lineWidth = 1.6; ctx.beginPath();
   let pen = false;
@@ -386,16 +510,17 @@ function sceneNearEarth(t, w, h) {
   }
 
   const shipAt = onGlobe(earthWrap, lat, lon, radii);
+  const upright = { up: shipAt?.up };
   const vpx = 130 * (1 - k) + 34 * k;
   if (t < 153) {
-    drawVehicle(STACK, shipAt, vpx * 1.25, { pitch: 0.12, yaw: 0.7 });
+    drawVehicle(ctx, px, STACK, shipAt, vpx * 1.25, { pitch: 0.12, yaw: 0.7, ...upright });
   } else {
-    drawVehicle(SHIP_M, shipAt, vpx, { pitch: 0.1, yaw: 0.9 });
+    drawVehicle(ctx, px, SHIP_M, shipAt, vpx, { pitch: 0.1, yaw: 0.9, ...upright });
     if (t <= 430) {
       const [ ba, bd ] = lerpTable(BOOSTER, t);
       const [ bla, blo ] = downrangeTo(PAD.lat, PAD.lon, 93, bd);
-      drawVehicle(BOOSTER_M, onGlobe(earthWrap, bla, blo, 1 + ba / M.R_EARTH),
-        vpx * 0.95, { pitch: -0.15, yaw: 2.1 });
+      const bAt = onGlobe(earthWrap, bla, blo, 1 + ba / M.R_EARTH);
+      drawVehicle(ctx, px, BOOSTER_M, bAt, vpx * 0.95, { pitch: -0.15, yaw: 2.1, up: bAt?.up });
     }
   }
   // The pad, so the trail has somewhere to start from.
@@ -451,8 +576,9 @@ function sceneMars(t, w, h) {
   const left = Math.max(0, (ARRIVE_MS - ms) / 1000);
   // Closing from an approach view to the landing site over the last hours.
   const k = Math.min(1, Math.max(0, 1 - left / (2 * 86400)));
-  sizeGlobe(marsWrap, (h * 0.78 + h * 2.0 * k) * zoomBias, clearX(w), h / 2,
-    [ SITE.lat, SITE.lon ]);
+  const px = (h * 0.78 + h * 2.0 * k) * zoomBias;
+  sizeGlobe(marsWrap, px, clearX(w), h / 2, [ SITE.lat, SITE.lon ]);
+  const ctx = ocContext(marsWrap, px);
 
   // Altitude on the way in: sphere of influence down to the surface, eased so
   // the last minutes are legible rather than instantaneous.
@@ -481,8 +607,8 @@ function sceneMars(t, w, h) {
     ctx.fillStyle = "rgba(255,229,180,.8)"; ctx.font = "10px ui-monospace,Menlo,monospace";
     ctx.fillText(SITE.name, site.x + 11, site.y + 3.5);
   }
-  drawVehicle(SHIP_M, onGlobe(marsWrap, lat, lon, 1 + altKm / M.R_MARS),
-    36 + 110 * k, { pitch: 0.05, yaw: 1.5 });
+  const mAt = onGlobe(marsWrap, lat, lon, 1 + altKm / M.R_MARS);
+  drawVehicle(ctx, px, SHIP_M, mAt, 36 + 110 * k, { pitch: 0.05, yaw: 1.5, up: mAt?.up });
 
   const dt = Math.max(0, Math.min(TRIP.days * 86400, (ms - TMI_MS) / 1000));
   const ship = M.propagate(TRIP.earth.rKm, TRIP.v1, dt);
@@ -570,6 +696,44 @@ for (const p of PHASES) {
   });
   strip.appendChild(b);
 }
+
+// ── where every number came from ────────────────────────────────────────────
+// Written out rather than summarised: a page that computes a launch date owes
+// the reader the ability to check it.
+const SOURCES = [
+  [ "Landing site",
+    "Candidate landing sites for Starship, imaged by HiRISE at SpaceX's request — southern Arcadia Planitia, over shallow ground ice. The marker is one of those frames, 39.09°N 189.79°E.",
+    "https://www.uahirise.org/ESP_061194_2190" ],
+  [ "Site selection",
+    "Golombek et al., “SpaceX Starship landing sites on Mars”, LPSC 2021 abstract 2420 — why Arcadia: ice within a few metres, low elevation for entry, low enough latitude for power.",
+    "https://www.hou.usra.edu/meetings/lpsc2021/pdf/2420.pdf" ],
+  [ "Launch window",
+    "The 2026 window opens in November and does not come back until 2029 — the independent check on the porkchop below, which picks 2026-10-31 on its own.",
+    "https://www.19fortyfive.com/2026/08/the-mars-launch-window-opens-in-november-2026-and-closes-about-a-month-later-the-next-one-is-in-2029/" ],
+  [ "Ascent timeline",
+    "Flight 5, the first booster catch: MECO T+02:33, landing burn and catch T+06:56. The event times on the phase strip are these; the profile between them is interpolated.",
+    "https://www.nasaspaceflight.com/2024/10/starship-flight-5-catch/" ],
+  [ "Vehicle",
+    "Starship and Super Heavy specifications — 121 m stacked, 71 m booster, 9 m diameter, 33 Raptor 2 and 3 + 3 on the ship.",
+    "https://orbitalradar.com/launch-vehicles/starship" ],
+  [ "Pad",
+    "Starbase, Texas. The launch site sits on the coast at 25.9972°N 97.1560°W; Wikipedia's facility coordinate, 25.9875°N 97.1864°W, is the production site inland of it.",
+    "https://en.wikipedia.org/wiki/SpaceX_Starbase" ],
+  [ "3D models",
+    "“Space X Starship and Super Heavy crew cargo” by gallus-gallus, BlendSwap, CC0. Decimated to 19k and 9.6k triangles with Blender headless; they measure 72.1 m and 52.8 m against a published 71 and 50.",
+    "https://blendswap.com/blend/27853" ],
+  [ "Planet positions",
+    "JPL's Keplerian elements and rates for Earth and Mars, valid 1800–2050, in demo/mission.js. Mars' 1.85° inclination is why the transfer is not a flat problem.",
+    "https://ssd.jpl.nasa.gov/planets/approx_pos.html" ],
+  [ "Trajectory",
+    "Lambert's problem in universal variables across 1,189 departure/flight-time pairs — the porkchop — then propagated with the same formulation, which agrees with the solved arc to one part in 1e13.",
+    "https://en.wikipedia.org/wiki/Lambert%27s_problem" ],
+  [ "Coastlines",
+    "Natural Earth, public domain, via mappo's own Earth pack — the same data the globes are drawn from, pinned by checksum.",
+    "https://www.naturalearthdata.com" ]
+];
+$("srcbody").innerHTML = "<dl>" + SOURCES.map(([ k, why, url ]) =>
+  `<dt>${k}</dt><dd>${why} <a href="${url}" target="_blank" rel="noopener">↗</a></dd>`).join("") + "</dl>";
 
 $("note").innerHTML =
   `Everything from trans-Mars injection onward is solved: Lambert's problem across ` +
