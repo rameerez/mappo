@@ -1,11 +1,11 @@
-// Starship and Super Heavy, built from published dimensions rather than
-// downloaded.
+// Starship and Super Heavy from published dimensions — the FALLBACK, for when
+// the real model has not loaded or cannot be fetched.
 //
-// Every Starship model on CGTrader, TurboSquid and Sketchfab is commercial or
-// unclear-licensed, none is from SpaceX or NASA, and importing one would put a
-// binary of unknown provenance and a glTF loader into a zero-dependency MIT
-// repo — to draw a shape that is a cylinder, a cone and eight flat panels.
-// The dimensions are public and exact, so the geometry is generated:
+// The page draws demo/models/*.glb, decimated out of gallus-gallus' CC0 model
+// on BlendSwap. I had claimed no open-licensed Starship existed; that was one
+// search too few, and wrong. This file stays because a demo that renders
+// nothing while a megabyte arrives is worse than one that renders a cylinder,
+// and because the numbers below are worth keeping written down:
 //
 //   stacked        121 m          Super Heavy    71 m
 //   Starship        50 m          diameter        9 m  (both stages)
@@ -106,32 +106,5 @@ export function stack(opts = {}) {
     faces: [ ...b.faces, ...s.faces.map((f) => ({ ...f, i: f.i.map((k) => k + b.verts.length) })) ]
   };
 }
-
-// ── the tower ───────────────────────────────────────────────────────────────
-// Mechazilla: the thing the booster comes back to. Drawn as a lattice column
-// and two arms, because that silhouette is the entire point of the catch.
-export function tower({ armsOpen = 0.5 } = {}) {
-  const m = mesh();
-  const w = 6, h = DIM.towerHeight;
-  for (const [ dx, dy ] of [ [ -w, -w ], [ w, -w ], [ w, w ], [ -w, w ] ]) {
-    addRevolution(place2(m), [], 0, TOWER);      // no-op keeps the shape of the call site
-    addQuad(m, [ dx, dy, 0 ], [ dx * 0.92, dy * 0.92, h ],
-      [ dx * 0.92 + 1.1, dy * 0.92 + 1.1, h ], [ dx + 1.1, dy + 1.1, 0 ], TOWER);
-  }
-  // Cross-bracing, so it reads as a lattice rather than a slab.
-  for (let z = 8; z < h; z += 14) {
-    addQuad(m, [ -w, -w, z ], [ w, -w, z ], [ w, -w, z + 0.9 ], [ -w, -w, z + 0.9 ], "#5c636e");
-    addQuad(m, [ -w, w, z ], [ w, w, z ], [ w, w, z + 0.9 ], [ -w, w, z + 0.9 ], "#5c636e");
-  }
-  // The chopsticks. armsOpen 0 is closed on the booster, 1 is wide.
-  const az = h - 26, reach = 26, gap = 5 + armsOpen * 16;
-  for (const sign of [ -1, 1 ]) {
-    addQuad(m,
-      [ w, sign * gap, az ], [ w + reach, sign * (gap + 2), az ],
-      [ w + reach, sign * (gap + 2), az + 3 ], [ w, sign * gap, az + 3 ], "#8790a0");
-  }
-  return m;
-}
-const place2 = (m) => m;   // addRevolution with an empty profile adds nothing
 
 export const COLORS = { STEEL, STEEL_DARK, TILE, ENGINE, TOWER };

@@ -16,7 +16,16 @@
   html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--ink);overflow:hidden;
     font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;-webkit-font-smoothing:antialiased}
-  #view{display:block;position:absolute;inset:0;width:100%;height:100%}
+  /* Stars sit BEHIND the globes; the overlay in front of them clears rather
+     than fills, or it would paint over the very thing it is annotating. */
+  #stars{display:block;position:absolute;inset:0;width:100%;height:100%;z-index:0}
+  .globe{z-index:1}
+  #view{display:block;position:absolute;inset:0;width:100%;height:100%;z-index:2}
+  /* The globe sits under the overlay and is sized square, centred in the clear
+     part of the frame — the same clear part the 3D scenes centre on. */
+  .globe{position:absolute;top:0;left:0;pointer-events:none}
+  .hud{z-index:3}
+  .globe mappo-world{display:block;width:100%}
 
   .hud{position:absolute;inset:0;pointer-events:none}
   .hud > *{pointer-events:auto}
@@ -63,6 +72,26 @@
   @media (max-width:900px){.panel,#window{display:none}}
 </style>
 
+<!-- Earth and Mars are mappo. The trajectory is registered to them through
+     map.locate(lat, lon, radius) — radius in body radii, which is the hook the
+     component provides for exactly this: draw your own layer, and have it land
+     on the pixel the geography is on. -->
+<canvas id="stars"></canvas>
+<div class="globe" id="earthWrap">
+  <mappo-world id="earthGlobe" mode="globe" cols="220"
+    focus="25.997,-97.155" rotate-speed="0" globe-ring
+    figure="outline" figure-source="vector"
+    figure-stroke="#5b9ae0" figure-stroke-width="0.6"
+    borders borders-color="#33587f" borders-opacity="0.55"
+    ground-color="#0a1725" background="none" interactive="false"></mappo-world>
+</div>
+<div class="globe" id="marsWrap" hidden>
+  <mappo-world id="marsGlobe" body="mars" mode="globe" cols="220"
+    focus="39.09,-170.21" rotate-speed="0" globe-ring
+    figure="outline" figure-source="vector"
+    figure-stroke="#e08a5c" figure-stroke-width="0.6"
+    ground-color="#7c3f24" background="none" interactive="false"></mappo-world>
+</div>
 <canvas id="view"></canvas>
 
 <div class="hud">
@@ -93,10 +122,18 @@
 </div>
 
 <script type="module">
+// The component this whole page is a demo of. Earth ships in the bundle; Mars
+// is an opt-in pack, handed over by name — which is the point of the packs:
+// the approach to Arcadia Planitia is drawn by the code that drew Starbase.
+import { registerBody } from "../dist/mappo.js";
+import { MARS } from "../dist/bodies/mars.js";
+registerBody(MARS);
+
 import { createClock } from "./timectl.js";
 import * as M from "./mission.js";
 import * as S from "./scene3d.js";
-import { stack, superHeavy, starship, tower, DIM } from "./vehicle.js";
+import { stack, superHeavy, starship, DIM } from "./vehicle.js";
+import { loadGLB, normalize } from "./gltf.js";
 
 const $ = (id) => document.getElementById(id);
 const RAD = Math.PI / 180;
@@ -215,9 +252,25 @@ let zoomBias = 1;
 // ── scenes ──────────────────────────────────────────────────────────────────
 // Four frames, chosen by mission time, because one world spanning a 9 m flap
 // and a 1.5 AU transfer would spend its whole life in the noise of a float.
-const STACK = stack(), BOOSTER_M = superHeavy(), SHIP_M = starship(), TOWER_M = tower();
+// Generated shapes first so the page draws immediately, then the real model
+// swaps in when it arrives — a megabyte should not be a blank screen.
+let BOOSTER_M = superHeavy(), SHIP_M = starship(), STACK = stack();
+for (const [ file, set ] of [ [ "superheavy", (m) => { BOOSTER_M = m; }, ],
+                              [ "starship", (m) => { SHIP_M = m; } ] ]) {
+  loadGLB(`./models/${file}.glb`)
+    .then((m) => { set(normalize(m)); })
+    .catch((e) => console.warn(`[mission] ${file}.glb unavailable, drawing the generated shape`, e));
+}
 
+
+// Painted once per resize onto its own canvas underneath everything, not once
+// per frame over the top of it.
+const starCv = $("stars"), sctx = starCv.getContext("2d");
 function drawStars(w, h) {
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  starCv.width = w * dpr; starCv.height = h * dpr;
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const ctx = sctx;
   ctx.fillStyle = "#05080e"; ctx.fillRect(0, 0, w, h);
   ctx.fillStyle = "#9fb0c6";
   for (let i = 0; i < 220; i++) {
@@ -230,88 +283,137 @@ function drawStars(w, h) {
   ctx.globalAlpha = 1;
 }
 
-// PAD — a local east/north/up frame at Starbase, kilometres.
-function scenePad(t, w, h) {
-  const [ alt, dr ] = lerpTable(ASCENT, Math.max(0, t));
-  const az = 93 * RAD;                                  // launch azimuth, roughly east
-  const shipPos = [ Math.sin(az) * dr, Math.cos(az) * dr, Math.max(0, alt) ];
-  const staged = t >= 153;
-  const [ bAlt, bDr ] = staged ? lerpTable(BOOSTER, t) : [ alt, dr ];
-  const boostPos = [ Math.sin(az) * bDr, Math.cos(az) * bDr, Math.max(0, bAlt) ];
+// ── the mappo globes ────────────────────────────────────────────────────────
+const earthWrap = $("earthWrap"), marsWrap = $("marsWrap");
+const globeOf = (wrap) => wrap.firstElementChild.map;
 
-  // Close on whichever vehicle the phase is about.
-  const p = phaseAt(t);
-  const watchBooster = [ "boost", "entry", "catch" ].includes(p.id);
-  const focus = watchBooster ? boostPos : shipPos;
-  camTarget = [ focus[0], focus[1], focus[2] + 0.06 ];
-  camDist = (t < 5 ? 0.42 : 0.42 + Math.min(alt, 60) * 0.05) * (watchBooster && t > 400 ? 0.5 : 1);
-  if (p.id === "catch") { camTarget = [ 0, 0, 0.11 ]; camDist = 0.42; }
-
-  cam.target = camTarget; cam.distance = camDist * zoomBias; cam.fov = 42;
-  const P = S.projector(cam, w, h, clearX(w));
-
-  // Ground: a disc, so the horizon exists.
-  const g = P([ 0, 0, 0 ]);
-  if (g) {
-    ctx.fillStyle = "#0c1119";
-    ctx.beginPath();
-    for (let i = 0; i <= 64; i++) {
-      const a = (i / 64) * Math.PI * 2;
-      const q = P([ Math.cos(a) * 12, Math.sin(a) * 12, 0 ]);
-      if (q) i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y);
-    }
-    ctx.closePath(); ctx.fill();
+// Size a globe, then put a chosen PLACE at a chosen point on screen.
+//
+// Not the globe's centre: `focus` turns the sphere in longitude but leaves the
+// pole up, so Starbase at 26°N sits a good way above the middle of the disc.
+// Centring the disc therefore pushes the launch site off the top of the frame
+// once the globe is bigger than the window — which, since oversizing the globe
+// past the frame IS the zoom, is exactly when it matters. Asking mappo where
+// the place actually landed and shifting by that is both simpler and correct
+// however the projection behaves.
+function sizeGlobe(wrap, px, cx, cy, anchor) {
+  const el = wrap.firstElementChild;
+  if (Math.abs((wrap._px ?? -1) - px) > 0.5) {
+    el.style.width = `${px}px`;
+    wrap.style.width = `${px}px`;
+    wrap._px = px;
   }
-  S.drawMesh(ctx, S.place(TOWER_M, { origin: [ 0, 0.02, 0 ], scale: 0.001 }), P);
-
-  // The vehicles, in kilometres: the meshes are in metres, hence 0.001.
-  const up = [ 0, 0, 1 ];
-  const tilt = Math.min(1, Math.max(0, (t - 25) / 130));
-  const axis = S.norm([ Math.sin(az) * tilt * 0.85, Math.cos(az) * tilt * 0.85, 1 - tilt * 0.35 ]);
-  if (!staged) {
-    S.drawMesh(ctx, S.place(STACK, { origin: shipPos, axis, scale: 0.001 }), P);
-  } else {
-    S.drawMesh(ctx, S.place(SHIP_M, { origin: shipPos, axis, scale: 0.001 }), P);
-    const bAxis = t > 300 ? [ 0, 0, 1 ] : S.norm([ -axis[0], -axis[1], axis[2] ]);
-    S.drawMesh(ctx, S.place(BOOSTER_M, { origin: boostPos, axis: bAxis, scale: 0.001 }), P);
-  }
-  // Plume, while something is burning.
-  const burning = t < 153 || (t > 165 && t < 250) || (t > 340 && t < 416) || (t > 153 && t < 540);
-  if (burning) {
-    const q = P(shipPos);
-    if (q && q.scale > 0.0001) {
-      ctx.fillStyle = "rgba(255,190,110,.5)";
-      ctx.beginPath(); ctx.ellipse(q.x, q.y + 14, 6, 26, 0, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-  return { alt, dr, speed: lerpTable(ASCENT, Math.max(0, t))[2] };
+  let dx = px / 2, dy = px / 2;
+  const q = anchor && el.map?.locate(anchor[0], anchor[1], 1);
+  if (q) { dx = q.x; dy = q.y; }
+  wrap.style.left = `${cx - dx}px`;
+  wrap.style.top = `${cy - dy}px`;
+}
+// Where a lat/lon/altitude lands on screen, via mappo's own projection.
+function onGlobe(wrap, lat, lon, radii) {
+  const map = globeOf(wrap);
+  if (!map) return null;
+  const q = map.locate(lat, lon, radii);
+  if (!q) return null;
+  const r = wrap.getBoundingClientRect();
+  return { x: r.left + q.x, y: r.top + q.y, front: q.front !== false };
 }
 
-// EARTH — geocentric, kilometres. Parking orbit and the departure asymptote.
-function sceneEarth(t, w, h) {
-  const R = M.R_EARTH, alt = 200;
-  const ang = (t / 5400) * Math.PI * 2;
-  const pos = [ (R + alt) * Math.cos(ang), (R + alt) * Math.sin(ang) * 0.94, (R + alt) * Math.sin(ang) * 0.34 ];
-  cam.target = [ 0, 0, 0 ];
-  cam.distance = 34000 * zoomBias; cam.fov = 40;
-  const P = S.projector(cam, w, h, clearX(w));
-  const sun = S.norm(S.mul(TRIP.earth.rKm, -1));
-  S.drawBody(ctx, P, { center: [ 0, 0, 0 ], radiusKm: R, color: "#2c5f96", sunDir: sun,
-    night: "#070c14", ring: "rgba(120,180,255,.25)" });
-  const ring = [];
-  for (let i = 0; i <= 96; i++) {
-    const a = (i / 96) * Math.PI * 2;
-    ring.push([ (R + alt) * Math.cos(a), (R + alt) * Math.sin(a) * 0.94, (R + alt) * Math.sin(a) * 0.34 ]);
+// The ground track: a great circle from the pad on a fixed azimuth.
+function downrangeTo(lat0, lon0, bearingDeg, km) {
+  const R = M.R_EARTH, d = km / R, br = bearingDeg * RAD;
+  const p1 = lat0 * RAD, l1 = lon0 * RAD;
+  const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(br));
+  const l2 = l1 + Math.atan2(Math.sin(br) * Math.sin(d) * Math.cos(p1),
+                             Math.cos(d) - Math.sin(p1) * Math.sin(p2));
+  return [ p2 / RAD, ((l2 / RAD + 540) % 360) - 180 ];
+}
+
+// Draw a mesh centred on a screen point at a chosen pixel height. The vehicle
+// is exaggerated on purpose: 121 m against a 6,371 km globe is a hundredth of
+// a pixel, and a mission view that renders the rocket at true scale renders
+// nothing at all.
+function drawVehicle(m, at, px, { pitch = 0, yaw = 0.7 } = {}) {
+  if (!at || !at.front) return;
+  const zs = m.verts.map((v) => v[2]);
+  const height = Math.max(...zs) - Math.min(...zs) || 1;
+  const c = S.createCamera();
+  c.target = [ 0, 0, height / 2 ]; c.az = yaw; c.el = pitch; c.fov = 30;
+  // The distance that puts `height` metres onto exactly `px` pixels.
+  c.distance = height * ((view.clientHeight / 2) / Math.tan(15 * RAD)) / px;
+  const P = S.projector(c, view.clientWidth, view.clientHeight, at.x, at.y);
+  S.drawMesh(ctx, m, P, { light: S.norm([ 0.75, 0.35, 0.55 ]), ambient: 0.52 });
+}
+
+// NEAR EARTH — launch through trans-Mars injection, over a mappo Earth.
+function sceneNearEarth(t, w, h) {
+  earthWrap.hidden = false; marsWrap.hidden = true;
+  // Zoomed hard at the pad, easing out to the whole disc by orbit.
+  const k = Math.min(1, Math.max(0, (t - 120) / 900));
+  const px = (h * 3.1 * (1 - k) + h * 0.86 * k) * zoomBias;
+  sizeGlobe(earthWrap, px, clearX(w), h / 2, [ PAD.lat, PAD.lon ]);
+
+  const [ alt, dr, speed ] = lerpTable(ASCENT, Math.max(0, t));
+  const [ lat, lon ] = downrangeTo(PAD.lat, PAD.lon, 93, dr);
+  const radii = 1 + alt / M.R_EARTH;
+
+  // The flown trail, sampled from the same table the vehicle rides.
+  const trail = [];
+  for (let s = 0; s <= Math.max(1, t); s += Math.max(2, t / 90)) {
+    const [ a2, d2 ] = lerpTable(ASCENT, s);
+    const [ la, lo ] = downrangeTo(PAD.lat, PAD.lon, 93, d2);
+    const q = onGlobe(earthWrap, la, lo, 1 + a2 / M.R_EARTH);
+    if (q && q.front) trail.push(q); else trail.push(null);
   }
-  S.drawPath(ctx, P, ring, { color: "rgba(143,183,232,.5)", width: 1, dash: [ 4, 4 ] });
-  const q = P(pos);
-  if (q) { ctx.fillStyle = "#ffd479"; ctx.beginPath(); ctx.arc(q.x, q.y, 3.4, 0, 7); ctx.fill(); }
-  return { alt, dr: 0, speed: 7.79 };
+  ctx.strokeStyle = "#ffd479"; ctx.lineWidth = 1.6; ctx.beginPath();
+  let pen = false;
+  for (const q of trail) { if (!q) { pen = false; continue; }
+    if (pen) ctx.lineTo(q.x, q.y); else { ctx.moveTo(q.x, q.y); pen = true; } }
+  ctx.stroke();
+
+  // The booster's own path home, once it has one.
+  if (t >= 153) {
+    ctx.strokeStyle = "rgba(143,183,232,.85)"; ctx.lineWidth = 1.3; ctx.beginPath();
+    pen = false;
+    for (let s = 153; s <= Math.min(t, 416); s += 4) {
+      const [ ba, bd ] = lerpTable(BOOSTER, s);
+      const [ la, lo ] = downrangeTo(PAD.lat, PAD.lon, 93, bd);
+      const q = onGlobe(earthWrap, la, lo, 1 + ba / M.R_EARTH);
+      if (!q || !q.front) { pen = false; continue; }
+      if (pen) ctx.lineTo(q.x, q.y); else { ctx.moveTo(q.x, q.y); pen = true; }
+    }
+    ctx.stroke();
+  }
+
+  const shipAt = onGlobe(earthWrap, lat, lon, radii);
+  const vpx = 130 * (1 - k) + 34 * k;
+  if (t < 153) {
+    drawVehicle(STACK, shipAt, vpx * 1.25, { pitch: 0.12, yaw: 0.7 });
+  } else {
+    drawVehicle(SHIP_M, shipAt, vpx, { pitch: 0.1, yaw: 0.9 });
+    if (t <= 430) {
+      const [ ba, bd ] = lerpTable(BOOSTER, t);
+      const [ bla, blo ] = downrangeTo(PAD.lat, PAD.lon, 93, bd);
+      drawVehicle(BOOSTER_M, onGlobe(earthWrap, bla, blo, 1 + ba / M.R_EARTH),
+        vpx * 0.95, { pitch: -0.15, yaw: 2.1 });
+    }
+  }
+  // The pad, so the trail has somewhere to start from.
+  const pad = onGlobe(earthWrap, PAD.lat, PAD.lon, 1);
+  if (pad && pad.front) {
+    ctx.fillStyle = "#ffd479";
+    ctx.beginPath(); ctx.arc(pad.x, pad.y, 2.6, 0, 7); ctx.fill();
+    ctx.fillStyle = "rgba(219,230,245,.65)"; ctx.font = "10px ui-monospace,Menlo,monospace";
+    ctx.fillText(PAD.name, pad.x + 7, pad.y + 3.5);
+  }
+  return { alt, dr, speed };
 }
 
 // CRUISE — heliocentric, kilometres. Both orbits, the arc, and where everyone
-// is on it right now.
+// is on it right now. No globe here: at 156 million km a planet is a dot, and
+// a dot is what it should be.
 function sceneCruise(t, w, h) {
+  earthWrap.hidden = true; marsWrap.hidden = true;
   const ms = LAUNCH_MS + t * 1000;
   const dt = Math.max(0, Math.min(TRIP.days * 86400, (ms - TMI_MS) / 1000));
   const ship = M.propagate(TRIP.earth.rKm, TRIP.v1, dt);
@@ -323,7 +425,6 @@ function sceneCruise(t, w, h) {
 
   S.drawPath(ctx, P, EARTH_ORBIT, { color: "rgba(79,143,216,.34)", width: 1 });
   S.drawPath(ctx, P, MARS_ORBIT, { color: "rgba(193,97,58,.34)", width: 1 });
-  // The flown part of the arc solid, the rest of it faint.
   const cut = Math.round((dt / (TRIP.days * 86400)) * (ARC.length - 1));
   S.drawPath(ctx, P, ARC, { color: "rgba(255,212,121,.24)", width: 1, dash: [ 3, 5 ] });
   S.drawPath(ctx, P, ARC.slice(0, cut + 1), { color: "#ffd479", width: 1.8 });
@@ -338,31 +439,55 @@ function sceneCruise(t, w, h) {
   dotAt(P, e.rKm, "#4f8fd8", 4.5, "Earth");
   dotAt(P, m.rKm, "#c1613a", 4, "Mars");
   dotAt(P, ship.r, "#ffd479", 3.4, "Starship");
-  return { alt: 0, dr: 0, speed: Math.hypot(...ship.v), shipR: ship.r, shipV: ship.v, marsR: m.rKm };
+  return { alt: 0, dr: 0, speed: Math.hypot(...ship.v), shipR: ship.r, marsR: m.rKm };
 }
 
-// MARS — Mars-centric on approach and entry.
+// MARS — the arrival, over a mappo Mars. Same component, same locate(), a
+// different body pack behind it: the whole point of the packs is that the
+// approach to Arcadia Planitia is drawn by the code that drew Starbase.
 function sceneMars(t, w, h) {
+  earthWrap.hidden = true; marsWrap.hidden = false;
   const ms = LAUNCH_MS + t * 1000;
-  const left = (ARRIVE_MS - ms) / 1000;
-  const m = M.stateAt("mars", new Date(ms));
+  const left = Math.max(0, (ARRIVE_MS - ms) / 1000);
+  // Closing from an approach view to the landing site over the last hours.
+  const k = Math.min(1, Math.max(0, 1 - left / (2 * 86400)));
+  sizeGlobe(marsWrap, (h * 0.78 + h * 2.0 * k) * zoomBias, clearX(w), h / 2,
+    [ SITE.lat, SITE.lon ]);
+
+  // Altitude on the way in: sphere of influence down to the surface, eased so
+  // the last minutes are legible rather than instantaneous.
+  const altKm = Math.max(0, 12000 * Math.pow(Math.min(1, left / (2 * 86400)), 0.6));
+  const bear = 300;
+  const [ lat, lon ] = downrangeTo(SITE.lat, SITE.lon, bear, altKm > 0 ? Math.min(2600, altKm * 0.55) : 0);
+
+  const trail = [];
+  for (let f = 0; f <= 1; f += 1 / 80) {
+    const l2 = left + (1 - f) * 0;
+    const a2 = 12000 * Math.pow(Math.min(1, (left + (1 - f) * (2 * 86400 - left)) / (2 * 86400)), 0.6);
+    const [ la, lo ] = downrangeTo(SITE.lat, SITE.lon, bear, Math.min(2600, a2 * 0.55));
+    const q = onGlobe(marsWrap, la, lo, 1 + a2 / M.R_MARS);
+    trail.push(q && q.front ? q : null);
+  }
+  ctx.strokeStyle = "rgba(255,212,121,.8)"; ctx.lineWidth = 1.5; ctx.beginPath();
+  let pen = false;
+  for (const q of trail) { if (!q) { pen = false; continue; }
+    if (pen) ctx.lineTo(q.x, q.y); else { ctx.moveTo(q.x, q.y); pen = true; } }
+  ctx.stroke();
+
+  const site = onGlobe(marsWrap, SITE.lat, SITE.lon, 1);
+  if (site && site.front) {
+    ctx.strokeStyle = "#ffd479"; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(site.x, site.y, 7, 0, 7); ctx.stroke();
+    ctx.fillStyle = "rgba(255,229,180,.8)"; ctx.font = "10px ui-monospace,Menlo,monospace";
+    ctx.fillText(SITE.name, site.x + 11, site.y + 3.5);
+  }
+  drawVehicle(SHIP_M, onGlobe(marsWrap, lat, lon, 1 + altKm / M.R_MARS),
+    36 + 110 * k, { pitch: 0.05, yaw: 1.5 });
+
   const dt = Math.max(0, Math.min(TRIP.days * 86400, (ms - TMI_MS) / 1000));
   const ship = M.propagate(TRIP.earth.rKm, TRIP.v1, dt);
-  const rel = S.sub(ship.r, m.rKm);
-  cam.target = [ 0, 0, 0 ];
-  cam.distance = Math.max(9000, Math.min(2.4e5, S.len(rel) * 2.4)) * zoomBias;
-  cam.fov = 40;
-  const P = S.projector(cam, w, h, clearX(w));
-  const sun = S.norm(S.mul(m.rKm, -1));
-  S.drawBody(ctx, P, { center: [ 0, 0, 0 ], radiusKm: M.R_MARS, color: "#a2542f",
-    sunDir: sun, night: "#170a06", ring: "rgba(226,140,96,.28)" });
-  const q = P(rel);
-  if (q) {
-    ctx.fillStyle = "#ffd479"; ctx.beginPath(); ctx.arc(q.x, q.y, 3.6, 0, 7); ctx.fill();
-    ctx.strokeStyle = "rgba(255,212,121,.45)"; ctx.beginPath();
-    ctx.arc(q.x, q.y, 11, 0, 7); ctx.stroke();
-  }
-  return { alt: S.len(rel) - M.R_MARS, dr: 0, speed: Math.hypot(...S.sub(ship.v, m.v)), left };
+  const mm = M.stateAt("mars", new Date(ms));
+  return { alt: altKm, dr: 0, speed: Math.hypot(...S.sub(ship.v, mm.v)), left };
 }
 
 function dotAt(P, p, color, r, label) {
@@ -459,16 +584,19 @@ function paint() {
   const w = view.clientWidth, h = view.clientHeight;
   if (view.width !== w * dpr) { view.width = w * dpr; view.height = h * dpr; }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawStars(w, h);
+  ctx.clearRect(0, 0, w, h);
+  if (starCv._w !== w || starCv._h !== h) { drawStars(w, h); starCv._w = w; starCv._h = h; }
 
   const ms = now();
   const t = T(ms);
   const p = phaseAt(t);
 
+  // Three views, chosen by where the mission is: mappo Earth for everything
+  // inside Earth's neighbourhood, a heliocentric scene for the eight months in
+  // between, mappo Mars for the arrival.
   let info;
-  if (t < 600) info = scenePad(t, w, h);
-  else if (ms < TMI_MS) info = sceneEarth(t, w, h);
-  else if (ARRIVE_MS - ms > 3 * 86400000) info = sceneCruise(t, w, h);
+  if (ms < TMI_MS) info = sceneNearEarth(t, w, h);
+  else if (ARRIVE_MS - ms > 2 * 86400000) info = sceneCruise(t, w, h);
   else info = sceneMars(t, w, h);
 
   $("phase").textContent = p.name;
