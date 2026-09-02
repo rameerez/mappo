@@ -269,6 +269,26 @@ label.classList.toggle("is-night", solarElevation(lat, lon, dec, sunLon) &lt; 0)
   </div>
 </div>
 
+<!-- ─────────────────────── GITHUB GLOBE ─────────────────────── -->
+<h2>GitHub Globe <span>— github.com/globe, rebuilt from its own source on <code>mappo/links</code></span></h2>
+<div class="card">
+  <div class="meta">
+    <h3><a href="./github-globe.html">GitHub Globe →</a></h3>
+    <p>The globe from github.com's home page: ~12,000 dots on a lit indigo sphere under a blue rim, a pink arc
+    for every merged pull request drawing in, holding and erasing, a blue spike for every open one rising and
+    sinking as the data window passes, the hover card, the pause toggle and an opening view turned by your
+    timezone. The scene constants, the rotation model and the timeline are the original's, read off the bundle
+    it ships; the lights are three CSS gradients; the lines are <code>mappo/links</code> on a second, empty
+    globe over them, so they stay unlit as in WebGL.</p>
+    <span class="tag">mappo/links</span><span class="tag">map.addLayer()</span><span class="tag">distribution="uniform"</span><span class="tag">distance="8.8"</span><span class="tag">locate().scale</span><span class="tag">two globes, one orientation</span>
+    <pre><code>import { links } from "mappo/links";
+const arcs = links(sky.map, { color: "#f46bbe", width: 1.75, blend: "lighter" });
+const arc = arcs.add({ points: bezier, range: [ 0, 0 ], data: pullRequest });
+arc.range = [ 0, drawn / total ];        // the original's 600 index units a second
+const hit = arcs.at(pointerEvent);       // the pull request under the pointer</code></pre>
+  </div>
+</div>
+
 <!-- ─────────────────────── SATELLITES ─────────────────────── -->
 <h2>Ten thousand satellites <span>— the whole Starlink constellation, live</span></h2>
 <div class="card">
