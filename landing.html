@@ -1,0 +1,407 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mappo — maps of any world</title>
+<link rel="icon" href="./favicon/favicon-32x32.png">
+<meta name="description" content="A world map as a zero-dependency web component. Dots or coastlines, flat or a rotating globe, Earth or the Moon or Mars — in 22 KB.">
+<style>
+  /* Dark first, and on purpose: the demos below span red, orange, blue and
+     green, so the page they sit on has to be a neutral that lets each of them
+     own its colour rather than competing with all four. */
+  :root{
+    --bg:#06080b; --panel:#0b0f15; --ink:#e8edf4; --muted:#8b98a8; --faint:#556374;
+    --line:#161d26; --accent:#ff7a45; --accent-dim:#9d4a2a;
+    --sans:-apple-system,"SF Pro Display","Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--sans);
+    -webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:inherit}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+
+  /* ── hero ─────────────────────────────────────────────────────────────── */
+  .hero{position:relative;min-height:96vh;display:flex;flex-direction:column;
+    align-items:center;justify-content:flex-start;padding-top:13vh;overflow:hidden}
+  /* The globe is BEHIND the copy and is cut off by the band below it — the
+     composition the Cloudflare page uses, where the sphere never resolves into
+     a circle and the page feels like it is standing on a planet. */
+  .hero-globe{position:absolute;left:50%;top:31vh;transform:translateX(-50%);
+    width:min(1040px,124vw);aspect-ratio:1;pointer-events:none;z-index:0}
+  /* A pool of the page colour under the copy, so the headline never has to
+     compete with a dot field for the same pixels. */
+  .hero-copy::before{content:"";position:absolute;left:50%;top:50%;
+    transform:translate(-50%,-50%);width:190%;height:210%;z-index:-1;
+    background:radial-gradient(ellipse at center,
+      rgb(6 8 11 / .96) 0%, rgb(6 8 11 / .82) 46%, rgb(6 8 11 / 0) 74%)}
+  .hero-globe mappo-world{display:block;width:100%}
+  .hero-copy{position:relative;z-index:2;text-align:center;max-width:44ch}
+  .eyebrow{font:600 11.5px/1 var(--mono);letter-spacing:.19em;text-transform:uppercase;
+    color:var(--accent);margin:0 0 20px}
+  h1{margin:0 0 16px;font-size:clamp(42px,7.2vw,78px);line-height:1.02;
+    letter-spacing:-.035em;font-weight:680}
+  .hero-copy p{margin:0 auto 26px;color:var(--muted);font-size:clamp(16px,1.7vw,19px);
+    max-width:38ch}
+  .install{display:inline-flex;align-items:center;gap:10px;background:#0d131b;
+    border:1px solid var(--line);border-radius:10px;padding:9px 14px;
+    font:13px/1 var(--mono);color:var(--ink)}
+  .install b{color:var(--faint);font-weight:400}
+  .cta{display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap}
+  .cta a{font:600 13.5px/1 var(--sans);padding:11px 18px;border-radius:10px;
+    text-decoration:none;border:1px solid var(--line);color:var(--ink)}
+  .cta a.primary{background:var(--accent);border-color:var(--accent);color:#160800}
+  .cta a:hover{border-color:#2b3644}
+  .cta a.primary:hover{filter:brightness(1.08)}
+
+  /* The band that cuts the globe off. Opaque, so the sphere really is clipped
+     by it rather than fading out behind a gradient. */
+  .band{position:relative;z-index:3;background:var(--bg);border-top:1px solid var(--line);
+    margin-top:auto}
+  .band .wrap{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+    background:var(--line);border-left:1px solid var(--line);border-right:1px solid var(--line);
+    padding:0}
+  .band div{background:var(--bg);padding:26px 24px}
+  .band h3{margin:0 0 6px;font-size:15px;font-weight:640;letter-spacing:-.01em}
+  .band p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.55}
+  .band b{color:var(--ink);font-variant-numeric:tabular-nums}
+  @media (max-width:820px){.band .wrap{grid-template-columns:1fr}}
+
+  /* ── showcase ─────────────────────────────────────────────────────────── */
+  .show{padding:104px 0 0}
+  .show-head{max-width:52ch;margin:0 auto 54px;text-align:center}
+  .show-head h2{margin:0 0 12px;font-size:clamp(28px,3.6vw,40px);letter-spacing:-.028em;
+    line-height:1.1;font-weight:660}
+  .show-head p{margin:0;color:var(--muted)}
+
+  .tile{position:relative;border:1px solid var(--line);border-radius:18px;
+    overflow:hidden;margin-bottom:26px;background:var(--panel)}
+  .tile .stage{position:relative;height:min(58vh,470px);display:grid;place-items:center;
+    overflow:hidden}
+  .tile .meta{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;
+    padding:20px 24px 22px;border-top:1px solid var(--line)}
+  .tile .meta h3{margin:0 0 5px;font-size:17px;font-weight:640;letter-spacing:-.012em}
+  .tile .meta p{margin:0;color:var(--muted);font-size:13.5px;max-width:62ch;line-height:1.55}
+  .tile .meta a{flex:none;font:600 12.5px/1 var(--sans);text-decoration:none;
+    border:1px solid var(--line);border-radius:9px;padding:9px 14px;white-space:nowrap}
+  .tile .meta a:hover{border-color:#2b3644}
+  .tag{display:inline-block;font:600 10px/1 var(--mono);letter-spacing:.13em;
+    text-transform:uppercase;padding:4px 7px;border-radius:5px;margin-bottom:9px}
+
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+  @media (max-width:920px){.pair{grid-template-columns:1fr}}
+
+  /* per-tile worlds, each owning its palette */
+  #t-standby .stage{background:#000}
+  #t-links .stage{background:#040d21}
+  #t-analytics .stage{background:#fff}
+  #t-worlds .stage{background:#05070b}
+
+  .clockface{position:absolute;left:6%;bottom:12%;color:#ff2b2b;font-family:var(--sans);
+    line-height:1;pointer-events:none}
+  .clockface .city{font-size:16px;font-weight:600;letter-spacing:-.01em;margin-bottom:9px}
+  .clockface .time{font-size:clamp(44px,7vw,72px);font-weight:700;letter-spacing:-.045em;
+    font-variant-numeric:tabular-nums}
+
+  footer{border-top:1px solid var(--line);margin-top:96px;padding:52px 0 80px}
+  .all-demos{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 0}
+  .all-demos a{font:12.5px/1 var(--mono);text-decoration:none;color:var(--muted);
+    border:1px solid var(--line);border-radius:8px;padding:8px 11px}
+  .all-demos a:hover{color:var(--ink);border-color:#2b3644}
+  .foot-note{color:var(--faint);font-size:12.5px;margin:26px 0 0;max-width:70ch;line-height:1.6}
+  code{font-family:var(--mono);font-size:.9em;background:#0d131b;padding:.12em .36em;
+    border-radius:4px}
+</style>
+
+<header class="hero">
+  <div class="hero-globe">
+    <!-- The hero is the Cloudflare composition: a uniform lattice of tangent
+         squares, a graticule at 4% and a fog that takes the far side toward the
+         page. Four attributes on one element; the land is mappo's own mask. -->
+    <mappo-world id="hero" mode="globe" cols="380" lat-min="-90" lat-max="90"
+      distribution="uniform" dot-shape="tile" dot-size="0.38"
+      figure="dots" figure-color="#ff7a45"
+      distance="2.42" fog="-0.62 1.02"
+      rotate-speed="1.6" interactive="false" background="none"
+      graticule meridians="24" parallels="23"
+      graticule-color="#8fa2b8" equator-color="#8fa2b8"
+      graticule-opacity="0.05" equator-opacity="0.05" graticule-width="0.5"></mappo-world>
+  </div>
+
+  <div class="hero-copy">
+    <p class="eyebrow">Zero dependencies · MIT</p>
+    <h1>Maps of any world</h1>
+    <p>A world map as a web component. Dots or coastlines, flat or a rotating
+      globe, Earth or the Moon or Mars — in 22&nbsp;KB.</p>
+    <span class="install"><b>npm i</b> mappo</span>
+    <div class="cta">
+      <a class="primary" href="./demo/">See the demos</a>
+      <a href="https://github.com/rameerez/mappo">GitHub</a>
+    </div>
+  </div>
+
+  <div class="band">
+    <div class="wrap">
+      <div><h3>22 KB, everything in</h3><p>The core carries the engine, Earth's
+        land mask and its gazetteer. The globe, projections, vector coastlines,
+        arcs and other worlds are <b>opt-in modules</b> you import only if you
+        use them.</p></div>
+      <div><h3>One element</h3><p>Fifty attributes, no build step, no bundler.
+        Drop <code>&lt;mappo-world&gt;</code> on a page and style it with CSS
+        variables — a theme flip repaints every map without a line of JS.</p></div>
+      <div><h3>Not only Earth</h3><p>A body answers whether a coordinate is
+        inside or outside. The Moon is <b>9.5 KB</b>, Mars <b>6.9 KB</b>, and the
+        renderer never learns which one it is drawing.</p></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap show">
+  <div class="show-head">
+    <h2>Built with it</h2>
+    <p>Every panel below is live — a real <code>&lt;mappo-world&gt;</code> on this
+      page, not a screenshot.</p>
+  </div>
+
+  <section class="tile" id="t-standby">
+    <div class="stage">
+      <div id="standby-map" style="width:min(760px,92%)"></div>
+      <div class="clockface"><div class="city" id="sb-city">&nbsp;</div><div class="time" id="sb-time">—</div></div>
+    </div>
+    <div class="meta">
+      <div>
+        <span class="tag" style="background:#2a0000;color:#ff4d4d">Day and night</span>
+        <h3>The clock that knows where the sun is</h3>
+        <p>A dot field, and the terminator computed from the real solar position —
+          drawn on a canvas the map keeps over itself, so it can never lag the
+          geography by a frame.</p>
+      </div>
+      <a href="./demo/standby.html">Open →</a>
+    </div>
+  </section>
+
+  <div class="pair">
+    <section class="tile" id="t-links">
+      <div class="stage"><div id="links-map" style="width:86%"></div></div>
+      <div class="meta">
+        <div>
+          <span class="tag" style="background:#0d2440;color:#5da5f9">Arcs</span>
+          <h3>Connections, on a sphere that hides them</h3>
+          <p>Great-circle arcs between named places. The far side is cut, widths
+            grow toward the camera.</p>
+        </div>
+        <a href="./demo/region-earth.html">Open →</a>
+      </div>
+    </section>
+
+    <section class="tile" id="t-worlds">
+      <div class="stage"><div id="worlds-row" style="display:flex;align-items:center;gap:5%;width:88%"></div></div>
+      <div class="meta">
+        <div>
+          <span class="tag" style="background:#241708;color:#e0975a">Other worlds</span>
+          <h3>Earth, Mars and the Moon, to scale</h3>
+          <p>Same component, same attributes, three bodies — at their true
+            relative size.</p>
+        </div>
+        <a href="./demo/worlds.html">Open →</a>
+      </div>
+    </section>
+  </div>
+
+  <section class="tile" id="t-analytics">
+    <div class="stage"><div id="analytics-map" style="width:min(900px,94%)"></div></div>
+    <div class="meta">
+      <div>
+        <span class="tag" style="background:#eef2f7;color:#334155">Data</span>
+        <h3>Where your users are</h3>
+        <p>Every country as its own shape, shaded by a number — the choropleth
+          every dashboard wants, filled through the same projection the map was
+          drawn with.</p>
+      </div>
+      <a href="./demo/analytics.html">Open →</a>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap">
+  <span class="install"><b>npm i</b> mappo</span>
+  <div class="all-demos" id="all-demos"></div>
+  <p class="foot-note">Land and borders from Natural Earth (public domain),
+    pinned by checksum. Lunar maria from the Clementine albedo mosaic, Martian
+    lowlands from MOLA topography — both NASA, both public domain.</p>
+</footer>
+
+<script type="module">
+// Modular on purpose: this page loads the core, the globe renderer, vector
+// outlines, Earth's rings, links and two other worlds — which is exactly the
+// story the first panel tells. A page that only wanted a flat dot map would
+// load the first line alone.
+import "./dist/mappo.js";
+import "./dist/globe.js";
+import "./dist/vector.js";
+import "./dist/bodies/earth-vector.js";
+import { links } from "./dist/links.js";
+import { registerBody } from "./dist/mappo.js";
+import { MOON } from "./dist/bodies/moon.js";
+import { MARS } from "./dist/bodies/mars.js";
+registerBody(MOON);
+registerBody(MARS);
+
+import { earthAt } from "./demo/astro.js";
+import { nightRings } from "./demo/terminator.js";
+import { regions } from "./demo/countries.js";
+
+const $ = (id) => document.getElementById(id);
+// Each panel is built inside a guard: a demo that throws should cost its own
+// panel, not the page.
+const panel = (name, fn) => { try { fn(); } catch (e) { console.warn(`[landing] ${name}`, e); } };
+
+// ── the gallery, from one list ──────────────────────────────────────────────
+const DEMOS = [
+  [ "region-earth", "Region: Earth" ], [ "worlds", "Other worlds" ],
+  [ "standby", "Standby clock" ], [ "analytics", "Geographic distribution" ],
+  [ "satellites", "Starlink, right now" ], [ "year", "Where the Earth is" ],
+  [ "mars-mission", "Mars transfer" ], [ "projections", "Projections" ],
+  [ "land", "Land styles" ], [ "perf", "Performance" ], [ "index", "All demos" ]
+];
+$("all-demos").innerHTML = DEMOS
+  .map(([ f, n ]) => `<a href="./demo/${f}.html">${n}</a>`).join("");
+
+// ── standby: dots, and the night drawn over them ────────────────────────────
+panel("standby", () => {
+  const LAT = [ -58, 78 ];
+  const el = document.createElement("mappo-world");
+  for (const [ k, v ] of Object.entries({
+    mode: "flat", cols: "88", "lat-min": LAT[0], "lat-max": LAT[1],
+    figure: "dots", "dot-shape": "circle", "dot-size": "0.55",
+    "figure-color": "#e60000", background: "none", interactive: "false"
+  })) el.setAttribute(k, v);
+  $("standby-map").appendChild(el);
+
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  $("sb-city").textContent = (tz.split("/").pop() || "Here").replace(/_/g, " ");
+  const parts = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", timeZone: tz });
+  const hhmm = (d) => parts.formatToParts(d)
+    .filter((p) => p.type === "hour" || p.type === "literal" || p.type === "minute")
+    .map((p) => (p.type === "literal" ? ":" : p.value)).join("").replace(/:+$/, "");
+
+  const fx = (lon) => (lon + 180) / 360;
+  const fy = (lat) => (LAT[1] - lat) / (LAT[1] - LAT[0]);
+
+  customElements.whenDefined("mappo-world").then(() => requestAnimationFrame(() => {
+    // addLayer: mappo keeps a canvas over the map and redraws it with every
+    // frame the map draws, so this cannot drift from the dots underneath.
+    el.map.addLayer((ctx, view) => {
+      const { dec, subLon } = earthAt(new Date());
+      ctx.fillStyle = "rgba(0,0,0,0.82)";
+      for (const ring of nightRings(dec, subLon, 0, LAT)) {
+        ctx.beginPath();
+        ring.forEach(([ lon, lat ], i) => {
+          const x = fx(lon) * view.width, y = fy(lat) * view.height;
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        });
+        ctx.closePath();
+        ctx.fill();
+      }
+    });
+    const tick = () => { $("sb-time").textContent = hhmm(new Date()); };
+    tick();
+    setInterval(() => { tick(); el.map.render?.(); }, 30000);
+  }));
+});
+
+// ── links: arcs on a globe ──────────────────────────────────────────────────
+panel("links", () => {
+  const el = document.createElement("mappo-world");
+  for (const [ k, v ] of Object.entries({
+    mode: "globe", cols: "150", "lat-min": -90, "lat-max": 90,
+    figure: "dots", "figure-color": "#2b3f6b", "dot-size": "0.5",
+    focus: "20,-30", "rotate-speed": "2.5", background: "none",
+    interactive: "false", "globe-ring": "true"
+  })) el.setAttribute(k, v);
+  $("links-map").appendChild(el);
+
+  const ROUTES = [
+    [ "London", "New York", 0.36 ], [ "Tokyo", "San Francisco", 0.5 ],
+    [ "Lagos", "Paris", 0.24 ], [ "Sydney", "Singapore", 0.28 ],
+    [ "São Paulo", "Lisbon", 0.4 ], [ "Delhi", "Berlin", 0.3 ],
+    [ "Nairobi", "Dubai", 0.2 ]
+  ];
+  customElements.whenDefined("mappo-world").then(() => requestAnimationFrame(() => {
+    const layer = links(el.map, { width: 1.4, blend: "lighter", fade: true });
+    for (const [ from, to, height ] of ROUTES) {
+      layer.add({ from, to, height, color: "#2188ff", tip: 2.2 });
+    }
+    layer.add({ at: "London", height: 0.16, color: "#f46bbe", width: 2 });
+    layer.add({ at: "Tokyo", height: 0.13, color: "#f46bbe", width: 2 });
+  }));
+});
+
+// ── worlds: three bodies, true relative size ────────────────────────────────
+panel("worlds", () => {
+  // Radii: Earth 6371, Mars 3389.5, Moon 1737.4 km. The widths are the ratio.
+  const BODIES = [
+    { body: "earth", w: 100, color: "#5b9ae0" },
+    { body: "mars", w: 53.2, color: "#d1743f" },
+    { body: "moon", w: 27.3, color: "#9aa6b4" }
+  ];
+  const row = $("worlds-row");
+  for (const b of BODIES) {
+    const box = document.createElement("div");
+    box.style.width = `${b.w}%`;
+    const el = document.createElement("mappo-world");
+    for (const [ k, v ] of Object.entries({
+      mode: "globe", body: b.body, cols: "130", "lat-min": -90, "lat-max": 90,
+      figure: "solid outline", "figure-source": "vector",
+      "figure-color": b.color + "44", "figure-stroke": b.color,
+      "figure-stroke-width": "0.55", background: "none",
+      "rotate-speed": "1.2", interactive: "false", "globe-ring": "true"
+    })) el.setAttribute(k, v);
+    box.appendChild(el);
+    row.appendChild(box);
+  }
+});
+
+// ── analytics: countries shaded by a number ─────────────────────────────────
+panel("analytics", () => {
+  const LAT = [ -56, 84 ];
+  const USERS = { US: 80, AU: 7, GB: 7, CA: 6, BR: 5, FR: 4, MX: 4, IL: 3, CH: 3, PT: 3,
+                  DE: 3, JP: 2, IN: 2, ES: 2, NL: 2, SE: 1, PL: 1, AR: 1, ZA: 1, KR: 1 };
+  const max = Math.max(...Object.values(USERS));
+  const el = document.createElement("mappo-world");
+  for (const [ k, v ] of Object.entries({
+    mode: "flat", cols: "220", "lat-min": LAT[0], "lat-max": LAT[1],
+    figure: "solid", "figure-source": "vector", "figure-color": "#e8edf3",
+    background: "none", "ground-color": "none", interactive: "false"
+  })) el.setAttribute(k, v);
+  $("analytics-map").appendChild(el);
+
+  const fx = (lon) => (lon + 180) / 360;
+  const fy = (lat) => (LAT[1] - lat) / (LAT[1] - LAT[0]);
+  // Not linear: at 80 against 3 a linear ramp renders every country but the
+  // leader indistinguishable from empty.
+  const shade = (v) => `color-mix(in oklab, #1e293b ${(Math.pow(v / max, 0.7) * 100).toFixed(1)}%, #cfdae7)`;
+
+  customElements.whenDefined("mappo-world").then(() => requestAnimationFrame(() => {
+    const shapes = regions().filter((r) => USERS[r.id] && r.rings.length);
+    el.map.addLayer((ctx, view) => {
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 0.6;
+      ctx.lineJoin = "round";
+      for (const r of shapes) {
+        ctx.fillStyle = shade(USERS[r.id]);
+        ctx.beginPath();
+        for (const ring of r.rings) {
+          ring.forEach(([ lat, lon ], i) => {
+            const x = fx(lon) * view.width, y = fy(lat) * view.height;
+            i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+          });
+          ctx.closePath();
+        }
+        ctx.fill("evenodd");
+        ctx.stroke();
+      }
+    });
+  }));
+});
+</script>
