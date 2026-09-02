@@ -17,10 +17,10 @@
 // Node-safe: the point-buffer builders are pure and testable; GlobeRenderer
 // touches the DOM only in its constructor, which only runs in a browser.
 //
-// Per frame, nothing is allocated for the geometry: dots, figure quads,
-// contour loops and vector outlines are all precomputed unit-sphere
-// coordinates in typed arrays, and each frame only rotates them. Several
-// globes on one page is a first-class case.
+// Expensive source geometry and trigonometry stay out of the frame loop: dots,
+// figure quads, contour loops and vector outlines are precomputed unit-sphere
+// coordinates in typed arrays. Frames rotate those into short-lived canvas
+// paths. Several globes on one page is a first-class case.
 
 import { resolvePlaces } from "./body.js";
 import { cellCenter, cellCorner } from "./projection.js";
@@ -54,7 +54,7 @@ export function buildGlobePoints(cols, latRange, body, ground = false) {
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const c = cellCenter(col, row, grid);
-      if (body.figure(c.lat, c.lon) === ground) continue;
+      if (Boolean(body.figure(c.lat, c.lon)) === ground) continue;
       const p = latLonToXYZ(c.lat, c.lon);
       out.push(p.x, p.y, p.z);
     }
@@ -717,7 +717,6 @@ export class GlobeRenderer {
     // Until vector fills can be clipped to the hemisphere properly, a filled
     // globe draws BOTH fill and edge from the grid, where they agree by
     // construction. Borders are lines, so they clip cleanly and can ride any fill.
-    if (vector) drawBorders();
     // Resolution stays at `cols`, deliberately. Sampling the fill finer than
     // the dot grid does buy smoother coastlines, but it multiplies the quads
     // projected every frame — measured as visible stutter on a page carrying
@@ -768,6 +767,10 @@ export class GlobeRenderer {
       // stroke() can only carry one alpha.
       this.#strokeBanded(this.#projectRings(geom.loops, T), strokeColor, o.figureStrokeWidth ?? 1, 1);
     }
+    // Boundaries are an overlay: draw them after the figure for every source.
+    // Drawing them before a fill covers them; tying them to vector coastlines
+    // makes `borders` silently do nothing with figure-source="grid".
+    drawBorders();
     ctx.globalAlpha = 1;
   }
 

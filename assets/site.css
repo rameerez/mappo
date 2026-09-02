@@ -44,6 +44,7 @@ button:hover{border-color:var(--accent)}
 button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);font-weight:600}
 
 .grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+.grid>.card{min-width:0}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;
   display:flex;flex-direction:column}
 .card .art{padding:14px 14px 0}

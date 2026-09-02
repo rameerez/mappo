@@ -2,6 +2,7 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>mappo — demos</title>
+<link rel="shortcut icon" href="../favicon/favicon.ico" type="image/x-icon">
 <link rel="stylesheet" href="../assets/site.css">
 <style>
  /* Everything shared with the landing page lives in ../assets/site.css;
@@ -98,7 +99,8 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
  /* hero */
  .hero{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:26px;align-items:center;
        background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;margin-top:18px}
- @media(max-width:860px){.hero{grid-template-columns:1fr}}
+ .hero>div{min-width:0}
+ @media(max-width:860px){.hero{grid-template-columns:minmax(0,1fr)}}
  .pin{pointer-events:auto;text-decoration:none}
  .pin>span{display:flex;align-items:center;gap:6px;white-space:nowrap;transform:translate(-50%,-50%);
    background:var(--pill);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:3px 10px;
@@ -494,7 +496,12 @@ Full-screen versions: <a href="./orbit.html">orbit</a> · <a href="./land.html">
   import { bindThemeToggle } from "../assets/theme.js";
   bindThemeToggle(document.getElementById("theme"));
 </script>
-<script>
+<script type="module">
+  // The night geometry — the spherical-cap spans, the tangent bisection and
+  // the closed rings — lives in ./terminator.js, shared with the standby
+  // clock and covered by test/terminator.test.js. This page only projects it.
+  import { nightRings, solarElevation } from "./terminator.js";
+
   // ── orbit ──────────────────────────────────────────────────────────────
   const YEAR_MS = 96000, A = 330, B = 125;
   const carrier = document.getElementById("carrier"), clock = document.getElementById("clock");
@@ -533,43 +540,6 @@ function subsolarPoint(date) {
   return { dec, lon };
 }
 
-// Sun height above the horizon at a place, in degrees.
-const solarElevation = (lat, lon, dec, sunLon) =>
-  Math.asin(
-    Math.sin(lat * RAD) * Math.sin(dec * RAD) +
-    Math.cos(lat * RAD) * Math.cos(dec * RAD) * Math.cos((lon - sunLon) * RAD)
-  ) / RAD;
-
-// Everywhere the sun is lower than h0 is a spherical CAP: the disc of angular
-// radius 90 + h0 around the antisolar point. Getting this wrong is what put
-// vertical strips on the map twice. A cap only reaches the pole while it is
-// wide enough to — the h = 0 one always is, which is why the plain terminator
-// really is one curve with night below it — but by −9°, near an equinox, the
-// cap has pulled away from the pole and closed into a blob. Filling those
-// bands "down to the edge of the map" therefore blacked out whole columns
-// wherever the single-curve maths ran out of solutions, and the sides of
-// those columns are the strips.
-//
-// So a band is asked, one meridian at a time, which LATITUDES it covers there
-// — an interval, because a convex cap meets a meridian in exactly one arc.
-function capSpan(lon, cLat, cLon, cosR) {
-  const A = Math.sin(cLat * RAD);
-  const B = Math.cos(cLat * RAD) * Math.cos((lon - cLon) * RAD);
-  const R = Math.hypot(A, B);
-  if (R < 1e-9) return cosR <= 0 ? [ -OFF_LAT, OFF_LAT ] : null;
-  const ratio = cosR / R;
-  if (ratio > 1) return null;                    // the cap misses this meridian
-  if (ratio <= -1) return [ -OFF_LAT, OFF_LAT ]; // and here it swallows it whole
-  // sin(lat + phi) >= ratio holds on one interval per turn, and at most one of
-  // them can land inside a meridian's 180 degrees of latitude.
-  const phi = Math.atan2(B, A) / RAD, a = Math.asin(ratio) / RAD;
-  for (const k of [ 0, -1, 1 ]) {
-    const lo = a - phi + 360 * k, hi = 180 - a - phi + 360 * k;
-    if (hi > -90 && lo < 90) return [ lo, hi ];
-  }
-  return null;
-}
-
 const flat = document.getElementById("flatshow");
 const VB = 1000;                                    // the dusk line's viewBox
 const LAT_RANGE = [ -58, 76 ];                      // must match the element's attrs
@@ -587,71 +557,13 @@ const ny = (lat) => fy(lat) * VB;
 // deepen instead of greying each other out.
 const BAND_ELEV = Array.from({ length: 12 }, (_, i) => -1.5 * i);
 
-const LON_STEP = 1.5;   // between meridians; finer than a blurred edge can show
-const LON_PAD  = 30;    // sampled past the antimeridian, so the blur has room
-const LAT_PAD  = 8;     // and past the top and bottom of it, for the same reason
-const OFF_LAT  = 300;   // a latitude far enough outside the frame to hide an edge
-
-// Latitudes past the poles exist only to push an edge out of sight.
-const dy = (lat) => ny(lat >= 90 ? OFF_LAT : lat <= -90 ? -OFF_LAT : lat);
-
-// A band whose cap is very nearly tangent to a pole — which happens whenever
-// the declination is close to one of the twelve angles — dips in and out of
-// existence along a whole hemisphere of meridians, in slivers a few metres
-// wide at latitude 90. None of that is on the map. Asking only about the part
-// of the world the frame shows turns that speckle back into one clean run.
-const seen = (sp) => sp && sp[1] > LAT_RANGE[0] - LAT_PAD && sp[0] < LAT_RANGE[1] + LAT_PAD
-  ? sp : null;
-
-// Where a run ends the cap is tangent to the meridian and the span closes to a
-// point, so the polygon tapers rather than stopping on a vertical edge — but
-// only if we sample the tangency. Bisection finds it to well under a pixel.
-function tangentLon(inLon, outLon, cLat, cLon, cosR) {
-  let a = inLon, b = outLon;
-  for (let i = 0; i < 16; i++) {
-    const m = (a + b) / 2;
-    if (seen(capSpan(m, cLat, cLon, cosR))) a = m; else b = m;
-  }
-  return a;
-}
-
-// One band as closed polygons: out along the top of the span, back along the
-// bottom. A band that wraps the antimeridian simply comes back as two.
+// One band as closed SVG polygons in the dusk line's viewBox units. The rings
+// come back closed, in [lon, lat], with off-frame latitudes already clamped
+// far outside the frame — so this is projection and nothing else.
 function bandPath(dec, sunLon, h0) {
-  const cLat = -dec;                                  // the antisolar point
-  const cLon = ((sunLon + 180 + 540) % 360) - 180;
-  const cosR = Math.cos((90 + h0) * RAD);
-  const out = [];
-  let run = null, prev = null;
-
-  const at = (lon) => {
-    const sp = seen(capSpan(lon, cLat, cLon, cosR));
-    if (sp) run.push([ nx(lon), sp[0], sp[1] ]);
-  };
-  const close = () => {
-    if (run && run.length > 1) {
-      const top = run.map(([ x, , hi ]) => `${x.toFixed(1)} ${dy(hi).toFixed(1)}`);
-      const bot = run.map(([ x, lo ]) => `${x.toFixed(1)} ${dy(lo).toFixed(1)}`).reverse();
-      out.push(`M${top.join("L")}L${bot.join("L")}Z`);
-    }
-    run = null;
-  };
-
-  for (let lon = -180 - LON_PAD; lon <= 180 + LON_PAD; lon += LON_STEP) {
-    if (seen(capSpan(lon, cLat, cLon, cosR))) {
-      if (!run) {
-        run = [];
-        if (prev !== null) at(tangentLon(lon, prev, cLat, cLon, cosR));
-      }
-      at(lon);
-    } else if (run) {
-      at(tangentLon(prev, lon, cLat, cLon, cosR));
-      close();
-    }
-    prev = lon;
-  }
-  close();
-  return out.join("");
+  return nightRings(dec, sunLon, h0, LAT_RANGE)
+    .map((ring) => `M${ring.map(([ lon, lat ]) => `${nx(lon).toFixed(1)} ${ny(lat).toFixed(1)}`).join("L")}Z`)
+    .join("");
 }
 
 // Built once; only the `d` changes as the Earth turns.

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { classifyRaster, coverageWithin } from "../scripts/lib/raster-body.js";
+import { classifyRaster, coverageWithin, downsample } from "../scripts/lib/raster-body.js";
 import { renderBodyPack } from "../scripts/lib/pack.js";
 import { ALPHABET, SCALE, decodeRings, encodeRings, maskAt } from "../scripts/lib/codec.js";
 import { simplifyRing } from "../scripts/lib/geometry.js";
@@ -66,6 +66,14 @@ test("geometry: simplifying a closed ring also tests points against the closing 
   const square = [ [ 0, 0 ], [ 0, 1 ], [ 1, 1 ], [ 1, 0 ], [ 0.5, 0 ], [ 0, 0 ] ];
   const simplified = simplifyRing(square, 0.01);
   assert.deepEqual(simplified, [ [ 0, 0 ], [ 0, 1 ], [ 1, 1 ], [ 1, 0 ], [ 0, 0 ] ]);
+});
+
+test("raster downsampling weights fractional source-pixel overlap", () => {
+  // Two target cells across three source pixels: the middle source pixel is
+  // split evenly between them, not counted in full twice.
+  const cells = downsample(new Float32Array([ 0, 100, 200 ]), 3, 1, 2, 1);
+  assert.ok(Math.abs(cells[0] - 100 / 3) < 1e-5);
+  assert.ok(Math.abs(cells[1] - 500 / 3) < 1e-5);
 });
 
 test("the raster pipeline thresholds, traces and emits a pack that registers as a body", async () => {

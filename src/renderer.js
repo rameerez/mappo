@@ -223,11 +223,16 @@ export class Mappo {
     this._body = resolveBody(this.options.body);
     // Host DOM carrying data-lat/data-lon is harvested ONCE, here, before any
     // renderer touches the container's children, and lent to whichever
-    // renderer is active. Owning the list here is what lets a mode switch and
-    // a destroy()/re-connect keep the host's elements.
+    // renderer is active. Keep the original child tree too: overlays may be
+    // nested in consumer wrappers, and destroy() must restore that structure
+    // and its non-overlay siblings rather than flattening everything.
+    this._hostChildren = typeof container.childNodes === "object"
+      ? Array.from(container.childNodes)
+      : [];
     this._overlays = typeof container.querySelectorAll === "function"
       ? Array.from(container.querySelectorAll("[data-lat][data-lon]"))
       : [];
+    this._overlayState = new Map(this._overlays.map((el) => [ el, captureOverlay(el) ]));
     this._dotsCache = new Map();    // "cols|latMin|latMax" → { markup, dots }
     this._figureCache = new Map();  // figure paths have a different value shape
     this.#applyLatRange();
@@ -296,14 +301,21 @@ export class Mappo {
       if ("latMax" in options) nextOverride[1] = options.latMax;
     }
     const oldRange = this.options.latRange;
-    const nextBody = changed.includes("body") ? resolveBody(options.body) : this._body;
+    // A named pack may have registered since this map's last update. Resolve
+    // names again even when the body option itself did not change, so a map
+    // whose first late adoption failed (for example, incompatible partial
+    // latitude bounds) recovers as soon as the consumer corrects its options.
+    const nextBody = changed.includes("body")
+      ? resolveBody(options.body)
+      : typeof this.options.body === "string" ? resolveBody(this.options.body) : this._body;
+    const bodyResolved = nextBody !== this._body;
     const nextRange = this.#rangeFor(nextBody, nextOverride); // validate before mutating live state
     this._latRangeOverride = nextOverride;
     Object.assign(this.options, options);
     this.options.latRange = nextRange;
     // Like mode: a different world is different geometry, so it skips the
     // patch tiers entirely rather than hoping `body` appears in one of them.
-    if (changed.includes("body")) {
+    if (changed.includes("body") || bodyResolved) {
       dbg("update: body →", this.options.body, "→ full rebuild");
       this.#setBody(nextBody);
       // A body representation can change ("moon" → the same MOON object)
@@ -375,8 +387,14 @@ export class Mappo {
     this.styleEl = null;
     this._tiltWrap = null;
     this._overlayLayer = null;
-    for (const el of this._overlays) releaseOverlay(el);
-    this.container.replaceChildren(...this._overlays);
+    for (const el of this._overlays) releaseOverlay(el, this._overlayState.get(el));
+    // Restore descendants from last to first so each original nextSibling is
+    // already back when insertBefore needs it. Direct children are placed by
+    // the original root-node snapshot below.
+    for (let i = this._overlays.length - 1; i >= 0; i--) {
+      restoreOverlay(this._overlays[i], this._overlayState.get(this._overlays[i]), this.container);
+    }
+    this.container.replaceChildren(...this._hostChildren);
     this.container.removeAttribute?.("data-mappo");
   }
 
@@ -774,7 +792,8 @@ export class Mappo {
       const { col, row } = snapToFigure(place.lat, place.lon, grid, this._body);
       const fill = place.color ? ` style="fill:${escapeAttr(place.color)}"` : "";
       const kind = place.kind ? ` data-kind="${escapeAttr(place.kind)}"` : "";
-      const focus = o.interactive ? ` tabindex="0" role="button" aria-label="${escapeAttr(place.name)}"` : "";
+      const label = place.name || `${place.lat}, ${place.lon}`;
+      const focus = o.interactive ? ` tabindex="0" role="button" aria-label="${escapeAttr(label)}"` : "";
       // The ping ring renders BEHIND the core and animates independently —
       // the core barely breathes, the ring expands and fades. Scaling one
       // element for "pulse" read as throbbing, not pinging.
@@ -801,6 +820,9 @@ export class Mappo {
   // Selectors are rewritten through the CSSOM rather than by regex on the
   // text: the browser has already parsed the structure, so keyframe stops
   // (`0%, 100%`) and at-rule preludes cannot be mistaken for selectors.
+  // :where() keeps the whole built-in selector at zero specificity. These
+  // rules are defaults; a consumer's ordinary `.mappo-dot` rule must win even
+  // when it was loaded earlier in <head>.
   #applyStyle(css) {
     const uid = this._uid;
     // Node-safe, like the rest of this class's seams: the update-tier tests
@@ -817,7 +839,7 @@ export class Mappo {
       for (const rule of rules) {
         if (rule.selectorText) {
           rule.selectorText = rule.selectorText.split(",")
-            .map((sel) => `${scope} ${sel.trim()}`).join(", ");
+            .map((sel) => `:where(${scope} ${sel.trim()})`).join(", ");
         } else if (rule.cssRules && !rule.name) {   // @media etc; @keyframes has .name
           walk(rule.cssRules);
         }
@@ -1087,12 +1109,38 @@ function sameOption(a, b) {
   return false;
 }
 
-// Undo everything a renderer wrote on an overlay element, leaving the host's
-// own markup and styles alone.
-function releaseOverlay(el) {
-  for (const prop of [ "position", "left", "top", "transform", "willChange" ]) el.style[prop] = "";
-  el.style.removeProperty("--mappo-depth");
-  el.removeAttribute("data-mappo-behind");
+const OVERLAY_STYLE_PROPS = [ "position", "left", "top", "transform", "will-change", "--mappo-depth" ];
+
+// Remember only the properties mappo owns. Restoring the whole style attribute
+// would erase unrelated host changes made while the map was mounted.
+function captureOverlay(el) {
+  return {
+    parent: el.parentNode,
+    nextSibling: el.nextSibling,
+    styles: OVERLAY_STYLE_PROPS.map((prop) => [
+      prop, el.style.getPropertyValue(prop), el.style.getPropertyPriority(prop)
+    ]),
+    behind: el.hasAttribute("data-mappo-behind")
+      ? el.getAttribute("data-mappo-behind")
+      : null
+  };
+}
+
+function restoreOverlay(el, state, container) {
+  if (!state?.parent || state.parent === container) return;
+  const before = state.nextSibling?.parentNode === state.parent ? state.nextSibling : null;
+  state.parent.insertBefore(el, before);
+}
+
+// Undo exactly what the renderer wrote, restoring host-owned inline values.
+function releaseOverlay(el, state) {
+  if (!state) return;
+  for (const [ prop, value, priority ] of state.styles) {
+    if (value) el.style.setProperty(prop, value, priority);
+    else el.style.removeProperty(prop);
+  }
+  if (state.behind !== null) el.setAttribute("data-mappo-behind", state.behind);
+  else el.removeAttribute("data-mappo-behind");
 }
 
 function escapeAttr(value) {

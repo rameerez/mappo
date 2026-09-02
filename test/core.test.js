@@ -86,6 +86,8 @@ test("places: custom coordinate records pass through, with their extras", () => 
   const custom = resolvePlace({ name: "HQ", lat: 1.2, lon: 3.4, color: "#f00", kind: "office" }, EARTH);
   assert.deepEqual(custom, { name: "HQ", lat: 1.2, lon: 3.4, color: "#f00", kind: "office" });
   assert.equal(resolvePlace({ lat: 1, lon: 2 }, EARTH).name, "");
+  assert.equal(resolvePlace({ name: "off world", lat: 91, lon: 2 }, EARTH), null);
+  assert.equal(resolvePlace({ name: 42, lat: 1, lon: 2 }, EARTH), null);
 });
 
 test("places: every Earth gazetteer entry sits on land after snapping", () => {

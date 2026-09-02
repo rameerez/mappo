@@ -31,10 +31,10 @@
 //   registerBody(MOON);                     // also defines <mappo-moon>
 //   <mappo-world body="moon">  or  <mappo-moon>
 //
-// Order does not matter. A map that asks for a body by name before its pack
-// has registered draws NOTHING — not Earth — and adopts the body the moment
-// registerBody() runs. Drawing the wrong planet for a frame would be worse
-// than drawing none, and a typo in body="" should look broken, not like Earth.
+// Order does not matter. A map that asks for a non-empty body name before its
+// pack has registered draws NOTHING — not Earth — and adopts the body the
+// moment registerBody() runs. Drawing the wrong planet for a frame would be
+// worse than drawing none. An omitted or empty name means the default, Earth.
 
 import { EARTH } from "./bodies/earth.js";
 
@@ -63,7 +63,16 @@ export function registerBody(body) {
   REGISTRY.set(body.id, body);
   PENDING.delete(body.id);
   for (const m of LIVE) {
-    if (typeof m.options?.body === "string" && normalizeId(m.options.body) === body.id) m.adoptBody(body);
+    if (typeof m.options?.body !== "string" || normalizeId(m.options.body) !== body.id) continue;
+    try {
+      m.adoptBody(body);
+    } catch (error) {
+      // Registration is global; one live map with incompatible partial
+      // latitude bounds must not prevent the pack, its tag, or other maps
+      // from becoming available. That map keeps its previous body and retries
+      // name resolution on its next update, after the consumer can correct it.
+      console.error(`[mappo] could not apply body "${body.id}" to one live map: ${error?.message ?? String(error)}`);
+    }
   }
   for (const fn of LISTENERS) fn(body);
   return body;
@@ -86,6 +95,7 @@ export function resolveBody(value) {
   if (typeof value === "object") return validateBody(value);
   if (typeof value !== "string") throw new TypeError("body must be a name or a body object");
   const id = normalizeId(value);
+  if (!ID.test(id)) throw new TypeError(`body name must match ${ID} (got ${JSON.stringify(value)})`);
   return REGISTRY.get(id) ?? pendingBody(id);
 }
 
@@ -130,13 +140,39 @@ export function validateBody(body) {
   if (body.latRange != null && !validRange(body.latRange)) {
     throw new TypeError(`${at} latRange must lie within [-90, 90] with min < max`);
   }
-  if (body.radiusKm != null && !(body.radiusKm > 0)) throw new TypeError(`${at} radiusKm must be positive`);
+  if (body.radiusKm != null && (!Number.isFinite(body.radiusKm) || !(body.radiusKm > 0))) {
+    throw new TypeError(`${at} radiusKm must be a finite positive number`);
+  }
   for (const key of [ "outlines", "borders" ]) {
     if (body[key] != null && typeof body[key] !== "function") throw new TypeError(`${at} ${key} must be a function`);
   }
-  if (body.places != null && !Array.isArray(body.places)) throw new TypeError(`${at} places must be an array`);
-  if (body.terms != null && (typeof body.terms.figure !== "string" || typeof body.terms.ground !== "string")) {
-    throw new TypeError(`${at} terms must be { figure, ground } strings`);
+  if (body.places != null) {
+    if (!Array.isArray(body.places)) throw new TypeError(`${at} places must be an array`);
+    const names = new Set();
+    for (let i = 0; i < body.places.length; i++) {
+      const place = body.places[i];
+      if (!place || typeof place !== "object" || typeof place.name !== "string" || !place.name.trim()) {
+        throw new TypeError(`${at} places[${i}] needs a non-empty name`);
+      }
+      if (!Number.isFinite(place.lat) || !Number.isFinite(place.lon) ||
+          Math.abs(place.lat) > 90 || Math.abs(place.lon) > 180) {
+        throw new TypeError(`${at} places[${i}] needs lat/lon within [-90, 90] and [-180, 180]`);
+      }
+      if (place.kind != null && typeof place.kind !== "string") {
+        throw new TypeError(`${at} places[${i}] kind must be a string`);
+      }
+      if (place.color != null && typeof place.color !== "string") {
+        throw new TypeError(`${at} places[${i}] color must be a string`);
+      }
+      const key = fold(place.name);
+      if (names.has(key)) throw new TypeError(`${at} has duplicate place name ${JSON.stringify(place.name)}`);
+      names.add(key);
+    }
+  }
+  if (body.terms != null &&
+      (typeof body.terms.figure !== "string" || !body.terms.figure.trim() ||
+       typeof body.terms.ground !== "string" || !body.terms.ground.trim())) {
+    throw new TypeError(`${at} terms must be non-empty { figure, ground } strings`);
   }
   return body;
 }
@@ -157,7 +193,9 @@ export function bodyLatRange(body) {
 // first should not be told their city does not exist. Lookups fold accents
 // and case; the name you passed is what gets labelled — folding is how we
 // find the place, not how we spell it back.
-const fold = (name) => name.trim().normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+function fold(name) {
+  return name.trim().normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
 const PLACE_INDEX = new WeakMap();   // body → Map(folded name → record)
 
 // One entry of the `places` option: a gazetteer name (string) or a
@@ -176,7 +214,13 @@ export function resolvePlace(entry, body) {
     const hit = index.get(fold(name));
     return hit ? { ...hit, name } : null;
   }
-  if (entry && Number.isFinite(entry.lat) && Number.isFinite(entry.lon)) return { name: "", ...entry };
+  if (entry && Number.isFinite(entry.lat) && Number.isFinite(entry.lon) &&
+      Math.abs(entry.lat) <= 90 && Math.abs(entry.lon) <= 180 &&
+      (entry.name == null || typeof entry.name === "string") &&
+      (entry.kind == null || typeof entry.kind === "string") &&
+      (entry.color == null || typeof entry.color === "string")) {
+    return { ...entry, name: entry.name ?? "" };
+  }
   return null;
 }
 

@@ -57,7 +57,8 @@
     .hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);
       gap:34px;align-items:center;margin:26px 0 0;
       background:var(--card);border:1px solid var(--line);border-radius:20px;padding:34px 34px 34px 38px}
-    @media(max-width:900px){.hero{grid-template-columns:1fr;gap:22px;padding:24px}}
+    .hero>div{min-width:0}
+    @media(max-width:900px){.hero{grid-template-columns:minmax(0,1fr);gap:22px;padding:24px}}
     .hero h1{font-size:38px;line-height:1.12;letter-spacing:-.03em;margin:0 0 14px;max-width:14ch}
     @media(max-width:900px){.hero h1{font-size:30px}}
     .hero .lede{font-size:16px;margin:0 0 18px;max-width:44ch}
@@ -80,7 +81,8 @@
     /* Two up, and every art box the same height — otherwise a globe (as tall as
        it is wide) and a flat map (a third of that) leave the row ragged. A globe
        is therefore sized by height and a flat map by width. */
-    .worlds{grid-template-columns:repeat(auto-fit,minmax(430px,1fr))}
+    .worlds{grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr))}
+    @media(max-width:600px){.worlds{grid-template-columns:minmax(0,1fr)}.worlds .card{min-width:0}}
     .worlds .art{height:262px;display:grid;place-items:center;overflow:hidden;
       padding:0;background:var(--bg);border-bottom:1px solid var(--line)}
     .worlds .art.round mappo-world{width:262px}
@@ -272,7 +274,7 @@ along with the leaning globe above, a day/night terminator computed from your ow
 and an Earth in orbit — in the <a href="./demo/">demo gallery</a>.</p>
 
 <h2>Built with it <span>— and worth a look on its own</span></h2>
-<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(400px,1fr))">
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(400px,100%),1fr))">
 <div class="card">
   <div class="meta" style="padding:20px 22px 22px">
     <h3 style="font-size:17px"><a href="./demo/satellites.html">Starlink, right now →</a></h3>

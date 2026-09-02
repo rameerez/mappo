@@ -92,10 +92,12 @@ export function nightRings(dec, subLon, h0 = 0, latRange = [ -90, 90 ]) {
   };
   const close = () => {
     if (run && run.length > 1) {
-      rings.push([
+      const ring = [
         ...run.map(([ lon, , hi ]) => [ lon, clamp(hi) ]),
         ...run.map(([ lon, lo ]) => [ lon, clamp(lo) ]).reverse()
-      ]);
+      ];
+      ring.push([ ...ring[0] ]);
+      rings.push(ring);
     }
     run = null;
   };
@@ -123,6 +125,15 @@ export function nightRings(dec, subLon, h0 = 0, latRange = [ -90, 90 ]) {
 // ±OFF_LAT is a bookkeeping device, not a place, and joining through one draws
 // a spike across the map.
 export function terminatorCurves(dec, subLon, h0 = 0, latRange = [ -90, 90 ]) {
+  // At an exact equinox the cap boundary is degenerate in the span
+  // formulation: whole night-side meridians are inside while the two edge
+  // meridians touch only at the poles. State the known limit explicitly so
+  // floating-point noise cannot turn it into short arcs along those poles.
+  if (Math.abs(dec) < 1e-9 && Math.abs(h0) < 1e-9) {
+    const normalize = (lon) => ((lon + 540) % 360) - 180;
+    return [ normalize(subLon - 90), normalize(subLon + 90) ]
+      .map((lon) => [ [ lon, -90 ], [ lon, 90 ] ]);
+  }
   const out = [];
   for (const ring of nightRings(dec, subLon, h0, latRange)) {
     let run = [];

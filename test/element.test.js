@@ -14,6 +14,7 @@ let dom;
 let api;
 let MOON;
 let MARS;
+let canvasContext;
 
 const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
@@ -23,7 +24,7 @@ before(async () => {
     url: "https://mappo.test/"
   });
   const { window } = dom;
-  const canvasContext = new Proxy({}, {
+  canvasContext = new Proxy({}, {
     get(target, key) {
       return key in target ? target[key] : () => {};
     },
@@ -144,6 +145,34 @@ test("a body pack arriving after upgrade: nothing is drawn, then the body is", (
   assert.equal(element.querySelectorAll(".mappo-dot").length, 24 * 6, "the northern half of a 24×12 grid");
   assert.equal(element.querySelectorAll(".mappo-marker").length, 1, "and the place resolved against the new gazetteer");
   assert.match(element.querySelector("svg").getAttribute("aria-label"), /^Dotted Late body map showing bright against dark, highlighting Somewhere$/);
+  unmount(element);
+});
+
+test("one invalid live range cannot poison late registration and can recover", () => {
+  const id = "late-narrow-body";
+  const element = mount("mappo-world", { body: id, cols: 24, "lat-min": 70 });
+  assert.equal(element.map.body.pending, true);
+  assert.deepEqual(element.map.options.latRange, [ 70, 90 ]);
+
+  const errors = [];
+  const originalError = console.error;
+  console.error = (...args) => errors.push(args.join(" "));
+  const body = { id, name: "Late narrow body", latRange: [ -60, 60 ], figure: () => true };
+  try {
+    assert.doesNotThrow(() => api.registerBody(body), "one bad instance does not break global registration");
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(api.resolveBody(id), body, "the body is registered globally");
+  assert.ok(customElements.get(`mappo-${id}`), "its convenience tag was still defined");
+  assert.equal(element.map.body.pending, true, "the incompatible instance remains unchanged");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /could not apply body.*latRange/);
+
+  element.setAttribute("lat-max", "90");
+  assert.equal(element.map.body, body, "correcting the range retries the now-registered name");
+  assert.deepEqual(element.map.options.latRange, [ 70, 90 ]);
+  assert.ok(element.querySelectorAll(".mappo-dot").length > 0);
   unmount(element);
 });
 
@@ -277,11 +306,22 @@ test("overlay children survive a mode switch in both directions", async () => {
 });
 
 test("overlay children are handed back on disconnect and re-adopted on reconnect", () => {
-  const element = mount("mappo-world", { cols: 24 }, `<a class="pin" data-lat="38.7" data-lon="-9.1">Lisbon</a>`);
+  const element = document.createElement("mappo-world");
+  element.setAttribute("cols", "24");
+  element.innerHTML = `<div class="wrapper"><span>before</span>` +
+    `<a class="pin" data-lat="38.7" data-lon="-9.1">Lisbon</a><span>after</span></div>` +
+    `<p class="ordinary">ordinary host content</p>`;
+  const wrapper = element.querySelector(".wrapper");
   const pin = element.querySelector(".pin");
+  const ordinary = element.querySelector(".ordinary");
+  document.body.appendChild(element);
   element.remove();
   assert.equal(element.map, null);
-  assert.equal(pin.parentElement, element, "a plain child again");
+  assert.equal(wrapper.parentElement, element, "the original wrapper is back");
+  assert.equal(pin.parentElement, wrapper, "the overlay is back in its original parent");
+  assert.deepEqual([ ...wrapper.children ].map((child) => child.textContent), [ "before", "Lisbon", "after" ],
+    "sibling order is exact");
+  assert.equal(ordinary.parentElement, element, "non-overlay host content survives teardown");
   assert.equal(pin.style.position, "", "with our inline styles removed");
   assert.equal(element.querySelector("svg"), null);
 
@@ -289,6 +329,78 @@ test("overlay children are handed back on disconnect and re-adopted on reconnect
   assert.ok(element.map, "re-connected: a new map");
   assert.ok(pin.closest(".mappo-overlay"), "which found the overlay again");
   unmount(element);
+});
+
+test("overlay teardown restores host-owned inline styles and attributes exactly", () => {
+  const element = mount("mappo-world", { mode: "globe", cols: 24, "rotate-speed": 0 },
+    `<a class="pin" data-lat="38.7" data-lon="-9.1" data-mappo-behind="host" ` +
+    `style="position:relative;left:7px;top:8px;transform:scale(2);will-change:opacity;` +
+    `--mappo-depth:.4!important;color:red">Lisbon</a>`);
+  const pin = element.querySelector(".pin");
+  assert.equal(pin.style.position, "absolute", "the live renderer owns positioning");
+
+  element.remove();
+  assert.equal(pin.parentElement, element);
+  assert.equal(pin.style.position, "relative");
+  assert.equal(pin.style.left, "7px");
+  assert.equal(pin.style.top, "8px");
+  assert.equal(pin.style.transform, "scale(2)");
+  assert.equal(pin.style.willChange, "opacity");
+  assert.equal(pin.style.getPropertyValue("--mappo-depth"), ".4");
+  assert.equal(pin.style.getPropertyPriority("--mappo-depth"), "important");
+  assert.equal(pin.style.color, "red", "unrelated host styles survive");
+  assert.equal(pin.getAttribute("data-mappo-behind"), "host");
+});
+
+test("an unnamed coordinate marker still has an accessible name", () => {
+  const element = mount("mappo-world", { cols: 24, markers: "0,0" });
+  const marker = element.querySelector(".mappo-markers .mappo-pos");
+  assert.equal(marker.getAttribute("role"), "button");
+  assert.equal(marker.getAttribute("aria-label"), "0, 0");
+  unmount(element);
+});
+
+test("globe boundaries render over fills for grid and vector figure sources", () => {
+  const id = "border-order";
+  const ring = [ [ -30, -30 ], [ -30, 30 ], [ 30, 30 ], [ 30, -30 ], [ -30, -30 ] ];
+  api.registerBody({
+    id, name: "Border order", latRange: [ -90, 90 ], figure: () => true,
+    outlines: () => [ ring ], borders: () => [ ring ]
+  });
+
+  const originalFill = canvasContext.fill;
+  const originalStroke = canvasContext.stroke;
+  try {
+    for (const source of [ "grid", "vector" ]) {
+      const calls = [];
+      canvasContext.fill = () => calls.push([ "fill", canvasContext.fillStyle ]);
+      canvasContext.stroke = () => calls.push([ "stroke", canvasContext.strokeStyle ]);
+      const element = mount("mappo-world", {
+        body: id, mode: "globe", cols: 24, figure: "solid", "figure-source": source,
+        borders: true, "figure-color": "#112233", "borders-color": "#fedcba",
+        "rotate-speed": 0
+      });
+
+      const figureFills = calls
+        .map((call, index) => [ call, index ])
+        .filter(([ call ]) => call[0] === "fill" && call[1] === "#112233")
+        .map(([, index ]) => index);
+      const borderStrokes = calls
+        .map((call, index) => [ call, index ])
+        .filter(([ call ]) => call[0] === "stroke" && call[1] === "#fedcba")
+        .map(([, index ]) => index);
+      assert.ok(figureFills.length > 0, `${source}: the figure fill was painted`);
+      assert.ok(borderStrokes.length > 0, `${source}: boundaries were painted`);
+      assert.ok(Math.min(...borderStrokes) > Math.max(...figureFills),
+        `${source}: every boundary stroke is above the fill`);
+      unmount(element);
+    }
+  } finally {
+    if (originalFill === undefined) delete canvasContext.fill;
+    else canvasContext.fill = originalFill;
+    if (originalStroke === undefined) delete canvasContext.stroke;
+    else canvasContext.stroke = originalStroke;
+  }
 });
 
 test("an unrelated attribute change does not re-aim a focused globe", () => {
@@ -330,4 +442,23 @@ test("figure colours are stylesheet-tier: a colour change never rebuilds the geo
   assert.match(element.querySelector("style").textContent, /\.mappo-figure-path\s*\{[^}]*fill: #123456;[^}]*stroke: #654321/);
   assert.match(element.querySelector("style").textContent, /\.mappo-borders\s*\{[^}]*stroke: #abcdef/);
   unmount(element);
+});
+
+test("built-in styles are instance-scoped defaults, so ordinary consumer CSS wins", () => {
+  const consumer = document.createElement("style");
+  consumer.textContent = `.mappo-dot { fill: rgb(1, 2, 3); }`;
+  document.head.appendChild(consumer);
+  try {
+    const element = mount("mappo-world", { cols: 24, "figure-color": "#abcdef" });
+    const dot = element.querySelector(".mappo-dot");
+    assert.equal(getComputedStyle(dot).fill, "rgb(1, 2, 3)");
+    const scopedRules = [ ...element.querySelector("style").sheet.cssRules ]
+      .filter((rule) => rule.selectorText)
+      .map((rule) => rule.selectorText)
+      .join("\n");
+    assert.match(scopedRules, new RegExp(`:where\\(\\[data-mappo="${element.map._uid}"\\] \\.mappo-dot\\)`));
+    unmount(element);
+  } finally {
+    consumer.remove();
+  }
 });

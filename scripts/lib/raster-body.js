@@ -108,22 +108,29 @@ export function classifyRaster({
   };
 }
 
-// Box-filter the source into the mask grid: each cell is the mean of the
-// pixels it covers, so a threshold applied to it is applied to the area, not
-// to whichever pixel happened to sit at the centre.
-function downsample(values, width, height, targetWidth, targetHeight) {
+// Area-weighted box-filter the source into the mask grid. Source and target
+// dimensions usually are not integer multiples, so edge pixels contribute
+// only the fraction of their area that overlaps this target cell; counting
+// every touched pixel in full would double-weight boundaries shared by two
+// adjacent cells.
+export function downsample(values, width, height, targetWidth, targetHeight) {
   const cells = new Float32Array(targetWidth * targetHeight);
   const sx = width / targetWidth, sy = height / targetHeight;
   for (let row = 0; row < targetHeight; row++) {
+    const y0 = row * sy, y1 = (row + 1) * sy;
     for (let col = 0; col < targetWidth; col++) {
-      let sum = 0, count = 0;
-      for (let y = Math.floor(row * sy); y < Math.ceil((row + 1) * sy); y++) {
-        for (let x = Math.floor(col * sx); x < Math.ceil((col + 1) * sx); x++) {
-          sum += values[y * width + x];
-          count++;
+      const x0 = col * sx, x1 = (col + 1) * sx;
+      let sum = 0, weight = 0;
+      for (let y = Math.floor(y0); y < Math.min(height, Math.ceil(y1)); y++) {
+        const wy = Math.min(y + 1, y1) - Math.max(y, y0);
+        for (let x = Math.floor(x0); x < Math.min(width, Math.ceil(x1)); x++) {
+          const wx = Math.min(x + 1, x1) - Math.max(x, x0);
+          const w = wx * wy;
+          sum += values[y * width + x] * w;
+          weight += w;
         }
       }
-      cells[row * targetWidth + col] = sum / count;
+      cells[row * targetWidth + col] = sum / weight;
     }
   }
   return cells;

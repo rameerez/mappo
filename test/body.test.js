@@ -111,9 +111,19 @@ test("registration validates strictly and permits replacement", () => {
   assert.throws(() => registerBody({ id: "bad-range", name: "x", figure: () => true, latRange: [ 10, -10 ] }), /latRange/);
   assert.throws(() => registerBody({ id: "impossible-range", name: "x", figure: () => true, latRange: [ -91, 90 ] }), /latRange/);
   assert.throws(() => registerBody({ id: "bad-radius", name: "x", figure: () => true, radiusKm: -1 }), /radiusKm/);
+  assert.throws(() => registerBody({ id: "infinite-radius", name: "x", figure: () => true, radiusKm: Infinity }), /radiusKm/);
   assert.throws(() => resolveBody({ id: "bad-rings", name: "x", figure: () => true, outlines: [] }), /outlines/);
   assert.throws(() => resolveBody({ id: "bad-terms", name: "x", figure: () => true, terms: { inside: "a" } }), /terms/);
+  assert.throws(() => resolveBody({ id: "empty-terms", name: "x", figure: () => true, terms: { figure: "", ground: "x" } }), /terms/);
   assert.throws(() => resolveBody({ id: "bad-places", name: "x", figure: () => true, places: {} }), /places/);
+  assert.throws(() => resolveBody({ id: "bad-place-name", name: "x", figure: () => true, places: [ { lat: 0, lon: 0 } ] }), /non-empty name/);
+  assert.throws(() => resolveBody({ id: "bad-place-lat", name: "x", figure: () => true, places: [ { name: "x", lat: 91, lon: 0 } ] }), /lat\/lon/);
+  assert.throws(() => resolveBody({ id: "bad-place-kind", name: "x", figure: () => true, places: [ { name: "x", lat: 0, lon: 0, kind: 1 } ] }), /kind/);
+  assert.throws(() => resolveBody({
+    id: "duplicate-places", name: "x", figure: () => true,
+    places: [ { name: "São", lat: 0, lon: 0 }, { name: "sao", lat: 1, lon: 1 } ]
+  }), /duplicate place/);
+  assert.throws(() => resolveBody("not a valid id"), /body name/);
   assert.throws(() => resolveBody(42), /name or a body object/);
 });
 
@@ -168,4 +178,14 @@ test("all pure geometry builders honour a supplied body", () => {
 
   const grid = { cols, rows, latRange };
   assert.equal(buildFigure(grid, { body }).cells.length, cols * rows / 2);
+});
+
+test("globe buffers treat truthy and falsy classifier results as a binary partition", () => {
+  const numeric = { id: "numeric", figure: (_lat, lon) => lon > 0 ? 1 : 0 };
+  const cols = 40, latRange = [ -90, 90 ];
+  const rows = Math.round(cols / 2);
+  const figure = buildGlobePoints(cols, latRange, numeric).length / 3;
+  const ground = buildGlobePoints(cols, latRange, numeric, true).length / 3;
+  assert.equal(figure, cols * rows / 2);
+  assert.equal(figure + ground, cols * rows);
 });

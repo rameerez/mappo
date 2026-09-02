@@ -405,10 +405,10 @@ const EARTH = (() => {
 //   registerBody(MOON);                     // also defines <mappo-moon>
 //   <mappo-world body="moon">  or  <mappo-moon>
 //
-// Order does not matter. A map that asks for a body by name before its pack
-// has registered draws NOTHING — not Earth — and adopts the body the moment
-// registerBody() runs. Drawing the wrong planet for a frame would be worse
-// than drawing none, and a typo in body="" should look broken, not like Earth.
+// Order does not matter. A map that asks for a non-empty body name before its
+// pack has registered draws NOTHING — not Earth — and adopts the body the
+// moment registerBody() runs. Drawing the wrong planet for a frame would be
+// worse than drawing none. An omitted or empty name means the default, Earth.
 
 
 const ID = /^[a-z][a-z0-9-]*$/;
@@ -436,7 +436,16 @@ function registerBody(body) {
   REGISTRY.set(body.id, body);
   PENDING.delete(body.id);
   for (const m of LIVE) {
-    if (typeof m.options?.body === "string" && normalizeId(m.options.body) === body.id) m.adoptBody(body);
+    if (typeof m.options?.body !== "string" || normalizeId(m.options.body) !== body.id) continue;
+    try {
+      m.adoptBody(body);
+    } catch (error) {
+      // Registration is global; one live map with incompatible partial
+      // latitude bounds must not prevent the pack, its tag, or other maps
+      // from becoming available. That map keeps its previous body and retries
+      // name resolution on its next update, after the consumer can correct it.
+      console.error(`[mappo] could not apply body "${body.id}" to one live map: ${error?.message ?? String(error)}`);
+    }
   }
   for (const fn of LISTENERS) fn(body);
   return body;
@@ -459,6 +468,7 @@ function resolveBody(value) {
   if (typeof value === "object") return validateBody(value);
   if (typeof value !== "string") throw new TypeError("body must be a name or a body object");
   const id = normalizeId(value);
+  if (!ID.test(id)) throw new TypeError(`body name must match ${ID} (got ${JSON.stringify(value)})`);
   return REGISTRY.get(id) ?? pendingBody(id);
 }
 
@@ -503,13 +513,39 @@ function validateBody(body) {
   if (body.latRange != null && !validRange(body.latRange)) {
     throw new TypeError(`${at} latRange must lie within [-90, 90] with min < max`);
   }
-  if (body.radiusKm != null && !(body.radiusKm > 0)) throw new TypeError(`${at} radiusKm must be positive`);
+  if (body.radiusKm != null && (!Number.isFinite(body.radiusKm) || !(body.radiusKm > 0))) {
+    throw new TypeError(`${at} radiusKm must be a finite positive number`);
+  }
   for (const key of [ "outlines", "borders" ]) {
     if (body[key] != null && typeof body[key] !== "function") throw new TypeError(`${at} ${key} must be a function`);
   }
-  if (body.places != null && !Array.isArray(body.places)) throw new TypeError(`${at} places must be an array`);
-  if (body.terms != null && (typeof body.terms.figure !== "string" || typeof body.terms.ground !== "string")) {
-    throw new TypeError(`${at} terms must be { figure, ground } strings`);
+  if (body.places != null) {
+    if (!Array.isArray(body.places)) throw new TypeError(`${at} places must be an array`);
+    const names = new Set();
+    for (let i = 0; i < body.places.length; i++) {
+      const place = body.places[i];
+      if (!place || typeof place !== "object" || typeof place.name !== "string" || !place.name.trim()) {
+        throw new TypeError(`${at} places[${i}] needs a non-empty name`);
+      }
+      if (!Number.isFinite(place.lat) || !Number.isFinite(place.lon) ||
+          Math.abs(place.lat) > 90 || Math.abs(place.lon) > 180) {
+        throw new TypeError(`${at} places[${i}] needs lat/lon within [-90, 90] and [-180, 180]`);
+      }
+      if (place.kind != null && typeof place.kind !== "string") {
+        throw new TypeError(`${at} places[${i}] kind must be a string`);
+      }
+      if (place.color != null && typeof place.color !== "string") {
+        throw new TypeError(`${at} places[${i}] color must be a string`);
+      }
+      const key = fold(place.name);
+      if (names.has(key)) throw new TypeError(`${at} has duplicate place name ${JSON.stringify(place.name)}`);
+      names.add(key);
+    }
+  }
+  if (body.terms != null &&
+      (typeof body.terms.figure !== "string" || !body.terms.figure.trim() ||
+       typeof body.terms.ground !== "string" || !body.terms.ground.trim())) {
+    throw new TypeError(`${at} terms must be non-empty { figure, ground } strings`);
   }
   return body;
 }
@@ -530,7 +566,9 @@ function bodyLatRange(body) {
 // first should not be told their city does not exist. Lookups fold accents
 // and case; the name you passed is what gets labelled — folding is how we
 // find the place, not how we spell it back.
-const fold = (name) => name.trim().normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+function fold(name) {
+  return name.trim().normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
 const PLACE_INDEX = new WeakMap();   // body → Map(folded name → record)
 
 // One entry of the `places` option: a gazetteer name (string) or a
@@ -549,7 +587,13 @@ function resolvePlace(entry, body) {
     const hit = index.get(fold(name));
     return hit ? { ...hit, name } : null;
   }
-  if (entry && Number.isFinite(entry.lat) && Number.isFinite(entry.lon)) return { name: "", ...entry };
+  if (entry && Number.isFinite(entry.lat) && Number.isFinite(entry.lon) &&
+      Math.abs(entry.lat) <= 90 && Math.abs(entry.lon) <= 180 &&
+      (entry.name == null || typeof entry.name === "string") &&
+      (entry.kind == null || typeof entry.kind === "string") &&
+      (entry.color == null || typeof entry.color === "string")) {
+    return { ...entry, name: entry.name ?? "" };
+  }
   return null;
 }
 
@@ -763,7 +807,7 @@ function noise2(x, y) {
 
 // ══════════ src/color.js ══════════
 // One color utility: the auto hover shade. When dot-hover-color isn't set,
-// hovers derive from dot-color itself — darker for light dots, lighter for
+// hovers derive from figure-color itself — darker for light dots, lighter for
 // dark dots — so a custom-colored map never falls back to somebody else's
 // gray. Hex in, hex out; non-hex inputs (named colors, rgb()) fall back to
 // a CSS color-mix() string, which every browser that runs this component
@@ -784,7 +828,7 @@ function hoverShade(color) {
 
 // Resolve a CSS custom property to a concrete colour.
 //
-// `dot-color="var(--color-border-100)"` should Just Work: the host already
+// `figure-color="var(--color-border-100)"` should Just Work: the host already
 // keeps its palette in CSS variables, and asking it to duplicate those hex
 // values into map attributes guarantees the two drift — most visibly the
 // moment someone adds a dark mode. Accepts `var(--x)` and `var(--x, #fallback)`;
@@ -863,10 +907,10 @@ function pointInRings(lat, lon, normalized) {
 // Node-safe: the point-buffer builders are pure and testable; GlobeRenderer
 // touches the DOM only in its constructor, which only runs in a browser.
 //
-// Per frame, nothing is allocated for the geometry: dots, figure quads,
-// contour loops and vector outlines are all precomputed unit-sphere
-// coordinates in typed arrays, and each frame only rotates them. Several
-// globes on one page is a first-class case.
+// Expensive source geometry and trigonometry stay out of the frame loop: dots,
+// figure quads, contour loops and vector outlines are precomputed unit-sphere
+// coordinates in typed arrays. Frames rotate those into short-lived canvas
+// paths. Several globes on one page is a first-class case.
 
 
 // Unit-sphere position for a lat/lon. At rotation 0, lon 0 faces the
@@ -893,7 +937,7 @@ function buildGlobePoints(cols, latRange, body, ground = false) {
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const c = cellCenter(col, row, grid);
-      if (body.figure(c.lat, c.lon) === ground) continue;
+      if (Boolean(body.figure(c.lat, c.lon)) === ground) continue;
       const p = latLonToXYZ(c.lat, c.lon);
       out.push(p.x, p.y, p.z);
     }
@@ -1556,7 +1600,6 @@ class GlobeRenderer {
     // Until vector fills can be clipped to the hemisphere properly, a filled
     // globe draws BOTH fill and edge from the grid, where they agree by
     // construction. Borders are lines, so they clip cleanly and can ride any fill.
-    if (vector) drawBorders();
     // Resolution stays at `cols`, deliberately. Sampling the fill finer than
     // the dot grid does buy smoother coastlines, but it multiplies the quads
     // projected every frame — measured as visible stutter on a page carrying
@@ -1607,6 +1650,10 @@ class GlobeRenderer {
       // stroke() can only carry one alpha.
       this.#strokeBanded(this.#projectRings(geom.loops, T), strokeColor, o.figureStrokeWidth ?? 1, 1);
     }
+    // Boundaries are an overlay: draw them after the figure for every source.
+    // Drawing them before a fill covers them; tying them to vector coastlines
+    // makes `borders` silently do nothing with figure-source="grid".
+    drawBorders();
     ctx.globalAlpha = 1;
   }
 
@@ -2115,11 +2162,16 @@ class Mappo {
     this._body = resolveBody(this.options.body);
     // Host DOM carrying data-lat/data-lon is harvested ONCE, here, before any
     // renderer touches the container's children, and lent to whichever
-    // renderer is active. Owning the list here is what lets a mode switch and
-    // a destroy()/re-connect keep the host's elements.
+    // renderer is active. Keep the original child tree too: overlays may be
+    // nested in consumer wrappers, and destroy() must restore that structure
+    // and its non-overlay siblings rather than flattening everything.
+    this._hostChildren = typeof container.childNodes === "object"
+      ? Array.from(container.childNodes)
+      : [];
     this._overlays = typeof container.querySelectorAll === "function"
       ? Array.from(container.querySelectorAll("[data-lat][data-lon]"))
       : [];
+    this._overlayState = new Map(this._overlays.map((el) => [ el, captureOverlay(el) ]));
     this._dotsCache = new Map();    // "cols|latMin|latMax" → { markup, dots }
     this._figureCache = new Map();  // figure paths have a different value shape
     this.#applyLatRange();
@@ -2188,14 +2240,21 @@ class Mappo {
       if ("latMax" in options) nextOverride[1] = options.latMax;
     }
     const oldRange = this.options.latRange;
-    const nextBody = changed.includes("body") ? resolveBody(options.body) : this._body;
+    // A named pack may have registered since this map's last update. Resolve
+    // names again even when the body option itself did not change, so a map
+    // whose first late adoption failed (for example, incompatible partial
+    // latitude bounds) recovers as soon as the consumer corrects its options.
+    const nextBody = changed.includes("body")
+      ? resolveBody(options.body)
+      : typeof this.options.body === "string" ? resolveBody(this.options.body) : this._body;
+    const bodyResolved = nextBody !== this._body;
     const nextRange = this.#rangeFor(nextBody, nextOverride); // validate before mutating live state
     this._latRangeOverride = nextOverride;
     Object.assign(this.options, options);
     this.options.latRange = nextRange;
     // Like mode: a different world is different geometry, so it skips the
     // patch tiers entirely rather than hoping `body` appears in one of them.
-    if (changed.includes("body")) {
+    if (changed.includes("body") || bodyResolved) {
       dbg("update: body →", this.options.body, "→ full rebuild");
       this.#setBody(nextBody);
       // A body representation can change ("moon" → the same MOON object)
@@ -2267,8 +2326,14 @@ class Mappo {
     this.styleEl = null;
     this._tiltWrap = null;
     this._overlayLayer = null;
-    for (const el of this._overlays) releaseOverlay(el);
-    this.container.replaceChildren(...this._overlays);
+    for (const el of this._overlays) releaseOverlay(el, this._overlayState.get(el));
+    // Restore descendants from last to first so each original nextSibling is
+    // already back when insertBefore needs it. Direct children are placed by
+    // the original root-node snapshot below.
+    for (let i = this._overlays.length - 1; i >= 0; i--) {
+      restoreOverlay(this._overlays[i], this._overlayState.get(this._overlays[i]), this.container);
+    }
+    this.container.replaceChildren(...this._hostChildren);
     this.container.removeAttribute?.("data-mappo");
   }
 
@@ -2666,7 +2731,8 @@ class Mappo {
       const { col, row } = snapToFigure(place.lat, place.lon, grid, this._body);
       const fill = place.color ? ` style="fill:${escapeAttr(place.color)}"` : "";
       const kind = place.kind ? ` data-kind="${escapeAttr(place.kind)}"` : "";
-      const focus = o.interactive ? ` tabindex="0" role="button" aria-label="${escapeAttr(place.name)}"` : "";
+      const label = place.name || `${place.lat}, ${place.lon}`;
+      const focus = o.interactive ? ` tabindex="0" role="button" aria-label="${escapeAttr(label)}"` : "";
       // The ping ring renders BEHIND the core and animates independently —
       // the core barely breathes, the ring expands and fades. Scaling one
       // element for "pulse" read as throbbing, not pinging.
@@ -2693,6 +2759,9 @@ class Mappo {
   // Selectors are rewritten through the CSSOM rather than by regex on the
   // text: the browser has already parsed the structure, so keyframe stops
   // (`0%, 100%`) and at-rule preludes cannot be mistaken for selectors.
+  // :where() keeps the whole built-in selector at zero specificity. These
+  // rules are defaults; a consumer's ordinary `.mappo-dot` rule must win even
+  // when it was loaded earlier in <head>.
   #applyStyle(css) {
     const uid = this._uid;
     // Node-safe, like the rest of this class's seams: the update-tier tests
@@ -2709,7 +2778,7 @@ class Mappo {
       for (const rule of rules) {
         if (rule.selectorText) {
           rule.selectorText = rule.selectorText.split(",")
-            .map((sel) => `${scope} ${sel.trim()}`).join(", ");
+            .map((sel) => `:where(${scope} ${sel.trim()})`).join(", ");
         } else if (rule.cssRules && !rule.name) {   // @media etc; @keyframes has .name
           walk(rule.cssRules);
         }
@@ -2979,12 +3048,38 @@ function sameOption(a, b) {
   return false;
 }
 
-// Undo everything a renderer wrote on an overlay element, leaving the host's
-// own markup and styles alone.
-function releaseOverlay(el) {
-  for (const prop of [ "position", "left", "top", "transform", "willChange" ]) el.style[prop] = "";
-  el.style.removeProperty("--mappo-depth");
-  el.removeAttribute("data-mappo-behind");
+const OVERLAY_STYLE_PROPS = [ "position", "left", "top", "transform", "will-change", "--mappo-depth" ];
+
+// Remember only the properties mappo owns. Restoring the whole style attribute
+// would erase unrelated host changes made while the map was mounted.
+function captureOverlay(el) {
+  return {
+    parent: el.parentNode,
+    nextSibling: el.nextSibling,
+    styles: OVERLAY_STYLE_PROPS.map((prop) => [
+      prop, el.style.getPropertyValue(prop), el.style.getPropertyPriority(prop)
+    ]),
+    behind: el.hasAttribute("data-mappo-behind")
+      ? el.getAttribute("data-mappo-behind")
+      : null
+  };
+}
+
+function restoreOverlay(el, state, container) {
+  if (!state?.parent || state.parent === container) return;
+  const before = state.nextSibling?.parentNode === state.parent ? state.nextSibling : null;
+  state.parent.insertBefore(el, before);
+}
+
+// Undo exactly what the renderer wrote, restoring host-owned inline values.
+function releaseOverlay(el, state) {
+  if (!state) return;
+  for (const [ prop, value, priority ] of state.styles) {
+    if (value) el.style.setProperty(prop, value, priority);
+    else el.style.removeProperty(prop);
+  }
+  if (state.behind !== null) el.setAttribute("data-mappo-behind", state.behind);
+  else el.removeAttribute("data-mappo-behind");
 }
 
 function escapeAttr(value) {

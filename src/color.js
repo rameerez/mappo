@@ -1,5 +1,5 @@
 // One color utility: the auto hover shade. When dot-hover-color isn't set,
-// hovers derive from dot-color itself — darker for light dots, lighter for
+// hovers derive from figure-color itself — darker for light dots, lighter for
 // dark dots — so a custom-colored map never falls back to somebody else's
 // gray. Hex in, hex out; non-hex inputs (named colors, rgb()) fall back to
 // a CSS color-mix() string, which every browser that runs this component
@@ -20,7 +20,7 @@ export function hoverShade(color) {
 
 // Resolve a CSS custom property to a concrete colour.
 //
-// `dot-color="var(--color-border-100)"` should Just Work: the host already
+// `figure-color="var(--color-border-100)"` should Just Work: the host already
 // keeps its palette in CSS variables, and asking it to duplicate those hex
 // values into map attributes guarantees the two drift — most visibly the
 // moment someone adds a dark mode. Accepts `var(--x)` and `var(--x, #fallback)`;
