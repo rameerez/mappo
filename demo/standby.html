@@ -44,18 +44,29 @@
 
   /* City dots ride the map as overlay children: mappo puts them on their
      coordinates, so they cannot drift from the grid under them. */
+  /* A marker has to read as floating ABOVE the dot field, and on a black ground
+     that is harder than it sounds: a black shadow is invisible against black,
+     so the only surface it can fall on is the field itself. Which is exactly
+     right — the shadow darkens the dots it lands across, and those dimmed dots
+     ARE the depth cue. No ring: a hard edge of background colour reads as an
+     outline drawn around the marker, not as a gap under it.
+     Two layers — a tight, hard one hugging the marker and a second reaching a
+     good two cells past it — both fully opaque and deliberately under-blurred,
+     because a hard edge reads as a nearer light and that is what sells the
+     height. Both are CENTRED, with no offset: nothing else on this page casts
+     a shadow, so angling these would invent a light source the rest of the map
+     does not share, and a marker is a pinpoint on a chart rather than an object
+     sitting on a table. A uniform aura reads as depth without claiming a sun.
+     Everything scales off the grid pitch. */
   .city-dot{position:absolute;border-radius:50%;background:var(--day);
-    transform:translate(-50%,-50%);pointer-events:none}
+    transform:translate(-50%,-50%);pointer-events:none;
+    box-shadow:0 0 var(--near-b,5px) var(--near-s,2px) rgba(0,0,0,1),
+               0 0 var(--far-b,17px) var(--far-s,3px) rgba(0,0,0,1)}
   .city-dot.here{background:var(--red)}
 
   /* The terminator covers the whole stage, not the map box: the curve runs off
      the bottom of the frame and that overshoot is part of the picture. */
   .term{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-
-  .status{position:absolute;left:5.9%;top:7.6%;display:flex;align-items:center;gap:.28em;
-    color:var(--red);opacity:.72;font-size:5.6vh;font-weight:590;letter-spacing:-.01em;
-    font-variant-numeric:tabular-nums}
-  .status svg{width:.72em;height:.72em;fill:currentColor;transform:translateY(-.02em)}
 
   .place{position:absolute;left:5.9%;bottom:10.5%;color:var(--red);line-height:1}
   .place .city{font-size:5.8vh;font-weight:590;letter-spacing:-.015em;margin-bottom:.34em}
@@ -102,12 +113,6 @@
     <g id="termline" fill="none" stroke="url(#linefade)" stroke-linecap="round"></g>
   </svg>
 
-  <div class="status">
-    <!-- The location-services arrow iOS shows while a widget is using it. -->
-    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M15.6.4 1.1 6.2c-.9.4-.8 1.7.2 1.9l5.6 1.4 1.4 5.6c.2 1 1.5 1.1 1.9.2L15.6.4z"/></svg>
-    <span id="statusclock">--:--</span>
-  </div>
-
   <div class="place">
     <div class="city" id="cityname">&nbsp;</div>
     <div class="clock" id="bigclock">--:--</div>
@@ -117,7 +122,7 @@
 <script type="module">
 import "../dist/mappo.js";
 import { earthAt } from "./astro.js";
-import { nightRings, terminatorCurves, solarElevation } from "./terminator.js";
+import { nightRings, terminatorCurves } from "./terminator.js";
 import { CLOCK_CITIES } from "./clocks.js";
 
 const LAT_RANGE = [ -58, 84 ];
@@ -128,7 +133,6 @@ const LAT_RANGE = [ -58, 84 ];
 const pinned = new URLSearchParams(location.search).get("at");
 const AT = pinned ? new Date(pinned) : null;
 const nowish = () => AT ?? new Date();
-const dayMap = document.getElementById("daymap");
 const maps   = document.getElementById("maps");
 
 // ── where are we ────────────────────────────────────────────────────────────
@@ -155,13 +159,11 @@ const hhmm = { format: (d) => parts.formatToParts(d)
   .filter((p) => p.type === "hour" || p.type === "literal" || p.type === "minute")
   .map((p) => (p.type === "literal" ? ":" : p.value)).join("").replace(/:+$/, "") };
 const bigclock = document.getElementById("bigclock");
-const statusclock = document.getElementById("statusclock");
 
 // ── city dots ───────────────────────────────────────────────────────────────
-// Overlay children, so mappo owns their placement.
-// NOT mappo overlay children: those are harvested once, at upgrade, and these
-// are born after it. They ride the same stage projection the terminator uses,
-// which is the stronger guarantee anyway — one function places every mark.
+// These are not mappo overlay children: those are harvested once at upgrade,
+// and these are born afterward. They ride the same stage projection the
+// terminator uses, so one function places every mark.
 const stage = document.querySelector(".stage");
 const dots = [ ...CLOCK_CITIES.filter((c) => c.tz !== here.tz), here ].map((c) => {
   const el = document.createElement("i");
@@ -191,6 +193,10 @@ const nightpath = document.getElementById("nightpath");
 
 function placeDots(b) {
   const pitch = maps.clientWidth / 66;
+  stage.style.setProperty("--near-b", `${(pitch * 0.30).toFixed(2)}px`);
+  stage.style.setProperty("--near-s", `${(pitch * 0.12).toFixed(2)}px`);
+  stage.style.setProperty("--far-b",  `${(pitch * 1.60).toFixed(2)}px`);
+  stage.style.setProperty("--far-s",  `${(pitch * 0.34).toFixed(2)}px`);
   for (const { el, c } of dots) {
     // Measured off the original: a city mark is about twice a grid dot, which
     // at a 0.53 fill means a shade over one whole cell.
@@ -229,7 +235,6 @@ function paint(now = nowish()) {
 
   const t = hhmm.format(now);
   bigclock.textContent = t;
-  statusclock.textContent = t;
 }
 
 // The clock changes every second and costs nothing; the terminator costs a
@@ -238,7 +243,6 @@ function paint(now = nowish()) {
 function clockOnly() {
   const t = hhmm.format(nowish());
   bigclock.textContent = t;
-  statusclock.textContent = t;
 }
 addEventListener("resize", () => paint());
 customElements.whenDefined("mappo-world").then(() => requestAnimationFrame(() => paint()));
