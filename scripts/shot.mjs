@@ -22,7 +22,13 @@ await send("Page.navigate", { url });
 await sleep(1500);
 await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: 5 });   // wake the animation frames
 await sleep(Number(waitMs));
-const rect = await evaluate(`(() => { const b = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return [b.left, b.top, b.width, b.height]; })()`);
+// Only what is inside the viewport gets painted, and the clip is in DOCUMENT
+// coordinates: bring the element into view, let a frame or two run where it
+// now is, and add the scroll offset to its box.
+await evaluate(`(() => { document.querySelector(${JSON.stringify(selector)}).scrollIntoView({ block: "center" }); return true; })()`);
+await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 6, y: 6 });
+await sleep(400);
+const rect = await evaluate(`(() => { const b = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return [b.left + scrollX, b.top + scrollY, b.width, b.height]; })()`);
 const shot = await send("Page.captureScreenshot", { format: "png", clip: { x: rect[0], y: rect[1], width: rect[2], height: rect[3], scale: 1 } });
 if (shot.result?.data) writeFileSync(out, Buffer.from(shot.result.data, "base64"));
 console.log(`${out} ← ${selector} ${rect.map(Math.round).join(" ")} after ${waitMs} ms${logs.length ? "\n  ! " + [ ...new Set(logs) ].slice(0, 5).join("\n  ! ") : ""}`);
