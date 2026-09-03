@@ -549,11 +549,15 @@ function start(el, options, ctl) {
     // gives way.
     const at = pins.map((p) => map.locate(p.lat, p.lon));
     const masked = new Set();
+    const span = (q, i) => {
+      const w = labels[i]?.firstElementChild.offsetWidth || 120;
+      return box && box.left + q.x + 12 + w > pageW() - 8 ? [ q.x - 12 - w, q.x - 12 ] : [ q.x + 12, q.x + 12 + w ];
+    };
     if (withLabels) for (let i = 0; i < pins.length; i++) for (let j = i + 1; j < pins.length; j++) {
       const a = at[i], b = at[j];
       if (!a?.front || !b?.front || Math.abs(a.y - b.y) > 26) continue;
-      const wa = labels[i]?.firstElementChild.offsetWidth || 120, wb = labels[j]?.firstElementChild.offsetWidth || 120;
-      if (a.x < b.x + 12 + wb && b.x < a.x + 12 + wa) masked.add((eastward ? a.x > b.x : a.x < b.x) ? i : j);
+      const sa = span(a, i), sb = span(b, j);
+      if (sa[0] < sb[1] && sb[0] < sa[1]) masked.add((eastward ? a.x > b.x : a.x < b.x) ? i : j);
     }
     pins.forEach((p, i) => {
       const qp = at[i];
@@ -650,8 +654,19 @@ function start(el, options, ctl) {
       const b = el.getBoundingClientRect(), w = cardWidth(), want = disc.cx + (state.anchor.fx ?? 0) * disc.r;
       return Math.max(w / 2 + 8 - b.left, Math.min(pageW() - 8 - w / 2 - b.left, want));
     };
+    const fixedY = () => {
+      const b = el.getBoundingClientRect(), h = card.offsetHeight || 40, w = cardWidth();
+      const top = h / 2 + 10 - b.top, bottom = pageH() - 10 - h / 2 - b.top;
+      let want = Math.max(top, Math.min(Math.max(top, bottom), disc.cy + (state.anchor.fy ?? 0) * disc.r));
+      const x = b.left + fixedX();
+      for (const r of clear) {
+        if (x + w / 2 < r.left || x - w / 2 > r.right) continue;
+        if (b.top + want + h / 2 > r.top && b.top + want - h / 2 < r.bottom) want = Math.min(want, r.top - 10 - h / 2 - b.top);
+      }
+      return Math.max(top, want);
+    };
     const q = state.anchor.fixed
-      ? (disc && { x: fixedX(), y: disc.cy + (state.anchor.fy ?? 0) * disc.r, cx: disc.cx, front: true, depth: 1 })
+      ? (disc && { x: fixedX(), y: fixedY(), cx: disc.cx, front: true, depth: 1 })
       : map.locate(state.anchor.lat, state.anchor.lon);
     // Let go with the subject turned away: on to the next step, which turns the globe where it belongs.
     if (state.recheck && !state.held) { state.recheck = false; if (!q || !q.front || q.depth < 0.12) { if (!advance(now)) return; age = 0; } }

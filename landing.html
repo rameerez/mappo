@@ -422,7 +422,8 @@ const panel = (name, fn) => { try { fn(); } catch (e) { console.warn(`[landing] 
 // lives in assets/hero-tour.js. The copy is kept clear, so no subject is ever
 // chosen under the headline the globe runs behind.
 panel("hero", () => {
-  heroTour($("hero"), { keepClear: [ document.querySelector(".hero-copy") ] });
+  // The band paints over the sphere's lower half, so it is not free page.
+  heroTour($("hero"), { keepClear: [ document.querySelector(".hero-copy"), document.querySelector(".band") ] });
 });
 
 // ── the gallery, from one list ──────────────────────────────────────────────
