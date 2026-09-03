@@ -731,13 +731,21 @@ function start(el, options, ctl) {
       if (k <= 0) return;
       const d = subject.dots, front = map.locate(0, 0);
       if (!front) return;
+      // The map keeps drawing its own dots under all this, and they show
+      // between the tops in the figure's colour. So each dot of the region is
+      // painted over in the same ink, a little larger than the map draws it
+      // (its tiles lie on the sphere and foreshorten; these squares face us),
+      // and the ground under the highlight is the colour of the bars.
       const step = latticeStep(), lift = step * 0.85 * k, w0 = step * 0.74 * front.scale;
-      const walls = new Path2D(), tops = new Path2D();
+      const dot = step * (map.options.dotSize ?? 0.38) * 1.45 * front.scale;
+      const walls = new Path2D(), tops = new Path2D(), ground = new Path2D();
       for (let i = 0; i < d.length; i += 2) {
         const b = map.locate(d[i], d[i + 1]);
         if (!b?.front || b.depth < 0.05) continue;
         const t = map.locate(d[i], d[i + 1], 1 + lift);
         const wb = w0 * (b.scale / front.scale) / 2, wt = w0 * (t.scale / front.scale) / 2;
+        const wg = dot * (b.scale / front.scale) / 2;
+        ground.rect(b.x - wg, b.y - wg, wg * 2, wg * 2);
         tops.rect(t.x - wt, t.y - wt, wt * 2, wt * 2);
         const dx = t.x - b.x, dy = t.y - b.y, len = Math.hypot(dx, dy);
         if (len < 0.4) continue;                     // pointing at us: nothing to see
@@ -749,6 +757,7 @@ function start(el, options, ctl) {
         walls.closePath();
       }
       ctx.fillStyle = C.ink;
+      ctx.globalAlpha = k; ctx.fill(ground);
       ctx.globalAlpha = 0.62 * k; ctx.fill(walls);
       ctx.globalAlpha = k; ctx.fill(tops);
     }
