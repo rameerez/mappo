@@ -11,20 +11,21 @@
 // on a layer of the tour's own through Mappo#addLayer, and stop() takes all of
 // it away.
 //
-// The script is a story that follows the rotation: with the globe opening over
-// central Europe and turning east, an arc Rome to Madrid, then Madrid across
-// the ocean to Boston, then pins with names and local times as the Americas
-// come round, then the whole United States highlighted, then Pacific cities
-// rising over the horizon, then the size, then a fast turn back to the start. Every scripted subject has a fallback
-// chosen from what is in view at that moment, so the tour keeps making sense
-// on its second lap, or after a visitor has dragged the globe somewhere else.
-// Steps are paced by time; what a step points at is decided when it starts,
-// on the half of the disc turning toward the middle, far enough from the page
-// edge to still be there at the step's end, and off the boxes in `keepClear`.
-// Pass `steps` to change the words or the order.
+// The script is a story that follows the rotation, and the tour directs the
+// globe to each scene: it opens over Europe; draws Rome to Madrid and, directly
+// after, Madrid across the ocean to Boston; lights the main cities on the page
+// with names and local times; turns to the United States and raises its dots;
+// then sets off west at speed, through the Pacific and Asia and back to Europe,
+// with cities popping up over the horizon and arcs drawn between them sliding
+// behind it, and says how small it all is. Every turn goes the way the Earth
+// turns. Every scripted subject has a fallback chosen from what is in view, so
+// the tour keeps making sense after a visitor has dragged the globe somewhere
+// else. Pass `steps` to change the words or the order, `keepClear` for boxes a
+// subject must not sit under, and `debug` to have every choice explained.
 
-import { resolvePlace } from "../dist/mappo.js";
+import { resolvePlace, normalizeRings, pointInRings } from "../dist/mappo.js";
 import { links } from "../dist/links.js";
+import { forEachSample } from "../dist/globe.js";
 import { regions } from "../demo/countries.js";
 
 // Local time for a labelled pin, by city.
@@ -44,29 +45,29 @@ export const TIME_ZONES = {
   Mumbai: "Asia/Kolkata", Delhi: "Asia/Kolkata", Bangkok: "Asia/Bangkok", Singapore: "Asia/Singapore", "Hong Kong": "Asia/Hong_Kong",
   Beijing: "Asia/Shanghai", Seoul: "Asia/Seoul", Tokyo: "Asia/Tokyo", Jakarta: "Asia/Jakarta", Manila: "Asia/Manila",
   Perth: "Australia/Perth", Sydney: "Australia/Sydney", Melbourne: "Australia/Melbourne", Auckland: "Pacific/Auckland",
+  Casablanca: "Africa/Casablanca", Dakar: "Africa/Dakar", Accra: "Africa/Accra", Tehran: "Asia/Tehran", Karachi: "Asia/Karachi",
+  Kolkata: "Asia/Kolkata", "Addis Ababa": "Africa/Addis_Ababa", Kinshasa: "Africa/Kinshasa", Riyadh: "Asia/Riyadh", Hanoi: "Asia/Bangkok",
+  Ulaanbaatar: "Asia/Ulaanbaatar", Tashkent: "Asia/Tashkent", Kyiv: "Europe/Kyiv", Warsaw: "Europe/Warsaw", Stockholm: "Europe/Stockholm",
+  Oslo: "Europe/Oslo", Colombo: "Asia/Colombo", Dhaka: "Asia/Dhaka", Baghdad: "Asia/Baghdad", Algiers: "Africa/Algiers", Tunis: "Africa/Tunis",
   Honolulu: "Pacific/Honolulu", Anchorage: "America/Anchorage", Papeete: "Pacific/Tahiti", Apia: "Pacific/Apia", Suva: "Pacific/Fiji",
   Nouméa: "Pacific/Noumea", Wellington: "Pacific/Auckland", Brisbane: "Australia/Brisbane", Petropavlovsk: "Asia/Kamchatka", Anadyr: "Asia/Anadyr"
 };
 
-// Places for the horizon step that the gazetteer lacks: the Pacific is where
-// things rise after the Americas have come round.
-const HONOLULU = { name: "Honolulu", lat: 21.3, lon: -157.9 }, ANCHORAGE = { name: "Anchorage", lat: 61.2, lon: -149.9 };
-const PACIFIC = [ HONOLULU, ANCHORAGE,
+// Places the gazetteer lacks, for the trip west: the Pacific is where things
+// rise after the Americas have gone round.
+const PACIFIC = [ { name: "Honolulu", lat: 21.3, lon: -157.9 }, { name: "Anchorage", lat: 61.2, lon: -149.9 },
   { name: "Papeete", lat: -17.5, lon: -149.6 }, { name: "Apia", lat: -13.8, lon: -171.8 }, { name: "Suva", lat: -18.1, lon: 178.4 },
   { name: "Nouméa", lat: -22.3, lon: 166.4 }, { name: "Wellington", lat: -41.3, lon: 174.8 }, { name: "Brisbane", lat: -27.5, lon: 153 },
   { name: "Petropavlovsk", lat: 53, lon: 158.6 }, { name: "Anadyr", lat: 64.7, lon: 177.5 } ];
-const WEST = [ "Boston", "New York", "Washington", "Toronto", "Montreal", "Chicago", "Miami", "Atlanta", "Houston", "Denver", "Mexico City",
-  "Havana", "Panama City", "Bogotá", "Caracas", "Lima", "Quito", "La Paz", "Santiago", "Buenos Aires", "Montevideo", "São Paulo",
-  "Rio de Janeiro", "Brasília", "Seattle", "San Francisco", "Los Angeles", "Vancouver", "Phoenix", "Calgary", "Reykjavík" ];
-// The pins step shows the world's main cities, not every one it knows.
+// The pins step shows the world's main cities, most important first.
 const MAJOR = [ "New York", "Los Angeles", "Chicago", "Toronto", "Mexico City", "Bogotá", "Lima", "São Paulo", "Buenos Aires", "London",
   "Paris", "Madrid", "Berlin", "Rome", "Istanbul", "Cairo", "Lagos", "Nairobi", "Johannesburg", "Dubai", "Mumbai", "Delhi", "Singapore",
   "Hong Kong", "Tokyo", "Seoul", "Sydney", "Boston", "Miami", "Casablanca", "Dakar", "Lisbon" ];
-const CITIES = [ ...WEST, "London", "Lisbon", "Madrid", "Paris", "Berlin", "Rome", "Athens", "Istanbul", "Moscow", "Cairo", "Lagos", "Nairobi",
-  "Casablanca", "Dakar", "Accra", "Johannesburg", "Cape Town", "Dubai", "Mumbai", "Delhi", "Bangkok", "Singapore", "Hong Kong", "Beijing",
-  "Seoul", "Tokyo", "Jakarta", "Manila", "Perth", "Sydney", "Melbourne", "Auckland", ...PACIFIC ];
-// Pairs an arc falls back to when the scripted one is not in view: short hops
-// everywhere, so a globe of which only a slice is on the page always has one.
+// Everything that may pop up on the trip west.
+const WORLD = [ ...MAJOR, "Seattle", "San Francisco", "Vancouver", "Denver", "Houston", "Havana", "Caracas", "Santiago", "Reykjavík",
+  "Moscow", "Athens", "Tehran", "Karachi", "Bangkok", "Jakarta", "Manila", "Beijing", "Perth", "Melbourne", "Auckland", "Cape Town",
+  "Accra", "Kinshasa", "Addis Ababa", "Riyadh", "Kolkata", "Hanoi", "Ulaanbaatar", "Tashkent", "Kyiv", "Warsaw", "Stockholm", "Oslo", ...PACIFIC ];
+// Pairs an arc falls back to when the scripted one is not in view.
 const PAIRS = [ [ "Paris", "Rome" ], [ "Madrid", "Paris" ], [ "Lisbon", "London" ], [ "Paris", "London" ], [ "Casablanca", "Madrid" ],
   [ "Dakar", "Casablanca" ], [ "Dakar", "São Paulo" ], [ "Accra", "Lagos" ], [ "Lagos", "Kinshasa" ], [ "Cairo", "Istanbul" ], [ "Cairo", "Riyadh" ],
   [ "Johannesburg", "Cape Town" ], [ "Nairobi", "Addis Ababa" ], [ "Algiers", "Tunis" ], [ "Rome", "Athens" ], [ "Berlin", "Warsaw" ],
@@ -85,28 +86,25 @@ const REGIONS = [ [ "US", 39, -98 ], [ "BR", -10, -53 ], [ "MX", 23, -102 ], [ "
   [ "DE", 51, 10 ], [ "IT", 42, 12 ], [ "GB", 54, -2 ], [ "EG", 27, 30 ], [ "NG", 9, 8 ], [ "KE", 0, 38 ], [ "ZA", -29, 25 ], [ "IN", 22, 79 ],
   [ "CN", 35, 103 ], [ "JP", 36, 138 ], [ "ID", -2, 118 ], [ "AU", -25, 134 ] ];
 
-// The storyboard. Each step may name the longitude that should face the
-// viewer when it starts (`frontLon`): the tour turns the globe there first,
-// fast and easing out, so an ocean with nothing on it is crossed in a couple of
-// seconds rather than a minute. `speed` is the spin while the step plays.
+// The storyboard. A step may name the longitude that should face the viewer
+// when it starts (`frontLon`): the tour turns the globe there first, forward,
+// fast and easing out. `speed` is the spin while the step plays. The voyage
+// runs until the globe is back where the next lap needs it.
 export const STEPS = [
   { kind: "label", style: "title", text: "This is a mappo globe", hold: 4, speed: 1.4 },
   // A little quicker under the first arc, so that Boston is over the horizon
   // the moment the second begins: the two arcs follow each other directly.
   { kind: "arc", text: "You can draw an arc between any two places", hold: 7, speed: 2.6, height: 0.12, from: "Rome", to: "Madrid", pairs: PAIRS },
-  // A long arc keeps low, or its apex leaves the top of the hero.
   { kind: "arc", text: "Or across an ocean, Madrid to Boston", hold: 6.5, speed: 2, height: 0.06, draw: 1.2, from: "Madrid", to: "Boston", pairs: PAIRS },
-  // Whatever main cities are on the page now: the Americas, and Europe's edge if it is still there.
+  // Whatever main cities are on the page now: the Americas, and Europe's edge while it lasts.
   { kind: "pins", text: "You can place pins on the map", hold: 10, speed: 1.4, cities: MAJOR, count: 10, labels: true },
-  // The United States, central.
+  // The United States, central, its dots raised.
   { kind: "region", text: "You can highlight regions", hold: 9, speed: 1.4, frontLon: -76, regions: REGIONS },
-  // The Pacific is rising: Hawaii first, then island after island as the globe keeps turning.
-  { kind: "rise", text: "Labels hide behind the horizon, and come back as the globe turns", hold: 12, speed: 2.6, frontLon: -93, cities: CITIES, count: 8 },
-  { kind: "label", eyebrow: "22 KB", text: "And all of it is one element, with no dependencies", hold: 6, speed: 1.8 }
+  // West at speed, through the Pacific and Asia and back to Europe: cities rise
+  // over the horizon, arcs are drawn between them and slide behind it.
+  { kind: "voyage", text: "Labels and arcs hide behind the horizon, and come back as the globe turns", speed: 9, frontLon: -90, cities: WORLD, count: 8 },
+  { kind: "label", eyebrow: "22 KB", text: "And all of it is one element, with no dependencies", hold: 6, speed: 1.4 }
 ];
-// After the last step the globe is over the Pacific, with nothing to show for
-// two thirds of a turn: the tour turns it forward to the opening view the same
-// way, then starts over.
 const TURN_SPEED = 40;   // degrees a second at full tilt, when turning to a step
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -130,8 +128,7 @@ const CSS = `
 .mappo-tour.above.on .mappo-tour-card{transform:translate(-50%,calc(-100% - 14px)) scale(1)}
 .mappo-tour.below .mappo-tour-card{left:0;right:auto;transform:translate(-50%,14px) scale(0);transform-origin:center top}
 .mappo-tour.below.on .mappo-tour-card{transform:translate(-50%,14px) scale(1)}
-/* The title: the same card as every other one on the page, the rounded
-   translucent panel with its hairline and its accent dot, at title size. */
+/* The title: the same card as every other one on the page, at title size. */
 .mappo-tour.title .mappo-tour-card{gap:11px;padding:13px 18px 13px 15px;border-radius:13px;
   font-size:17px;font-weight:650;letter-spacing:-.016em}
 .mappo-tour.title .mappo-tour-dot{width:10px;height:10px;box-shadow:0 0 0 5px color-mix(in oklab,var(--accent,#c2410c) 18%,transparent)}
@@ -226,7 +223,8 @@ function start(el, options, ctl) {
     const p = resolvePlace(v, map.body);
     return p ? { lat: p.lat, lon: p.lon, name: v } : null;
   };
-  const eastward = (map.options.rotateSpeed ?? 0) >= 0;
+  const baseSpeed = map.options.rotateSpeed ?? 0;
+  const eastward = baseSpeed >= 0;
 
   // What is in view, off the boxes to keep clear, and on the page for the whole
   // step: the spin carries a subject `drift` pixels during a step, so the edge
@@ -235,8 +233,10 @@ function start(el, options, ctl) {
   const survey = (step) => {
     box = el.getBoundingClientRect();
     clear = (options.keepClear ?? []).filter(Boolean).map((n) => n.getBoundingClientRect());
-    const R = map.locate(0, 0)?.r ?? box.width * 0.4;
-    drift = Math.abs(map.options.rotateSpeed ?? 0) * RAD * (step?.hold ?? 8) * R;
+    // At the step's own speed, and at the scale the camera gives the front of
+    // the globe, which is where the subjects are.
+    const front = map.locate(0, 0), scale = front?.scale ?? front?.r ?? box.width * 0.4;
+    drift = Math.abs(step?.speed ?? baseSpeed) * RAD * (step?.hold ?? 8) * scale;
   };
   const allowed = (q, withDrift = true) => {
     if (!q?.front || !box) return !!q?.front;
@@ -251,6 +251,8 @@ function start(el, options, ctl) {
     for (let l = -180; l < 180; l += 3) { const q = map.locate(0, l); if (q && q.z > best) { best = q.z; lon = l; } }
     return lon;
   };
+  // How far the front still has to fall to reach a longitude, going the way the globe turns.
+  const remainingTo = (lon) => ((frontLon() - lon) % 360 + 360) % 360;
   // Where the horizon is, as a view depth: 1/distance under a camera, 0 without one.
   const horizonZ = () => { const D = map.options.distance; return Number.isFinite(D) && D > 1 ? 1 / D : 0; };
   // Squarely facing, with a bonus for the half of the disc turning toward the middle.
@@ -266,8 +268,7 @@ function start(el, options, ctl) {
   const fitsThrough = (px, py, side, w = cardWidth()) => cardFits(px, py, side, w) && cardFits(px + (eastward ? drift : -drift), py, side, w);
 
   // Where a free card floats: a surface point that faces us, on the side turning
-  // toward the middle, with room for the whole card around it, over the upper
-  // part of the disc when it can.
+  // toward the middle, with room for the whole card around it.
   const frontPoint = (lats = [ 30, 12 ]) => {
     let best = null;
     for (const lat of lats) {
@@ -289,8 +290,28 @@ function start(el, options, ctl) {
     return { pin: v("--pin", accent), area: v("--area", "#0b7285"), arc: v("--arc", accent), accent };
   };
 
-  const state = { i: -1, step: null, subject: null, t0: 0, anchor: null, arc: null, goto: null, pending: null, held: false };
-  const baseSpeed = map.options.rotateSpeed ?? 0;
+  // The globe's own dots inside a region, from the same lattice the globe
+  // samples, so a raised dot stands exactly where a dot is. Built once per
+  // region, when it is first highlighted.
+  const dotsCache = new Map();
+  const regionDots = (r) => {
+    if (dotsCache.has(r.id)) return dotsCache.get(r.id);
+    const rings = normalizeRings(r.rings);
+    let latMin = 90, latMax = -90, lonMin = 180, lonMax = -180;
+    for (const ring of r.rings) for (const [ la, lo ] of ring) { latMin = Math.min(latMin, la); latMax = Math.max(latMax, la); lonMin = Math.min(lonMin, lo); lonMax = Math.max(lonMax, lo); }
+    const wraps = lonMax - lonMin > 180;
+    const out = [];
+    const cols = map.options.cols ?? 170, distribution = map.options.distribution === "uniform" ? "uniform" : "grid";
+    forEachSample(cols, map.options.latRange, distribution, (lat, lon) => {
+      if (lat < latMin || lat > latMax || (!wraps && (lon < lonMin || lon > lonMax))) return;
+      if (pointInRings(lat, lon, rings)) out.push(lat, lon);
+    });
+    const dots = new Float64Array(out);
+    dotsCache.set(r.id, dots);
+    return dots;
+  };
+
+  const state = { i: -1, step: null, subject: null, t0: 0, anchor: null, arc: null, goto: null, pending: null, held: false, lastNow: 0 };
   const homeLon = frontLon();
   let arcs = null, layer = null, raf = null;
   // Speed changes are applied from the tour's own tick, never from inside a
@@ -303,17 +324,18 @@ function start(el, options, ctl) {
     const v = speedWanted; speedWanted = null;
     if (Math.abs((map.options.rotateSpeed ?? 0) - v) > 0.3) map.update({ rotateSpeed: v });
   };
-  // A visitor holding the globe is not turned somewhere else: the story's clock
-  // stops while they hold it, and when they let go the step goes on if its
-  // subject is still in view, or the next step is turned to. The reset button
-  // appears the first time they do.
-  const onHold = (e) => { if (e.target === reset) return; state.held = true; state.touched = true; reset.hidden = false; requestAnimationFrame(() => reset.classList.add("on")); };
+  // A visitor holding the globe stops the story's clock; when they let go the
+  // step goes on if its subject still faces them, else the next step is turned
+  // to. The reset button appears the first time they do.
+  const onHold = (e) => { if (e.target === reset) return; state.held = true; reset.hidden = false; requestAnimationFrame(() => reset.classList.add("on")); };
   const onRelease = () => { if (state.held) state.recheck = true; state.held = false; };
-  const restart = () => {
+  const clearSubject = () => {
     if (state.arc) { arcs.remove(state.arc); state.arc = null; }
+    for (const a of state.subject?.arcs ?? []) arcs.remove(a.link);
     parkLabels();
-    state.step = null; state.subject = null; state.i = -1; state.pending = null; state.goto = homeLon; root.classList.remove("on");
+    state.step = null; state.subject = null;
   };
+  const restart = () => { clearSubject(); state.i = -1; state.pending = null; state.goto = homeLon; root.classList.remove("on"); };
   el.addEventListener("pointerdown", onHold);
   el.addEventListener("pointerup", onRelease);
   el.addEventListener("pointercancel", onRelease);
@@ -330,20 +352,21 @@ function start(el, options, ctl) {
   // other unless a label's width apart.
   const spaced = (chosen, q) => chosen.every((o) => Math.abs(o.q.y - q.y) > 24 || Math.abs(o.q.x - q.x) > 150);
 
-  // Cities just behind the horizon on the side that is turning into view, that
-  // are not already among `have`, with room for their labels. The horizon is
-  // where the camera's cap ends, not the centre plane: under a camera 2.4 radii
-  // out it sits at a view depth of 0.41. Nothing above the hero's top edge.
-  const risers = (step, have) => {
+  // Cities just behind the horizon on the side that is turning into view, or
+  // only just over it, that are not already among `have`, with room for their
+  // labels. The horizon is where the camera's cap ends, not the centre plane:
+  // under a camera 2.4 radii out it sits at a view depth of 0.41. Nothing
+  // above the hero's top edge or under a box kept clear.
+  const risers = (step, have, max = step.count ?? 3) => {
     const zh = horizonZ(), names = new Set(have.map((p) => p.name));
     const chosen = have.map((p) => ({ p, q: map.locate(p.lat, p.lon) })).filter((c) => c.q);
-    const seen = (step.cities ?? CITIES).map(place).filter(Boolean).filter((p) => !names.has(p.name))
+    const seen = (step.cities ?? WORLD).map(place).filter(Boolean).filter((p) => !names.has(p.name))
       .map((p) => ({ p, q: map.locate(p.lat, p.lon) }))
-      .filter((c) => c.q && c.q.z > zh - 0.3 && c.q.z < zh + 0.03 && (c.q.x < c.q.cx) === eastward && box && box.left + c.q.x > 24 && box.top + c.q.y > 56 && box.top + c.q.y < innerHeight - 40 &&
+      .filter((c) => c.q && c.q.z > zh - 0.3 && c.q.z < zh + 0.08 && (c.q.x < c.q.cx) === eastward && box && box.left + c.q.x > 24 && box.top + c.q.y > 56 && box.top + c.q.y < innerHeight - 40 &&
         clear.every((r) => box.left + c.q.x > r.right + 8 || box.left + c.q.x < r.left - 8 || box.top + c.q.y < r.top - 8 || box.top + c.q.y > r.bottom + 8))
       .sort((x, y) => y.q.z - x.q.z);
     const out = [];
-    for (const c of seen) { if (spaced([ ...chosen, ...out ], c.q)) out.push(c); if (have.length + out.length >= (step.count ?? 3)) break; }
+    for (const c of seen) { if (spaced([ ...chosen, ...out ], c.q)) out.push(c); if (have.length + out.length >= max) break; }
     return out.map((c) => c.p);
   };
 
@@ -369,7 +392,7 @@ function start(el, options, ctl) {
       };
       let best = step.from && step.to ? tryPair(step.from, step.to, true) : null;
       const scripted = !!best;
-      if (!best) for (const [ a, b ] of step.pairs ?? []) { const t = tryPair(a, b, false); if (t && t.s > (best?.s ?? -1)) best = t; }
+      if (!best) for (const [ a, b ] of step.pairs ?? PAIRS) { const t = tryPair(a, b, false); if (t && t.s > (best?.s ?? -1)) best = t; }
       debug("arc:", best ? `${best.A.name} → ${best.B.name}${scripted ? " (scripted)" : " (fallback)"}` : "none in view");
       if (!best) return null;
       // A scripted arc goes the way it was written; a fallback travels toward the middle.
@@ -377,27 +400,25 @@ function start(el, options, ctl) {
       return { kind, from, to, anchor: to };
     }
     if (kind === "pins") {
-      // The card first, so no pin or label ends up under it; pins may drift
-      // off the page edge during the step, which is what pins on a globe do.
-      const f = frontPoint([ -26, -12, 36 ]);
-      const fq = f && map.locate(f.lat, f.lon), w = cardWidth();
-      const underCard = (q) => !!fq && Math.abs(q.y - fq.y) < 40 && q.x + 12 + 150 > fq.x - w / 2 - 8 && q.x - 8 < fq.x + w / 2 + 8;
-      // In the list's order: it is written most important first, so when two
-      // labels would collide the greater city keeps its place.
-      const seen = (step.cities ?? CITIES).map(place).filter(Boolean)
+      // The card sits at the centre of the disc; no pin or label goes under it.
+      // Pins may drift off the page edge during the step, which is what pins on
+      // a globe do. In the list's order: it is written most important first, so
+      // when two labels would collide the greater city keeps its place.
+      const disc = map.locate(0, 0), w = cardWidth();
+      const underCard = (q) => !!disc && Math.abs(q.y - disc.cy) < 40 && q.x + 12 + 150 > disc.cx - w / 2 - 8 && q.x - 8 < disc.cx + w / 2 + 8;
+      const seen = (step.cities ?? MAJOR).map(place).filter(Boolean)
         .map((p) => ({ p, q: map.locate(p.lat, p.lon) })).filter((c) => c.q?.front && c.q.depth > 0.12 && allowed(c.q, false) && !underCard(c.q));
       const pins = [];
       for (const c of seen) { if (spaced(pins, c.q)) pins.push(c); if (pins.length === (step.count ?? 3)) break; }
       debug("pins:", pins.map((c) => c.p.name));
       if (!pins.length) return null;
-      return { kind, pins: pins.map((c) => c.p), labels: !!step.labels, anchor: f ?? { ...pins[0].p, side: "right" } };
+      return { kind, pins: pins.map((c) => c.p), labels: !!step.labels, anchor: { fixed: true, side: "center" } };
     }
-    if (kind === "rise") {
-      const pins = risers(step, []);
-      debug("rise:", pins.map((p) => p.name));
-      if (!pins.length) return null;
-      const f = frontPoint([ 40, 26 ]);
-      return f ? { kind, pins, labels: true, anchor: f } : null;
+    if (kind === "voyage") {
+      // Ends where the next lap needs the globe: home, less what the steps after
+      // it will turn while they play.
+      const after = steps.slice(state.i + 1).reduce((a, s) => a + (s.hold ?? 0) * (s.speed ?? baseSpeed), 0);
+      return { kind, pins: risers(step, [], step.count ?? 8), arcs: [], nextArc: 2.5, endLon: homeLon + after, anchor: { fixed: true, side: "center", fx: -0.12, fy: -0.7 } };
     }
     if (kind === "region") {
       // The first region on the list that is squarely in view wins; otherwise
@@ -410,9 +431,9 @@ function start(el, options, ctl) {
         const r = byId.get(id);
         if (!r?.rings?.length) continue;
         // The card hangs off the shape on whichever side has room for it after
-        // the shape has drifted through the step: right of its east edge, left
-        // of its west edge, above its north edge, below its south edge. Edges
-        // come from the rings that will be drawn, the ones wholly in view.
+        // the shape has drifted through the step: right of its east edge, above
+        // its north edge, left of its west edge, below its south edge. Edges come
+        // from the rings wholly in view.
         const edges = {};
         for (const ring of r.rings) {
           const pts = ring.map(([ la, lo ]) => ({ p: map.locate(la, lo), la, lo })).filter((e) => e.p?.front);
@@ -431,7 +452,7 @@ function start(el, options, ctl) {
         if (!side) { debug("region:", id, "no room for its card"); continue; }
         const edge = { right: edges.east, left: edges.west, above: edges.north, below: edges.south }[side];
         debug("region:", id, side);
-        return { kind, region: r, anchor: { lat: edge.lat, lon: edge.lon, side } };
+        return { kind, region: r, dots: regionDots(r), anchor: { lat: edge.lat, lon: edge.lon, side } };
       }
       debug("region: none in view");
       return null;
@@ -456,28 +477,16 @@ function start(el, options, ctl) {
     return true;
   };
 
-  // How far the front still has to fall to reach a longitude, going the way
-  // the globe turns.
-  const remainingTo = (lon) => ((frontLon() - lon) % 360 + 360) % 360;
-
   // The next step. One with a longitude of its own is reached first: the globe
-  // is turned there (state.goto), and the step begins on arrival. At the end of
-  // the script the turn goes home, then the script starts over.
+  // is turned there (state.goto), and the step begins on arrival.
   const advance = (now) => {
-    if (state.arc) { arcs.remove(state.arc); state.arc = null; }
-    parkLabels();
-    state.step = null; state.subject = null;
-    for (let n = 0; n <= steps.length; n++) {
-      if (state.i === steps.length - 1 && baseSpeed > 0 && !reduce) {
-        state.i = -1; state.goto = homeLon; state.pending = null; root.classList.remove("on");
-        debug("turning home to", homeLon);
-        return false;
-      }
+    clearSubject();
+    for (let n = 0; n < steps.length; n++) {
       state.i = (state.i + 1) % steps.length;
       const step = steps[state.i];
       setCard(step);                       // the words go in first, so the fit test measures this card
       const far = step.frontLon != null && !reduce && baseSpeed > 0 ? remainingTo(step.frontLon) : 0;
-      if (far > 3 && far < 357) {
+      if (far > 3 && far < 355) {
         state.goto = step.frontLon; state.pending = step; root.classList.remove("on");
         debug("turning to", step.frontLon, "for", step.kind);
         return false;
@@ -487,11 +496,11 @@ function start(el, options, ctl) {
     return false;
   };
 
-  // Turning the globe to a longitude: fast over what is in between, easing out
-  // as it arrives; on arrival the pending step begins (or the script restarts).
+  // Turning the globe to a longitude: only ever the way the Earth turns, fast
+  // over what is in between, easing out as it arrives; on arrival the pending
+  // step begins (or the script goes on).
   const turn = (now) => {
     if (state.held) return;
-    // Only ever the way the Earth turns; a target just behind counts as reached.
     const remaining = remainingTo(state.goto);
     if (remaining < 2 || remaining > 355) {
       const step = state.pending;
@@ -515,20 +524,31 @@ function start(el, options, ctl) {
     ctx.beginPath(); ctx.arc(q.x, q.y, r + 1.2, 0, 6.2832); ctx.stroke();
   };
 
-  // Pins with their labels beside them, popping in one after another.
+  // Pins with their labels beside them, popping in one after another; over the
+  // horizon a pin eases in, and behind it eases out, the way the Cloudflare
+  // pins do, rather than switching at the edge.
   const drawPins = (ctx, pins, withLabels, age, outK, C, stagger = 0.25, dt = 0) => {
     ctx.fillStyle = C.pin; ctx.strokeStyle = C.pin;
+    // Two labels riding into each other (the camera slows a pin past the centre
+    // while one behind it catches up): the one further along, on its way out,
+    // gives way.
+    const at = pins.map((p) => map.locate(p.lat, p.lon));
+    const masked = new Set();
+    if (withLabels) for (let i = 0; i < pins.length; i++) for (let j = i + 1; j < pins.length; j++) {
+      const a = at[i], b = at[j];
+      if (!a?.front || !b?.front || Math.abs(a.y - b.y) > 26) continue;
+      const wa = labels[i]?.firstElementChild.offsetWidth || 120, wb = labels[j]?.firstElementChild.offsetWidth || 120;
+      if (a.x < b.x + 12 + wb && b.x < a.x + 12 + wa) masked.add((eastward ? a.x > b.x : a.x < b.x) ? i : j);
+    }
     pins.forEach((p, i) => {
-      const qp = map.locate(p.lat, p.lon);
+      const qp = at[i];
       const l = withLabels ? label(i) : null;
-      // Over the horizon a pin eases in, and behind it eases out, the way the
-      // Cloudflare pins do, rather than switching at the edge.
-      const want = qp?.front && qp.depth > 0.04 ? 1 : 0;
+      const want = qp?.front && qp.depth > 0.04 && !masked.has(i) ? 1 : 0;
       p._vis = p._vis == null ? want : p._vis + (want - p._vis) * Math.min(1, dt * 7);
+      p._gone = want ? 0 : (p._gone ?? 0) + dt;
       const pop = Math.min(ease((age - stagger * i) / 0.4), outK) * ease(p._vis);
       if (l) {
         l.style.transform = qp ? `translate3d(${qp.x.toFixed(1)}px, ${qp.y.toFixed(1)}px, 0)` : "translate3d(-9999px,-9999px,0)";
-        // A label near the page's right edge opens to the left of its pin.
         if (qp && box) l.classList.toggle("left", box.left + qp.x + 12 + (l.firstElementChild.offsetWidth || 120) > innerWidth - 8);
         l.classList.toggle("on", pop > 0.5);
         if (pop > 0) {
@@ -536,10 +556,39 @@ function start(el, options, ctl) {
           l.firstElementChild.lastElementChild.textContent = TIME_ZONES[p.name] ? localTime(TIME_ZONES[p.name]) : "";
         }
       }
-      if (pop <= 0) return;
+      if (pop <= 0.001) return;
       drawPin(ctx, qp, pop, ((age * 0.45 + i * 0.33) % 1));
     });
     if (withLabels) parkLabels(pins.length);
+  };
+
+  // The voyage's arcs: drawn between two visible pins, then left to ride the
+  // globe until an end goes behind the horizon, when the arc erases from its
+  // tail and goes.
+  const voyageArcs = (subject, now, dt, C) => {
+    subject.nextArc -= dt;
+    if (subject.nextArc <= 0 && subject.arcs.length < 2) {
+      subject.nextArc = 4;
+      const vis = subject.pins.map((p) => ({ p, q: map.locate(p.lat, p.lon) })).filter((c) => c.q?.front && c.q.depth > 0.2);
+      let pair = null;
+      for (let i = 0; i < vis.length && !pair; i++) for (let j = i + 1; j < vis.length && !pair; j++) {
+        if (Math.hypot(vis[i].q.x - vis[j].q.x, vis[i].q.y - vis[j].q.y) > 90 && !subject.arcs.some((a) => a.a === vis[i].p || a.b === vis[j].p)) pair = [ vis[i], vis[j] ];
+      }
+      if (pair) {
+        const [ A, B ] = pair[0].q.x < pair[1].q.x ? pair : [ pair[1], pair[0] ];
+        subject.arcs.push({ a: A.p, b: B.p, t0: now, tail: 0, link: arcs.add({ from: [ A.p.lat, A.p.lon ], to: [ B.p.lat, B.p.lon ], height: 0.1, range: [ 0, 0 ], tip: 2.5, width: 1.5 }) });
+        debug("voyage arc:", A.p.name, "→", B.p.name);
+      }
+    }
+    for (const a of [ ...subject.arcs ]) {
+      const qa = map.locate(a.a.lat, a.a.lon), qb = map.locate(a.b.lat, a.b.lon);
+      const head = ease((now - a.t0) / 1.2);
+      if (!qa?.front && !qb?.front) a.tail = 1;
+      else if (!qa?.front || !qb?.front) a.tail = Math.min(1, a.tail + dt / 0.9);
+      a.link.color = C.arc;
+      a.link.range = a.tail < head ? [ a.tail, head ] : [ 0, 0 ];
+      if (a.tail >= 1) { arcs.remove(a.link); subject.arcs.splice(subject.arcs.indexOf(a), 1); }
+    }
   };
 
   let inFrame = false;
@@ -558,18 +607,24 @@ function start(el, options, ctl) {
     if (state.goto != null) { turn(now); if (state.goto != null || !state.step) return; }
     if (!state.step && !advance(now)) return;
     let age = now - state.t0;
-    if (age >= state.step.hold) { if (!advance(now)) return; age = 0; }
-    const step = state.step, subject = state.subject, total = step.hold;
+    const step0 = state.step, subj0 = state.subject;
+    // A step ends when its time is up; the voyage, when the globe is home.
+    const over = subj0.kind === "voyage" ? age > 4 && remainingTo(subj0.endLon) < 3 : age >= step0.hold;
+    if (over) { if (!advance(now)) return; age = 0; }
+    const step = state.step, subject = state.subject, total = step.hold ?? 1e9;
     const C = colors();
 
     // The card rides its anchor, shows while the anchor faces us, opens toward
     // the middle of the disc unless the step says which way, and never off the
-    // page or onto a box kept clear. A title sits still at the centre of the disc.
-    const q = state.anchor.fixed ? (disc && { x: disc.cx, y: disc.cy, cx: disc.cx, front: true, depth: 1 }) : map.locate(state.anchor.lat, state.anchor.lon);
+    // page or onto a box kept clear. A fixed anchor sits still on the disc.
+    const q = state.anchor.fixed
+      ? (disc && { x: disc.cx + (state.anchor.fx ?? 0) * disc.r, y: disc.cy + (state.anchor.fy ?? 0) * disc.r, cx: disc.cx, front: true, depth: 1 })
+      : map.locate(state.anchor.lat, state.anchor.lon);
     // Let go with the subject turned away: on to the next step, which turns the globe where it belongs.
     if (state.recheck && !state.held) { state.recheck = false; if (!q || !q.front || q.depth < 0.12) { if (!advance(now)) return; age = 0; } }
     root.style.transform = q ? `translate3d(${q.x.toFixed(1)}px, ${q.y.toFixed(1)}px, 0)` : "translate3d(-9999px,-9999px,0)";
-    root.classList.toggle("on", !!q && q.front && q.depth > 0.12 && age > 0.05 && age < total - 0.32);
+    const ending = subject.kind === "voyage" ? clamp01((remainingTo(subject.endLon) - 3) / 12) : 1;
+    root.classList.toggle("on", !!q && q.front && q.depth > 0.12 && age > 0.05 && age < total - 0.32 && ending > 0.5);
     const side = state.anchor.side;
     const free = side === "center";
     root.classList.toggle("free", free);
@@ -584,7 +639,7 @@ function start(el, options, ctl) {
       root.classList.toggle("left", left);
     }
 
-    const outK = ease((total - age) / 0.35);
+    const outK = subject.kind === "voyage" ? ease(ending) : ease((total - age) / 0.35);
     ctx.lineJoin = ctx.lineCap = "round";
 
     if (subject.kind === "arc" && state.arc) {
@@ -593,45 +648,38 @@ function start(el, options, ctl) {
       state.arc.color = C.arc;
       // The arc lands: a pin grows at the destination once the head arrives.
       if (head >= 0.999 && q?.front) { ctx.fillStyle = C.arc; ctx.strokeStyle = C.arc; drawPin(ctx, q, Math.min(ease((age - (step.draw ?? 1.8)) / 0.4), outK), 1); }
-    } else if (subject.kind === "pins" || subject.kind === "rise") {
-      if (subject.kind === "rise" && age - (subject.scanned ?? -9) > 1 && subject.pins.length < (step.count ?? 3) && age < total - 2) {
+    } else if (subject.kind === "pins") {
+      drawPins(ctx, subject.pins, subject.labels, age, outK, C, 0.25, dt);
+    } else if (subject.kind === "voyage") {
+      // Every second, whatever is next to rise; pins long gone behind free their places.
+      if (age - (subject.scanned ?? -9) > 0.8) {
         subject.scanned = age;
         survey(step);
-        for (const p of risers(step, subject.pins)) subject.pins.push(p);
+        for (let i = subject.pins.length - 1; i >= 0; i--) if ((subject.pins[i]._gone ?? 0) > 1.5) subject.pins.splice(i, 1);
+        for (const p of risers(step, subject.pins, step.count ?? 8)) subject.pins.push(p);
       }
-      drawPins(ctx, subject.pins, subject.labels, age, outK, C, subject.kind === "rise" ? 0 : 0.25, dt);
+      drawPins(ctx, subject.pins, true, age, outK, C, 0, dt);
+      voyageArcs(subject, now, dt, C);
     } else if (subject.kind === "region") {
-      const k = Math.min(ease(age / 0.8), ease((total - age) / 0.6));
+      // The globe's own dots inside the region, raised off the surface on a
+      // short pillar each and drawn in the area colour: the region reads as
+      // lifted, and every dot is judged on its own side of the horizon, so a
+      // shape crossing the limb never tears.
+      const k = Math.min(ease(age / 0.9), ease((total - age) / 0.6));
       if (k <= 0) return;
-      // Each ring on its own: a ring only partly in view would close with a
-      // chord across the sphere, so only whole rings are drawn, and the shape
-      // fades with its largest ring as that one turns away.
-      let disc = null;
-      const rings = subject.region.rings.map((ring) => {
-        const pts = [];
-        let seen = 0;
-        for (const [ lat, lon ] of ring) {
-          const p = map.locate(lat, lon);
-          if (!p) continue;
-          disc ??= p;
-          if (p.front) { seen++; pts.push(p); }
-        }
-        return { pts, frac: seen / ring.length, n: ring.length };
-      });
-      if (!disc) return;
-      const main = rings.reduce((a, b) => (b.n > a.n ? b : a));
-      const whole = clamp01((main.frac - 0.72) / 0.28);
-      if (whole <= 0) return;
-      ctx.save();
-      ctx.beginPath(); ctx.arc(disc.cx, disc.cy, disc.r, 0, 6.2832); ctx.clip();
-      ctx.beginPath();
-      for (const r of rings) { if (r.frac < 0.98 || !r.pts.length) continue; r.pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.closePath(); }
-      ctx.globalAlpha = 0.26 * k * whole; ctx.fillStyle = C.area; ctx.fill("evenodd");
-      ctx.globalAlpha = 0.85 * k * whole; ctx.strokeStyle = C.area; ctx.lineWidth = 1.1; ctx.stroke();
-      ctx.restore();
+      const d = subject.dots, lift = 0.045 * k, pillars = new Path2D(), heads = new Path2D();
+      let rad = 0;
+      for (let i = 0; i < d.length; i += 2) {
+        const b = map.locate(d[i], d[i + 1]);
+        if (!b?.front) continue;
+        const t = map.locate(d[i], d[i + 1], 1 + lift);
+        rad = (1.25 + 0.75 * k) * (t.scale / t.r);
+        pillars.moveTo(b.x, b.y); pillars.lineTo(t.x, t.y);
+        heads.moveTo(t.x + rad, t.y); heads.arc(t.x, t.y, rad, 0, 6.2832);
+      }
+      ctx.strokeStyle = C.area; ctx.lineWidth = 1; ctx.globalAlpha = 0.5 * k; ctx.stroke(pillars);
+      ctx.fillStyle = C.area; ctx.globalAlpha = 0.95 * k; ctx.fill(heads);
     }
-    // A free label draws nothing: it floats over the turning globe, pinned to
-    // no city and no marker, the way the Cloudflare captions float.
     ctx.globalAlpha = 1;
   };
 
@@ -641,10 +689,9 @@ function start(el, options, ctl) {
   arcs = links(map, { fade: true, width: 1.6 });
 
   if (reduce) {
-    // No motion: the first card, at the front, and nothing else.
+    // No motion: the first card, at the centre, and nothing else.
     survey(steps[0]);
-    const f = frontPoint();
-    if (f) { state.step = steps[0]; state.subject = { kind: "label", anchor: f }; state.anchor = f; state.t0 = -1e9; setCard(steps[0]); }
+    state.step = steps[0]; state.subject = { kind: "label", anchor: { fixed: true, side: "center" } }; state.anchor = state.subject.anchor; state.t0 = -1e9; setCard(steps[0]);
     layer.redraw();
   } else {
     // The globe redraws its layers whenever it turns; asking every frame costs
