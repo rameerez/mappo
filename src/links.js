@@ -295,12 +295,17 @@ export class Links {
     if (!hits.length) link._hits = null;   // nothing of it is on screen
   }
 
-  // On the flat map: the lat/lon samples through the projection, cut at its
-  // seam by the same code the graticule uses. An arc's height becomes the
-  // arch: each sample is moved toward the north pole by height·sin(πt)
-  // radians of latitude — up the page on a cylindrical map — which survives
-  // the seam cut because it happens before the projection. A spike stands up
-  // the page, its height in the map's own scale (the equator is the map's width).
+  // On the flat map an arc is a bow, not a projected great circle. The true
+  // line from Lisbon to Tokyo passes over Siberia, and unrolled it climbs out
+  // of the top of the box: correct geography that reads as a bug. So the flat
+  // arc takes the short way between the two places and is pushed off it by the
+  // height, at right angles to the chord ON THE PAGE, which is why the chord is
+  // measured in pixels and the offset converted back into degrees before the
+  // curve is drawn. Working in lat/lon means the seam cut, the same code the
+  // graticule uses, still applies. Anyone who wants the true great circle can
+  // pass it as points: arcPoints(from, to, { height: 0 }).
+  // A spike stands up the page, its height in the map's own scale (the equator
+  // is the map's width).
   #drawFlat(ctx, view, link, geom, a, b, style) {
     const map = this.map, hits = link._hits = [];
     ctx.lineWidth = style.width;
@@ -314,10 +319,20 @@ export class Links {
       if (style.width > 0) { ctx.beginPath(); ctx.moveTo(p.x, y0); ctx.lineTo(p.x, y1); ctx.stroke(); hits.push(p.x, y0, p.x, y1); }
       end = [ p.x, y1 ];
     } else {
-      const n = geom.pts.length - 1, line = [], arch = (geom.lift || 0) * DEG;
+      const n = geom.pts.length - 1, line = [];
+      const [ lat0, lon0 ] = geom.pts[0], [ lat1, lon1 ] = geom.pts[n];
+      let dLon = lon1 - lon0;
+      if (dLon > 180) dLon -= 360; else if (dLon < -180) dLon += 360;   // the short way
+      const dLat = lat1 - lat0;
+      const [ latMin, latMax ] = map.options.latRange;
+      const kx = view.width / 360, ky = view.height / (latMax - latMin);   // pixels a degree
+      const cx = dLon * kx, cy = -dLat * ky, len = Math.hypot(cx, cy) || 1;
+      // At right angles to the chord, on the side that bows up the page.
+      const s = cx < 0 ? -1 : 1, peak = (geom.lift || 0) * len / 2;
+      const oLon = s * cy / len * peak / kx, oLat = s * cx / len * peak / ky;
       for (let u = a * n; ; u = Math.min(b * n, Math.floor(u) + 1)) {
-        const s = this.#sample(geom, u);
-        line.push([ arch ? Math.min(90, s[0] + arch * Math.sin(Math.PI * (u / n))) : s[0], s[1] ]);
+        const t = u / n, w = Math.sin(Math.PI * t);
+        line.push([ clamp(lat0 + dLat * t + oLat * w, -89.9, 89.9), lon0 + dLon * t + oLon * w ]);
         if (u >= b * n) break;
       }
       for (const piece of projectPolyline(line, map.projection)) {

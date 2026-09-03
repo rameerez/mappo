@@ -224,24 +224,37 @@ test("links on the flat map: the curve goes through the projection and is cut at
   el.map.destroy();
 });
 
-test("links on the flat map: height arches the curve up the page, by its angle in latitude", async () => {
+test("links on the flat map: height bows the curve off the chord, at right angles to it on the page", async () => {
   const el = await mount(`<mappo-world cols="80"></mappo-world>`);
   const { links } = linksModule;
   const layer = links(el.map, { width: 1 });
-  const flat = layer.add({ from: [ 0, -60 ], to: [ 0, 60 ], height: 0 });
-  const arched = layer.add({ from: [ 0, -60 ], to: [ 0, 60 ], height: 0.5 });
-  layer.redraw();
+  const xs = (h) => { const out = []; for (let k = 0; k < h.length; k += 4) out.push(h[k], h[k + 2]); return out; };
   const ys = (h) => { const out = []; for (let k = 0; k < h.length; k += 4) out.push(h[k + 1], h[k + 3]); return out; };
-  const flatYs = ys(flat._hits), archYs = ys(arched._hits);
+
+  // East to west along the equator: the bow goes up the page, by height of the
+  // half-chord. The chord is 120 degrees of a 360 degree canvas, 300 px wide.
+  const flat = layer.add({ from: [ 0, -60 ], to: [ 0, 60 ], height: 0 });
+  const bowed = layer.add({ from: [ 0, -60 ], to: [ 0, 60 ], height: 0.5 });
+  layer.redraw();
+  const flatYs = ys(flat._hits), bowYs = ys(bowed._hits);
   assert.ok(Math.max(...flatYs) - Math.min(...flatYs) < 1e-6, "no height: the equator stays a straight line");
-  // In the layer's own scale (jsdom gives every box 300 px, so locate() and the
-  // layer canvas do not share a height here): 0.5 rad of latitude is 28.65° of
-  // the map's band, and the band is the canvas's height.
-  const [ latMin, latMax ] = el.map.options.latRange;
-  const expected = ((0.5 * 180 / Math.PI) / (latMax - latMin)) * 300;
-  const rise = flatYs[0] - Math.min(...archYs);
-  assert.ok(near(rise, expected, 1), `the apex sits 0.5 rad of latitude up the page (${rise.toFixed(1)} px, expected ${expected.toFixed(1)})`);
-  assert.ok(near(archYs[0], flatYs[0], 1e-6) && near(archYs.at(-1), flatYs.at(-1), 1e-6), "both ends stay on the ground");
+  const rise = flatYs[0] - Math.min(...bowYs);
+  assert.ok(near(rise, 0.5 * (120 / 360 * 300) / 2, 1), `the apex stands off the chord by height of its half length (${rise.toFixed(1)} px)`);
+  assert.ok(near(bowYs[0], flatYs[0], 1e-6) && near(bowYs.at(-1), flatYs.at(-1), 1e-6), "both ends stay put");
+
+  // A meridian has no room to arch north, and the old model could not bow it at
+  // all: the bow is at right angles to the chord, so this one goes sideways.
+  const north = layer.add({ from: [ -40, 0 ], to: [ 40, 0 ], height: 0.5 });
+  layer.redraw();
+  const northXs = xs(north._hits);
+  assert.ok(Math.max(...northXs) - Math.min(...northXs) > 4, `a north-south arc bows across the page (${(Math.max(...northXs) - Math.min(...northXs)).toFixed(1)} px)`);
+
+  // The bow follows the two places, not the great circle between them: London
+  // to Tokyo passes over the Arctic, and unrolled that would leave the box.
+  const long = layer.add({ from: [ 51.5, -0.1 ], to: [ 35.7, 139.7 ], height: 0.2 });
+  layer.redraw();
+  const top = Math.min(...ys(long._hits)), ends = [ ys(long._hits)[0], ys(long._hits).at(-1) ];
+  assert.ok(top > Math.min(...ends) - 40, `the apex stays near the two ends (${top.toFixed(1)} px, ends at ${ends.map((v) => v.toFixed(1)).join(" and ")})`);
   layer.destroy();
   el.map.destroy();
 });

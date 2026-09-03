@@ -22,7 +22,7 @@ that imports the core by relative path and registers itself:
 | `mappo/globe` | `mode="globe"` | 10.2 KB |
 | `mappo/projections` | Equal Earth, polar stereographic, custom and d3-geo projections | 3.7 KB |
 | `mappo/vector` | `figure-source="vector"` and `borders`, for bodies that carry rings | 1.8 KB |
-| `mappo/links` | `links(map)`: arcs between places and spikes at them | 2.9 KB |
+| `mappo/links` | `links(map)`: arcs between places and spikes at them | 3.1 KB |
 | `mappo/bodies/earth-vector` | Earth's coastline and border rings; implies `mappo/vector` | 22.0 KB |
 | `mappo/bodies/moon`, `mappo/bodies/mars` | as before | 9.5 KB, 6.9 KB |
 | `mappo/all` | everything but the Moon and Mars, one self-contained file | 59.8 KB |
@@ -86,15 +86,20 @@ that imports the core by relative path and registers itself:
 - `locate()` reports `scale`, the pixels per radius at the point (more toward
   a perspective camera), for widths and markers that should grow the way the
   dots do.
-- **New module `mappo/links`** (2.9 KB gzipped): `links(map, defaults)` gives
+- **New module `mappo/links`** (3.1 KB gzipped): `links(map, defaults)` gives
   a layer of arcs and spikes. `add({ from, to, height })` is a great-circle arc
   lifted by height·sin(πt); `add({ at, height, tip })` a spike with a dot on
   top; `points` your own `[lat, lon, r]` curve. Per link: `color`, `width`,
   `opacity`, `blend: "lighter"`, `fade`, `range: [a, b]` for reveal and erase
   animations, `tip`, `data`. `layer.at(event)` hit-tests. On the globe the far
-  side is cut where the body is in the way and widths follow the camera; on the
-  flat map the curve is cut at the projection's seam and `height` arches it up
-  the page by the same angle. `arcPoints()` is exported
+  side is cut where the body is in the way and widths follow the camera. On the
+  flat map an arc is a bow instead of that great circle: the true line from
+  Lisbon to Tokyo passes over Siberia and, unrolled, climbs out of the top of
+  the box, which reads as a bug rather than as geography. So the flat arc takes
+  the short way between the two places and `height` pushes it off that chord at
+  right angles on the page, a fraction of the chord's own length; the seam is
+  still cut the way the graticule's is. `points: arcPoints(from, to, { height:
+  0 })` draws the true line for anyone who wants it. `arcPoints()` is exported
   for hosts doing their own curves.
 - The GitHub globe demo (`demo/github-globe.html`) rebuilds github.com/globe
   on it: the dotted sphere with its lighting, the pink arcs of merged pull

@@ -74,7 +74,7 @@ registers itself, so order does not matter and nothing is downloaded twice.
 | `mappo/globe` | `mode="globe"` | 10.2 KB | 9.1 KB |
 | `mappo/projections` | `projection="equal-earth"`, the polar pair, your own or d3-geo projections | 3.7 KB | 3.3 KB |
 | `mappo/vector` | `figure-source="vector"` and `borders` for bodies that carry rings (the Moon and Mars packs do) | 1.8 KB | 1.6 KB |
-| `mappo/links` | `links(map)`: arcs between places and spikes at them, over the globe or the flat map | 2.9 KB | 2.6 KB |
+| `mappo/links` | `links(map)`: arcs between places and spikes at them, over the globe or the flat map | 3.1 KB | 2.8 KB |
 | `mappo/bodies/earth-vector` | Earth's coastline and border rings; implies `mappo/vector` | 22.0 KB | 19.3 KB |
 | `mappo/bodies/moon`, `mappo/bodies/mars` | other worlds, as packs you register | 9.5 KB, 6.9 KB | 8.3 KB, 6.0 KB |
 | `mappo/all` | everything above except the Moon and Mars, in one self-contained file | 59.8 KB | 51.5 KB |
@@ -774,10 +774,13 @@ link means to you.
 
 On the globe the far side is cut where the body is in the way, widths grow
 toward a perspective camera, and every vertex is one `locate()`: a link costs
-what it looks like. On the flat map the same points go through the projection
-and are cut at its seam, and `height` becomes the arch: the curve bows up the
-page, toward the north pole, by the same angle it would rise off the globe, so
-a hero map's arcs look the way they always have. The module is 2.9 KB gzipped and registers nothing;
+what it looks like. On the flat map an arc is a bow rather than that same great
+circle: the true line from Lisbon to Tokyo passes over Siberia, and unrolled it
+climbs out of the top of the box, which reads as a bug rather than as geography.
+So a flat arc takes the short way between the two places and `height` pushes it
+off that chord at right angles on the page, a fraction of the chord's own
+length. The seam is still cut the way the graticule's is. If you want the true
+line, pass it: `points: arcPoints(from, to, { height: 0 })`. The module is 3.1 KB gzipped and registers nothing;
 [the GitHub globe demo](https://rameerez.github.io/mappo/demo/github-globe.html)
 is a few hundred of these, opening and merging.
 
