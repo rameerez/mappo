@@ -108,6 +108,10 @@ export const STEPS = [
   { kind: "label", style: "center", eyebrow: "22 KB", text: "And all of it is one element, with no dependencies", hold: 6, speed: 1.4 }
 ];
 const TURN_SPEED = 40;   // degrees a second at full tilt, when turning to a step
+// How far a highlighted dot rises, in lattice steps. Tall bars lean into each
+// other toward the limb and the country turns into a thicket, so this is a
+// plate with an edge rather than a relief: 0 lays it flat on the sphere.
+const RELIEF = 0.15;
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const ease = (t) => 1 - (1 - clamp01(t)) ** 3;
@@ -717,16 +721,13 @@ function start(el, options, ctl) {
       if (step.fast) setSpeed(step.speed + (step.fast - step.speed) * ease((age - (step.quicken ?? 8)) / 3));
       if (age > (step.arcsAfter ?? 0)) voyageArcs(subject, now, dt, C);
     } else if (subject.kind === "region") {
-      // Every dot of the map inside the region, raised into a bar: a square top
-      // at the lifted dot and the wall from the dot up to it, drawn as a quad
-      // laid across the bar so it tapers with the perspective. Both are sized
-      // against the lattice's own step, so the bars sit as close together as
-      // the map's dots do, whatever the globe's size: wide enough that the tops
-      // read as one raised surface, short enough that no bar can reach past its
-      // neighbour and turn the country into a thicket. All in the page's ink,
-      // walls a shade back from the tops, which is the whole of the relief.
-      // Near the front a bar points at the camera and is all top; toward the
-      // limb it leans and shows its wall.
+      // Every dot of the map inside the region, lifted a little off the sphere:
+      // a square top at the lifted dot and the wall from the dot up to it, drawn
+      // as a quad laid across it so it tapers with the perspective. Both are
+      // sized against the lattice's own step, so the squares sit as close
+      // together as the map's dots do whatever the globe's size, and read as one
+      // surface. All in the page's ink, the wall a shade back from the top,
+      // which at this height shows only as an edge toward the limb.
       const k = Math.min(ease(age / 0.9), ease((total - age) / 0.6));
       if (k <= 0) return;
       const d = subject.dots, front = map.locate(0, 0);
@@ -736,7 +737,7 @@ function start(el, options, ctl) {
       // painted over in the same ink, a little larger than the map draws it
       // (its tiles lie on the sphere and foreshorten; these squares face us),
       // and the ground under the highlight is the colour of the bars.
-      const step = latticeStep(), lift = step * 0.85 * k, w0 = step * 0.74 * front.scale;
+      const step = latticeStep(), lift = step * RELIEF * k, w0 = step * 0.74 * front.scale;
       const dot = step * (map.options.dotSize ?? 0.38) * 1.45 * front.scale;
       const walls = new Path2D(), tops = new Path2D(), ground = new Path2D();
       for (let i = 0; i < d.length; i += 2) {
