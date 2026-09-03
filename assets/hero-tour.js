@@ -25,7 +25,7 @@
 
 import { resolvePlace, normalizeRings, pointInRings } from "../dist/mappo.js";
 import { links } from "../dist/links.js";
-import { forEachSample } from "../dist/globe.js";
+import { forEachSample, mixColor } from "../dist/globe.js";
 import { regions } from "../demo/countries.js";
 
 // Local time for a labelled pin, by city.
@@ -108,13 +108,17 @@ export const STEPS = [
   { kind: "label", style: "center", eyebrow: "22 KB", text: "And all of it is one element, with no dependencies", hold: 6, speed: 1.4 }
 ];
 const TURN_SPEED = 40;   // degrees a second at full tilt, when turning to a step
-// The highlight lies flat on the sphere and a wave runs through it: a band of
-// tiles lifts, the rest lie still. All of these are in lattice steps, the angle
-// between neighbouring dots, except the two in seconds and degrees. Standing
-// the whole plate up on tall bars makes a thicket, but a crest a few tiles
-// wide is relief you can read, and it moves, which is the point.
-const RELIEF = 0.04;     // where a tile rests
-const WAVE = 0.5;        // how far the crest of the wave lifts one
+// A highlighted region is one tile per dot of the map, and a wave runs through
+// them: at the crest a tile rides a little higher off the sphere, swells, and
+// warms toward the page's accent, so the band reads three ways at once and none
+// of them is a wall. Lengths are in lattice steps, the angle between
+// neighbouring dots, so they hold at any globe size or dot density.
+const RELIEF = 0.03;     // how far off the sphere a tile rests
+const WAVE = 0.22;       // how much higher the crest carries it
+const TILE = 0.62;       // a tile at rest, wider than the dot it stands over
+const TILE_SWELL = 0.3;  // how much wider the crest makes it
+const WARM = 0.8;        // how far the crest mixes the ink toward the accent
+const BANDS = 6;         // shades between the two, one fill each
 const WAVE_DEG = 34;     // degrees of longitude between crests
 const WAVE_SECS = 2.6;   // seconds for a crest to travel from one to the next
 
@@ -726,52 +730,32 @@ function start(el, options, ctl) {
       if (step.fast) setSpeed(step.speed + (step.fast - step.speed) * ease((age - (step.quicken ?? 8)) / 3));
       if (age > (step.arcsAfter ?? 0)) voyageArcs(subject, now, dt, C);
     } else if (subject.kind === "region") {
-      // Every dot of the map inside the region, lifted a little off the sphere:
-      // a square top at the lifted dot and the wall from the dot up to it, drawn
-      // as a quad laid across it so it tapers with the perspective. Both are
-      // sized against the lattice's own step, so the squares sit as close
-      // together as the map's dots do whatever the globe's size, and read as one
-      // surface. All in the page's ink, the wall a shade back from the top,
-      // which at this height shows only as an edge toward the limb.
+      // One square per dot of the map inside the region, and nothing else: no
+      // wall, no plate beneath it. Each square is opaque and wider than the dot
+      // it stands over, so the map never shows through, and the wave moves the
+      // square rather than building anything on it. The crest travels east, the
+      // way the map's own surface drifts, and leans with latitude so it crosses
+      // the country on a diagonal; squaring the swell keeps the troughs still.
+      // Tiles are collected into a few shades, so a whole band is a handful of
+      // fills, and the crest is painted last, over the tiles it has passed.
       const k = Math.min(ease(age / 0.9), ease((total - age) / 0.6));
       if (k <= 0) return;
-      const d = subject.dots, front = map.locate(0, 0);
-      if (!front) return;
-      // The map keeps drawing its own dots under all this, and they show
-      // between the tops in the figure's colour. So each dot of the region is
-      // painted over in the same ink, a little larger than the map draws it
-      // (its tiles lie on the sphere and foreshorten; these squares face us),
-      // and the ground under the highlight is the colour of the bars.
-      const step = latticeStep(), w0 = step * 0.74 * front.scale;
-      const dot = step * (map.options.dotSize ?? 0.38) * 1.45 * front.scale;
-      const walls = new Path2D(), tops = new Path2D(), ground = new Path2D();
-      // The crest travels east, the way the map's own surface drifts, and leans
-      // a little with latitude so it crosses the country on a diagonal. Cubing
-      // the swell keeps the troughs flat: a band rides through a still plate.
-      const phase = age / WAVE_SECS;
+      const d = subject.dots, step = latticeStep(), phase = age / WAVE_SECS;
+      const bands = Array.from({ length: BANDS }, () => new Path2D());
       for (let i = 0; i < d.length; i += 2) {
         const b = map.locate(d[i], d[i + 1]);
         if (!b?.front || b.depth < 0.05) continue;
-        const swell = 0.5 + 0.5 * Math.sin(2 * Math.PI * ((d[i + 1] + 0.35 * d[i]) / WAVE_DEG - phase));
-        const lift = step * (RELIEF + WAVE * swell * swell) * k;
-        const t = map.locate(d[i], d[i + 1], 1 + lift);
-        const wb = w0 * (b.scale / front.scale) / 2, wt = w0 * (t.scale / front.scale) / 2;
-        const wg = dot * (b.scale / front.scale) / 2;
-        ground.rect(b.x - wg, b.y - wg, wg * 2, wg * 2);
-        tops.rect(t.x - wt, t.y - wt, wt * 2, wt * 2);
-        const dx = t.x - b.x, dy = t.y - b.y, len = Math.hypot(dx, dy);
-        if (len < 0.4) continue;                     // pointing at us: nothing to see
-        const px = -dy / len, py = dx / len;
-        walls.moveTo(b.x + px * wb, b.y + py * wb);
-        walls.lineTo(b.x - px * wb, b.y - py * wb);
-        walls.lineTo(t.x - px * wt, t.y - py * wt);
-        walls.lineTo(t.x + px * wt, t.y + py * wt);
-        walls.closePath();
+        const s = 0.5 + 0.5 * Math.sin(2 * Math.PI * ((d[i + 1] + 0.35 * d[i]) / WAVE_DEG - phase));
+        const swell = s * s;
+        const t = map.locate(d[i], d[i + 1], 1 + step * (RELIEF + WAVE * swell) * k);
+        const w = step * (TILE + TILE_SWELL * swell) * t.scale / 2;
+        bands[Math.min(BANDS - 1, swell * BANDS | 0)].rect(t.x - w, t.y - w, w * 2, w * 2);
       }
-      ctx.fillStyle = C.ink;
-      ctx.globalAlpha = k; ctx.fill(ground);
-      ctx.globalAlpha = 0.5 * k; ctx.fill(walls);
-      ctx.globalAlpha = k; ctx.fill(tops);
+      ctx.globalAlpha = k;
+      for (let i = 0; i < BANDS; i++) {
+        ctx.fillStyle = mixColor(C.ink, C.accent, WARM * (i + 0.5) / BANDS, ctx);
+        ctx.fill(bands[i]);
+      }
     }
     ctx.globalAlpha = 1;
   };
