@@ -110,14 +110,16 @@ export const STEPS = [
 const TURN_SPEED = 40;   // degrees a second at full tilt, when turning to a step
 // A highlighted region is one tile per dot of the map, and a wave runs through
 // them: at the crest a tile rides a little higher off the sphere, swells, and
-// warms toward the page's accent, so the band reads three ways at once and none
-// of them is a wall. Lengths are in lattice steps, the angle between
-// neighbouring dots, so they hold at any globe size or dot density.
+// lightens toward the page's own background, so the band reads three ways at
+// once and none of them is a wall. The highlight stays one colour, the ink:
+// the wave is a shade of it, never a second hue. Lengths are in lattice steps,
+// the angle between neighbouring dots, so they hold at any globe size or dot
+// density.
 const RELIEF = 0.03;     // how far off the sphere a tile rests
 const WAVE = 0.22;       // how much higher the crest carries it
 const TILE = 0.62;       // a tile at rest, wider than the dot it stands over
 const TILE_SWELL = 0.3;  // how much wider the crest makes it
-const WARM = 0.8;        // how far the crest mixes the ink toward the accent
+const FADE = 0.45;       // how far the crest lightens the ink toward the page
 const BANDS = 6;         // shades between the two, one fill each
 const WAVE_DEG = 34;     // degrees of longitude between crests
 const WAVE_SECS = 2.6;   // seconds for a crest to travel from one to the next
@@ -305,7 +307,7 @@ function start(el, options, ctl) {
     const cs = getComputedStyle(el);
     const v = (n, f) => cs.getPropertyValue(n).trim() || f;
     const accent = v("--accent", "#c2410c");
-    return { pin: v("--pin", accent), area: v("--area", "#0b7285"), arc: v("--arc", accent), accent, ink: v("--ink", "#16181d") };
+    return { pin: v("--pin", accent), area: v("--area", "#0b7285"), arc: v("--arc", accent), accent, ink: v("--ink", "#16181d"), bg: v("--bg", "#fff") };
   };
 
   // The globe's own dots inside a region, from the same lattice the globe
@@ -753,7 +755,7 @@ function start(el, options, ctl) {
       }
       ctx.globalAlpha = k;
       for (let i = 0; i < BANDS; i++) {
-        ctx.fillStyle = mixColor(C.ink, C.accent, WARM * (i + 0.5) / BANDS, ctx);
+        ctx.fillStyle = mixColor(C.ink, C.bg, FADE * (i + 0.5) / BANDS, ctx);
         ctx.fill(bands[i]);
       }
     }
