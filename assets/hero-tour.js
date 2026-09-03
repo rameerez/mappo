@@ -44,12 +44,17 @@ export const TIME_ZONES = {
   Mumbai: "Asia/Kolkata", Delhi: "Asia/Kolkata", Bangkok: "Asia/Bangkok", Singapore: "Asia/Singapore", "Hong Kong": "Asia/Hong_Kong",
   Beijing: "Asia/Shanghai", Seoul: "Asia/Seoul", Tokyo: "Asia/Tokyo", Jakarta: "Asia/Jakarta", Manila: "Asia/Manila",
   Perth: "Australia/Perth", Sydney: "Australia/Sydney", Melbourne: "Australia/Melbourne", Auckland: "Pacific/Auckland",
-  Honolulu: "Pacific/Honolulu", Anchorage: "America/Anchorage"
+  Honolulu: "Pacific/Honolulu", Anchorage: "America/Anchorage", Papeete: "Pacific/Tahiti", Apia: "Pacific/Apia", Suva: "Pacific/Fiji",
+  Nouméa: "Pacific/Noumea", Wellington: "Pacific/Auckland", Brisbane: "Australia/Brisbane", Petropavlovsk: "Asia/Kamchatka", Anadyr: "Asia/Anadyr"
 };
 
 // Places for the horizon step that the gazetteer lacks: the Pacific is where
 // things rise after the Americas have come round.
 const HONOLULU = { name: "Honolulu", lat: 21.3, lon: -157.9 }, ANCHORAGE = { name: "Anchorage", lat: 61.2, lon: -149.9 };
+const PACIFIC = [ HONOLULU, ANCHORAGE,
+  { name: "Papeete", lat: -17.5, lon: -149.6 }, { name: "Apia", lat: -13.8, lon: -171.8 }, { name: "Suva", lat: -18.1, lon: 178.4 },
+  { name: "Nouméa", lat: -22.3, lon: 166.4 }, { name: "Wellington", lat: -41.3, lon: 174.8 }, { name: "Brisbane", lat: -27.5, lon: 153 },
+  { name: "Petropavlovsk", lat: 53, lon: 158.6 }, { name: "Anadyr", lat: 64.7, lon: 177.5 } ];
 const WEST = [ "Boston", "New York", "Washington", "Toronto", "Montreal", "Chicago", "Miami", "Atlanta", "Houston", "Denver", "Mexico City",
   "Havana", "Panama City", "Bogotá", "Caracas", "Lima", "Quito", "La Paz", "Santiago", "Buenos Aires", "Montevideo", "São Paulo",
   "Rio de Janeiro", "Brasília", "Seattle", "San Francisco", "Los Angeles", "Vancouver", "Phoenix", "Calgary", "Reykjavík" ];
@@ -59,7 +64,7 @@ const MAJOR = [ "New York", "Los Angeles", "Chicago", "Toronto", "Mexico City", 
   "Hong Kong", "Tokyo", "Seoul", "Sydney", "Boston", "Miami", "Casablanca", "Dakar", "Lisbon" ];
 const CITIES = [ ...WEST, "London", "Lisbon", "Madrid", "Paris", "Berlin", "Rome", "Athens", "Istanbul", "Moscow", "Cairo", "Lagos", "Nairobi",
   "Casablanca", "Dakar", "Accra", "Johannesburg", "Cape Town", "Dubai", "Mumbai", "Delhi", "Bangkok", "Singapore", "Hong Kong", "Beijing",
-  "Seoul", "Tokyo", "Jakarta", "Manila", "Perth", "Sydney", "Melbourne", "Auckland", HONOLULU, ANCHORAGE ];
+  "Seoul", "Tokyo", "Jakarta", "Manila", "Perth", "Sydney", "Melbourne", "Auckland", ...PACIFIC ];
 // Pairs an arc falls back to when the scripted one is not in view: short hops
 // everywhere, so a globe of which only a slice is on the page always has one.
 const PAIRS = [ [ "Paris", "Rome" ], [ "Madrid", "Paris" ], [ "Lisbon", "London" ], [ "Paris", "London" ], [ "Casablanca", "Madrid" ],
@@ -86,18 +91,17 @@ const REGIONS = [ [ "US", 39, -98 ], [ "BR", -10, -53 ], [ "MX", 23, -102 ], [ "
 // seconds rather than a minute. `speed` is the spin while the step plays.
 export const STEPS = [
   { kind: "label", style: "title", text: "This is a mappo globe", hold: 4, speed: 1.4 },
-  { kind: "arc", text: "You can draw an arc between any two places", hold: 7, speed: 1.4, height: 0.12, from: "Rome", to: "Madrid", pairs: PAIRS },
-  // Boston is well over the horizon once the mid Atlantic faces us; a long arc
-  // keeps low, or its apex leaves the top of the hero.
-  { kind: "arc", text: "Or across an ocean, Madrid to Boston", hold: 6.5, speed: 1.6, frontLon: -33, height: 0.06, draw: 1.2, from: "Madrid", to: "Boston", pairs: PAIRS },
-  // Both shores of the Atlantic are on the page here: the whole globe lights up.
-  // The mid Atlantic: Lisbon, Casablanca and Dakar on one side, Boston to
-  // Buenos Aires on the other, all on the page at once.
-  { kind: "pins", text: "You can place pins on the map", hold: 10, speed: 1.4, frontLon: -25, cities: MAJOR, count: 10, labels: true },
+  // A little quicker under the first arc, so that Boston is over the horizon
+  // the moment the second begins: the two arcs follow each other directly.
+  { kind: "arc", text: "You can draw an arc between any two places", hold: 7, speed: 2.6, height: 0.12, from: "Rome", to: "Madrid", pairs: PAIRS },
+  // A long arc keeps low, or its apex leaves the top of the hero.
+  { kind: "arc", text: "Or across an ocean, Madrid to Boston", hold: 6.5, speed: 2, height: 0.06, draw: 1.2, from: "Madrid", to: "Boston", pairs: PAIRS },
+  // Whatever main cities are on the page now: the Americas, and Europe's edge if it is still there.
+  { kind: "pins", text: "You can place pins on the map", hold: 10, speed: 1.4, cities: MAJOR, count: 10, labels: true },
   // The United States, central.
   { kind: "region", text: "You can highlight regions", hold: 9, speed: 1.4, frontLon: -76, regions: REGIONS },
-  // The Pacific is rising: Honolulu and Anchorage come up over the edge.
-  { kind: "rise", text: "Labels hide behind the horizon, and come back as the globe turns", hold: 9, speed: 1.8, frontLon: -93, cities: CITIES, count: 3 },
+  // The Pacific is rising: Hawaii first, then island after island as the globe keeps turning.
+  { kind: "rise", text: "Labels hide behind the horizon, and come back as the globe turns", hold: 12, speed: 2.6, frontLon: -93, cities: CITIES, count: 8 },
   { kind: "label", eyebrow: "22 KB", text: "And all of it is one element, with no dependencies", hold: 6, speed: 1.8 }
 ];
 // After the last step the globe is over the Pacific, with nothing to show for
@@ -324,7 +328,24 @@ function start(el, options, ctl) {
 
   // Pins with room for their labels: no two within a label's height of each
   // other unless a label's width apart.
-  const spaced = (chosen, q) => chosen.every((o) => Math.abs(o.q.y - q.y) > 26 || Math.abs(o.q.x - q.x) > 150);
+  const spaced = (chosen, q) => chosen.every((o) => Math.abs(o.q.y - q.y) > 24 || Math.abs(o.q.x - q.x) > 150);
+
+  // Cities just behind the horizon on the side that is turning into view, that
+  // are not already among `have`, with room for their labels. The horizon is
+  // where the camera's cap ends, not the centre plane: under a camera 2.4 radii
+  // out it sits at a view depth of 0.41. Nothing above the hero's top edge.
+  const risers = (step, have) => {
+    const zh = horizonZ(), names = new Set(have.map((p) => p.name));
+    const chosen = have.map((p) => ({ p, q: map.locate(p.lat, p.lon) })).filter((c) => c.q);
+    const seen = (step.cities ?? CITIES).map(place).filter(Boolean).filter((p) => !names.has(p.name))
+      .map((p) => ({ p, q: map.locate(p.lat, p.lon) }))
+      .filter((c) => c.q && c.q.z > zh - 0.3 && c.q.z < zh + 0.03 && (c.q.x < c.q.cx) === eastward && box && box.left + c.q.x > 24 && box.top + c.q.y > 56 && box.top + c.q.y < innerHeight - 40 &&
+        clear.every((r) => box.left + c.q.x > r.right + 8 || box.left + c.q.x < r.left - 8 || box.top + c.q.y < r.top - 8 || box.top + c.q.y > r.bottom + 8))
+      .sort((x, y) => y.q.z - x.q.z);
+    const out = [];
+    for (const c of seen) { if (spaced([ ...chosen, ...out ], c.q)) out.push(c); if (have.length + out.length >= (step.count ?? 3)) break; }
+    return out.map((c) => c.p);
+  };
 
   // Choose what a step points at: the scripted subject if it is in view now,
   // else the best of the step's fallbacks.
@@ -372,21 +393,11 @@ function start(el, options, ctl) {
       return { kind, pins: pins.map((c) => c.p), labels: !!step.labels, anchor: f ?? { ...pins[0].p, side: "right" } };
     }
     if (kind === "rise") {
-      // Cities just behind the horizon on the side that is turning into view. The
-      // horizon is where the camera's cap ends, not the centre plane: under a
-      // camera 2.4 radii out it sits at a view depth of 0.41.
-      const zh = horizonZ();
-      const seen = (step.cities ?? CITIES).map(place).filter(Boolean)
-        .map((p) => ({ p, q: map.locate(p.lat, p.lon) }))
-        .filter((c) => c.q && c.q.z > zh - 0.3 && c.q.z < zh + 0.05 && (c.q.x < c.q.cx) === eastward && box && box.left + c.q.x > 24 &&
-          clear.every((r) => box.left + c.q.x > r.right + 8 || box.left + c.q.x < r.left - 8 || box.top + c.q.y < r.top - 8 || box.top + c.q.y > r.bottom + 8))
-        .sort((x, y) => y.q.z - x.q.z);
-      const pins = [];
-      for (const c of seen) { if (spaced(pins, c.q)) pins.push(c); if (pins.length === (step.count ?? 3)) break; }
-      debug("rise:", pins.map((c) => c.p.name));
+      const pins = risers(step, []);
+      debug("rise:", pins.map((p) => p.name));
       if (!pins.length) return null;
       const f = frontPoint([ 40, 26 ]);
-      return f ? { kind, pins: pins.map((c) => c.p), labels: true, anchor: f } : null;
+      return f ? { kind, pins, labels: true, anchor: f } : null;
     }
     if (kind === "region") {
       // The first region on the list that is squarely in view wins; otherwise
@@ -480,18 +491,16 @@ function start(el, options, ctl) {
   // as it arrives; on arrival the pending step begins (or the script restarts).
   const turn = (now) => {
     if (state.held) return;
-    const forward = remainingTo(state.goto), back = 360 - forward;
-    // A target a little way behind is reached by turning back, not by a lap.
-    const remaining = back < 90 && back < forward ? -back : forward;
-    if (Math.abs(remaining) < 2) {
+    // Only ever the way the Earth turns; a target just behind counts as reached.
+    const remaining = remainingTo(state.goto);
+    if (remaining < 2 || remaining > 355) {
       const step = state.pending;
       state.goto = null; state.pending = null;
       if (step) { if (!begin(step, now)) advance(now); }
       else { setSpeed(baseSpeed); advance(now); }
       return;
     }
-    const v = Math.max(baseSpeed, Math.min(TURN_SPEED, Math.abs(remaining) * 0.5));
-    setSpeed(remaining < 0 ? -v : v);
+    setSpeed(Math.max(baseSpeed, Math.min(TURN_SPEED, remaining * 0.5)));
   };
 
   const drawPin = (ctx, q, k, pulse) => {
@@ -585,6 +594,11 @@ function start(el, options, ctl) {
       // The arc lands: a pin grows at the destination once the head arrives.
       if (head >= 0.999 && q?.front) { ctx.fillStyle = C.arc; ctx.strokeStyle = C.arc; drawPin(ctx, q, Math.min(ease((age - (step.draw ?? 1.8)) / 0.4), outK), 1); }
     } else if (subject.kind === "pins" || subject.kind === "rise") {
+      if (subject.kind === "rise" && age - (subject.scanned ?? -9) > 1 && subject.pins.length < (step.count ?? 3) && age < total - 2) {
+        subject.scanned = age;
+        survey(step);
+        for (const p of risers(step, subject.pins)) subject.pins.push(p);
+      }
       drawPins(ctx, subject.pins, subject.labels, age, outK, C, subject.kind === "rise" ? 0 : 0.25, dt);
     } else if (subject.kind === "region") {
       const k = Math.min(ease(age / 0.8), ease((total - age) / 0.6));
