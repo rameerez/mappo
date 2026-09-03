@@ -307,17 +307,23 @@ function start(el, options, ctl) {
     const wraps = lonMax - lonMin > 180;
     const out = [];
     const cols = map.options.cols ?? 170, distribution = map.options.distribution === "uniform" ? "uniform" : "grid";
-    const raise = [];
-    let n = 0;
-    forEachSample(cols, map.options.latRange, distribution, (lat, lon, col, row) => {
+    forEachSample(cols, map.options.latRange, distribution, (lat, lon) => {
       if (lat < latMin || lat > latMax || (!wraps && (lon < lonMin || lon > lonMax))) return;
-      if (!pointInRings(lat, lon, rings)) return;
-      out.push(lat, lon);
-      raise.push(distribution === "uniform" ? (n++ % 4 === 0 ? 1 : 0) : (col & 1) || (row & 1) ? 0 : 1);
+      if (pointInRings(lat, lon, rings)) out.push(lat, lon);
     });
-    const dots = { at: new Float64Array(out), raise: Uint8Array.from(raise) };
+    const dots = new Float64Array(out);
     dotsCache.set(r.id, dots);
     return dots;
+  };
+
+  // The angle between neighbouring dots, in radius units: the grid's cell on a
+  // lat/lon lattice, the Fibonacci spacing on a uniform one. Bars are sized in
+  // these, so they fit the map's dots whatever the globe's size or density.
+  const latticeStep = () => {
+    const cols = map.options.cols ?? 170;
+    return map.options.distribution === "uniform"
+      ? Math.sqrt(4 * Math.PI / Math.round(cols * cols / Math.PI))
+      : 2 * Math.PI / cols;
   };
 
   const state = { i: -1, step: null, subject: null, t0: 0, anchor: null, arc: null, goto: null, pending: null, held: false, lastNow: 0 };
@@ -711,38 +717,40 @@ function start(el, options, ctl) {
       if (step.fast) setSpeed(step.speed + (step.fast - step.speed) * ease((age - (step.quicken ?? 8)) / 3));
       if (age > (step.arcsAfter ?? 0)) voyageArcs(subject, now, dt, C);
     } else if (subject.kind === "region") {
-      // The globe's own dots inside the region, extruded into low bars, all in
-      // the page's ink (white on the dark theme, black on the light): a base
-      // square over the dot, the column from it to its lifted top, drawn a tile
-      // wide with flat ends, and the top square. Near the front a bar points at
-      // the camera and shows its top; toward the limb it leans and shows its
-      // side, which is what reads as relief. Every dot is judged on its own
-      // side of the horizon, so a shape crossing the limb never tears.
+      // Every dot of the map inside the region, raised into a bar: a square top
+      // at the lifted dot and the wall from the dot up to it, drawn as a quad
+      // laid across the bar so it tapers with the perspective. Both are sized
+      // against the lattice's own step, so the bars sit as close together as
+      // the map's dots do, whatever the globe's size: wide enough that the tops
+      // read as one raised surface, short enough that no bar can reach past its
+      // neighbour and turn the country into a thicket. All in the page's ink,
+      // walls a shade back from the tops, which is the whole of the relief.
+      // Near the front a bar points at the camera and is all top; toward the
+      // limb it leans and shows its wall.
       const k = Math.min(ease(age / 0.9), ease((total - age) / 0.6));
       if (k <= 0) return;
-      const d = subject.dots.at, up = subject.dots.raise, lift = 0.022 * k, sides = new Path2D(), base = new Path2D(), caps = new Path2D();
-      const front = map.locate(0, 0), w = Math.max(2.5, 4.4 * ((front?.scale ?? front?.r ?? 400) / (front?.r ?? 400)));
+      const d = subject.dots, front = map.locate(0, 0);
+      if (!front) return;
+      const step = latticeStep(), lift = step * 0.85 * k, w0 = step * 0.74 * front.scale;
+      const walls = new Path2D(), tops = new Path2D();
       for (let i = 0; i < d.length; i += 2) {
         const b = map.locate(d[i], d[i + 1]);
-        // Toward the limb a lifted top projects far from its base and a bar
-        // would read as a slab floating off the disc: bars flatten as they
-        // turn away, and the last few degrees are left alone.
-        if (!b?.front || b.depth < 0.08) continue;
-        const wb = w * (b.scale / front.scale);
-        base.rect(b.x - wb / 2, b.y - wb / 2, wb, wb);
-        if (!up[i / 2]) continue;
-        const t = map.locate(d[i], d[i + 1], 1 + lift * (0.25 + 0.75 * b.depth));
-        const wt = w * (t.scale / front.scale);
-        sides.moveTo(b.x, b.y); sides.lineTo(t.x, t.y);
-        caps.rect(t.x - wt / 2, t.y - wt / 2, wt, wt);
+        if (!b?.front || b.depth < 0.05) continue;
+        const t = map.locate(d[i], d[i + 1], 1 + lift);
+        const wb = w0 * (b.scale / front.scale) / 2, wt = w0 * (t.scale / front.scale) / 2;
+        tops.rect(t.x - wt, t.y - wt, wt * 2, wt * 2);
+        const dx = t.x - b.x, dy = t.y - b.y, len = Math.hypot(dx, dy);
+        if (len < 0.4) continue;                     // pointing at us: nothing to see
+        const px = -dy / len, py = dx / len;
+        walls.moveTo(b.x + px * wb, b.y + py * wb);
+        walls.lineTo(b.x - px * wb, b.y - py * wb);
+        walls.lineTo(t.x - px * wt, t.y - py * wt);
+        walls.lineTo(t.x + px * wt, t.y + py * wt);
+        walls.closePath();
       }
-      // One ink, three weights: the footprint on the surface, the shafts, the
-      // tops. The footprint reads as the selection, the tops as its height.
-      ctx.fillStyle = ctx.strokeStyle = C.ink;
-      ctx.globalAlpha = 0.5 * k; ctx.fill(base);
-      ctx.lineCap = "butt"; ctx.lineWidth = w; ctx.globalAlpha = 0.85 * k; ctx.stroke(sides);
-      ctx.globalAlpha = k; ctx.fill(caps);
-      ctx.lineCap = "round";
+      ctx.fillStyle = C.ink;
+      ctx.globalAlpha = 0.62 * k; ctx.fill(walls);
+      ctx.globalAlpha = k; ctx.fill(tops);
     }
     ctx.globalAlpha = 1;
   };
