@@ -116,10 +116,10 @@ const TURN_SPEED = 40;   // degrees a second at full tilt, when turning to a ste
 // the angle between neighbouring dots, so they hold at any globe size or dot
 // density.
 const RELIEF = 0.03;     // how far off the sphere a tile rests
-const WAVE = 0.22;       // how much higher the crest carries it
-const TILE = 0.62;       // a tile at rest, wider than the dot it stands over
-const TILE_SWELL = 0.3;  // how much wider the crest makes it
-const FADE = 0.45;       // how far the crest lightens the ink toward the page
+const WAVE = 0.18;       // how much higher the crest carries it
+const TILE = 0.72;       // a tile at rest, wider than the dot it stands over
+const TILE_SWELL = 0.22; // how much wider the crest makes it
+const FADE = 0.22;       // how far the crest lightens the ink toward the page
 const BANDS = 6;         // shades between the two, one fill each
 const WAVE_DEG = 34;     // degrees of longitude between crests
 const WAVE_SECS = 2.6;   // seconds for a crest to travel from one to the next
@@ -749,9 +749,23 @@ function start(el, options, ctl) {
         if (!b?.front || b.depth < 0.05) continue;
         const s = 0.5 + 0.5 * Math.sin(2 * Math.PI * ((d[i + 1] + 0.35 * d[i]) / WAVE_DEG - phase));
         const swell = s * s;
-        const t = map.locate(d[i], d[i + 1], 1 + step * (RELIEF + WAVE * swell) * k);
-        const w = step * (TILE + TILE_SWELL * swell) * t.scale / 2;
-        bands[Math.min(BANDS - 1, swell * BANDS | 0)].rect(t.x - w, t.y - w, w * 2, w * 2);
+        // The tile lies on the sphere rather than facing the camera: its two
+        // edges are the screen vectors to a neighbour a half tile east and a
+        // half tile north, so it foreshortens toward the limb exactly as the
+        // map's own dots do. Drawn as squares they stay square while the dots
+        // under them crowd together, and the region combs into streaks.
+        const r = 1 + step * (RELIEF + WAVE * swell) * k;
+        const half = step * (TILE + TILE_SWELL * swell) / 2 / RAD;
+        const t = map.locate(d[i], d[i + 1], r);
+        const e = map.locate(d[i], d[i + 1] + half / Math.max(0.3, Math.cos(d[i] * RAD)), r);
+        const n = map.locate(d[i] + half, d[i + 1], r);
+        const ex = e.x - t.x, ey = e.y - t.y, nx = n.x - t.x, ny = n.y - t.y;
+        const p = bands[Math.min(BANDS - 1, swell * BANDS | 0)];
+        p.moveTo(t.x - ex - nx, t.y - ey - ny);
+        p.lineTo(t.x + ex - nx, t.y + ey - ny);
+        p.lineTo(t.x + ex + nx, t.y + ey + ny);
+        p.lineTo(t.x - ex + nx, t.y - ey + ny);
+        p.closePath();
       }
       ctx.globalAlpha = k;
       for (let i = 0; i < BANDS; i++) {
