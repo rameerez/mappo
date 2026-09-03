@@ -25,7 +25,7 @@
 
 import { resolvePlace, normalizeRings, pointInRings } from "../dist/mappo.js";
 import { links } from "../dist/links.js";
-import { forEachSample } from "../dist/globe.js";
+import { forEachSample, mixColor } from "../dist/globe.js";
 import { regions } from "../demo/countries.js";
 
 // Local time for a labelled pin, by city.
@@ -98,11 +98,11 @@ export const STEPS = [
   { kind: "arc", text: "Or across an ocean, Madrid to Boston", hold: 6.5, speed: 2, height: 0.06, draw: 1.2, from: "Madrid", to: "Boston", pairs: PAIRS },
   // Whatever main cities are on the page now: the Americas, and Europe's edge while it lasts.
   { kind: "pins", text: "You can place pins on the map", hold: 10, speed: 1.4, cities: MAJOR, count: 10, labels: true },
-  // The United States, central, its dots raised.
+  // The United States, central, its dots extruded into bars.
   { kind: "region", text: "You can highlight regions", hold: 9, speed: 1.4, frontLon: -76, regions: REGIONS },
   // West at speed, through the Pacific and Asia and back to Europe: cities rise
   // over the horizon, arcs are drawn between them and slide behind it.
-  { kind: "voyage", text: "Labels and arcs hide behind the horizon, and come back as the globe turns", speed: 9, frontLon: -90, cities: WORLD, count: 8 },
+  { kind: "voyage", text: "Labels and arcs hide behind the horizon, and come back as the globe turns", speed: 18, frontLon: -90, cities: WORLD, count: 8 },
   { kind: "label", eyebrow: "22 KB", text: "And all of it is one element, with no dependencies", hold: 6, speed: 1.4 }
 ];
 const TURN_SPEED = 40;   // degrees a second at full tilt, when turning to a step
@@ -418,7 +418,7 @@ function start(el, options, ctl) {
       // Ends where the next lap needs the globe: home, less what the steps after
       // it will turn while they play.
       const after = steps.slice(state.i + 1).reduce((a, s) => a + (s.hold ?? 0) * (s.speed ?? baseSpeed), 0);
-      return { kind, pins: risers(step, [], step.count ?? 8), arcs: [], nextArc: 2.5, endLon: homeLon + after, anchor: { fixed: true, side: "center", fx: -0.12, fy: -0.7 } };
+      return { kind, pins: risers(step, [], step.count ?? 8), arcs: [], nextArc: 0, endLon: homeLon + after, anchor: { fixed: true, side: "center", fx: -0.12, fy: -0.7 } };
     }
     if (kind === "region") {
       // The first region on the list that is squarely in view wins; otherwise
@@ -562,17 +562,26 @@ function start(el, options, ctl) {
     if (withLabels) parkLabels(pins.length);
   };
 
-  // The voyage's arcs: drawn between two visible pins, then left to ride the
-  // globe until an end goes behind the horizon, when the arc erases from its
-  // tail and goes.
+  // The voyage's arcs: from the first frame and every second and a half, up to
+  // three at once, drawn between two visible risers or, failing that, any pair
+  // of places in view; then left to ride the globe until an end goes behind
+  // the horizon, when the arc erases from its tail and goes.
   const voyageArcs = (subject, now, dt, C) => {
     subject.nextArc -= dt;
-    if (subject.nextArc <= 0 && subject.arcs.length < 2) {
-      subject.nextArc = 4;
-      const vis = subject.pins.map((p) => ({ p, q: map.locate(p.lat, p.lon) })).filter((c) => c.q?.front && c.q.depth > 0.2);
+    if (subject.nextArc <= 0 && subject.arcs.length < 3) {
+      subject.nextArc = 1.5;
+      const inUse = new Set(subject.arcs.flatMap((a) => [ a.a.name, a.b.name ]));
+      const ok = (c) => c.q?.front && c.q.depth > 0.05 && !inUse.has(c.p.name) && (!box || box.left + c.q.x < innerWidth - 12);
+      const vis = subject.pins.map((p) => ({ p, q: map.locate(p.lat, p.lon) })).filter(ok);
       let pair = null;
       for (let i = 0; i < vis.length && !pair; i++) for (let j = i + 1; j < vis.length && !pair; j++) {
-        if (Math.hypot(vis[i].q.x - vis[j].q.x, vis[i].q.y - vis[j].q.y) > 90 && !subject.arcs.some((a) => a.a === vis[i].p || a.b === vis[j].p)) pair = [ vis[i], vis[j] ];
+        if (Math.hypot(vis[i].q.x - vis[j].q.x, vis[i].q.y - vis[j].q.y) > 90) pair = [ vis[i], vis[j] ];
+      }
+      if (!pair) for (const [ a, b ] of PAIRS) {
+        const A = place(a), B = place(b);
+        if (!A || !B) continue;
+        const ca = { p: A, q: map.locate(A.lat, A.lon) }, cb = { p: B, q: map.locate(B.lat, B.lon) };
+        if (ok(ca) && ok(cb)) { pair = [ ca, cb ]; break; }
       }
       if (pair) {
         const [ A, B ] = pair[0].q.x < pair[1].q.x ? pair : [ pair[1], pair[0] ];
@@ -582,7 +591,7 @@ function start(el, options, ctl) {
     }
     for (const a of [ ...subject.arcs ]) {
       const qa = map.locate(a.a.lat, a.a.lon), qb = map.locate(a.b.lat, a.b.lon);
-      const head = ease((now - a.t0) / 1.2);
+      const head = ease((now - a.t0) / 1);
       if (!qa?.front && !qb?.front) a.tail = 1;
       else if (!qa?.front || !qb?.front) a.tail = Math.min(1, a.tail + dt / 0.9);
       a.link.color = C.arc;
@@ -661,24 +670,29 @@ function start(el, options, ctl) {
       drawPins(ctx, subject.pins, true, age, outK, C, 0, dt);
       voyageArcs(subject, now, dt, C);
     } else if (subject.kind === "region") {
-      // The globe's own dots inside the region, raised off the surface on a
-      // short pillar each and drawn in the area colour: the region reads as
-      // lifted, and every dot is judged on its own side of the horizon, so a
-      // shape crossing the limb never tears.
+      // The globe's own dots inside the region, extruded into bars: each dot's
+      // column from the surface to its lifted top, drawn a tile wide with flat
+      // ends in a darker shade of the area colour, and its top in the colour
+      // itself. Near the front a bar points at the camera and shows its top;
+      // toward the limb it leans and shows its side, which is what reads as
+      // relief. Every dot is judged on its own side of the horizon, so a shape
+      // crossing the limb never tears.
       const k = Math.min(ease(age / 0.9), ease((total - age) / 0.6));
       if (k <= 0) return;
-      const d = subject.dots, lift = 0.045 * k, pillars = new Path2D(), heads = new Path2D();
-      let rad = 0;
+      const d = subject.dots, lift = 0.07 * k, sides = new Path2D(), tops = new Path2D();
+      const front = map.locate(0, 0), w = Math.max(2, 3.4 * ((front?.scale ?? front?.r ?? 400) / (front?.r ?? 400)));
       for (let i = 0; i < d.length; i += 2) {
         const b = map.locate(d[i], d[i + 1]);
         if (!b?.front) continue;
         const t = map.locate(d[i], d[i + 1], 1 + lift);
-        rad = (1.25 + 0.75 * k) * (t.scale / t.r);
-        pillars.moveTo(b.x, b.y); pillars.lineTo(t.x, t.y);
-        heads.moveTo(t.x + rad, t.y); heads.arc(t.x, t.y, rad, 0, 6.2832);
+        const wt = w * (t.scale / front.scale), h = wt / 2;
+        sides.moveTo(b.x, b.y); sides.lineTo(t.x, t.y);
+        tops.rect(t.x - h, t.y - h, wt, wt);
       }
-      ctx.strokeStyle = C.area; ctx.lineWidth = 1; ctx.globalAlpha = 0.5 * k; ctx.stroke(pillars);
-      ctx.fillStyle = C.area; ctx.globalAlpha = 0.95 * k; ctx.fill(heads);
+      ctx.lineCap = "butt";
+      ctx.strokeStyle = mixColor(C.area, "#000000", 0.38, ctx); ctx.lineWidth = w; ctx.globalAlpha = 0.95 * k; ctx.stroke(sides);
+      ctx.fillStyle = C.area; ctx.globalAlpha = k; ctx.fill(tops);
+      ctx.lineCap = "round";
     }
     ctx.globalAlpha = 1;
   };
