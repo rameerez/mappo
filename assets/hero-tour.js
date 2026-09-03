@@ -108,10 +108,15 @@ export const STEPS = [
   { kind: "label", style: "center", eyebrow: "22 KB", text: "And all of it is one element, with no dependencies", hold: 6, speed: 1.4 }
 ];
 const TURN_SPEED = 40;   // degrees a second at full tilt, when turning to a step
-// How far a highlighted dot rises, in lattice steps. Tall bars lean into each
-// other toward the limb and the country turns into a thicket, so this is a
-// plate with an edge rather than a relief: 0 lays it flat on the sphere.
-const RELIEF = 0.15;
+// The highlight lies flat on the sphere and a wave runs through it: a band of
+// tiles lifts, the rest lie still. All of these are in lattice steps, the angle
+// between neighbouring dots, except the two in seconds and degrees. Standing
+// the whole plate up on tall bars makes a thicket, but a crest a few tiles
+// wide is relief you can read, and it moves, which is the point.
+const RELIEF = 0.04;     // where a tile rests
+const WAVE = 0.5;        // how far the crest of the wave lifts one
+const WAVE_DEG = 34;     // degrees of longitude between crests
+const WAVE_SECS = 2.6;   // seconds for a crest to travel from one to the next
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const ease = (t) => 1 - (1 - clamp01(t)) ** 3;
@@ -737,12 +742,18 @@ function start(el, options, ctl) {
       // painted over in the same ink, a little larger than the map draws it
       // (its tiles lie on the sphere and foreshorten; these squares face us),
       // and the ground under the highlight is the colour of the bars.
-      const step = latticeStep(), lift = step * RELIEF * k, w0 = step * 0.74 * front.scale;
+      const step = latticeStep(), w0 = step * 0.74 * front.scale;
       const dot = step * (map.options.dotSize ?? 0.38) * 1.45 * front.scale;
       const walls = new Path2D(), tops = new Path2D(), ground = new Path2D();
+      // The crest travels east, the way the map's own surface drifts, and leans
+      // a little with latitude so it crosses the country on a diagonal. Cubing
+      // the swell keeps the troughs flat: a band rides through a still plate.
+      const phase = age / WAVE_SECS;
       for (let i = 0; i < d.length; i += 2) {
         const b = map.locate(d[i], d[i + 1]);
         if (!b?.front || b.depth < 0.05) continue;
+        const swell = 0.5 + 0.5 * Math.sin(2 * Math.PI * ((d[i + 1] + 0.35 * d[i]) / WAVE_DEG - phase));
+        const lift = step * (RELIEF + WAVE * swell * swell) * k;
         const t = map.locate(d[i], d[i + 1], 1 + lift);
         const wb = w0 * (b.scale / front.scale) / 2, wt = w0 * (t.scale / front.scale) / 2;
         const wg = dot * (b.scale / front.scale) / 2;
@@ -759,7 +770,7 @@ function start(el, options, ctl) {
       }
       ctx.fillStyle = C.ink;
       ctx.globalAlpha = k; ctx.fill(ground);
-      ctx.globalAlpha = 0.62 * k; ctx.fill(walls);
+      ctx.globalAlpha = 0.5 * k; ctx.fill(walls);
       ctx.globalAlpha = k; ctx.fill(tops);
     }
     ctx.globalAlpha = 1;
