@@ -51,7 +51,7 @@ export const STEPS = [
     regions: [ [ "BR", -10, -53 ], [ "AU", -25, 134 ], [ "IN", 22, 79 ], [ "US", 39, -98 ], [ "ZA", -29, 25 ], [ "JP", 36, 138 ],
       [ "MX", 23, -102 ], [ "AR", -35, -65 ], [ "EG", 27, 30 ], [ "FR", 46, 2 ], [ "ES", 40, -3 ], [ "DE", 51, 10 ],
       [ "NG", 9, 8 ], [ "KE", 0, 38 ], [ "IT", 42, 12 ], [ "GB", 54, -2 ], [ "ID", -2, 118 ], [ "CN", 35, 103 ] ] },
-  { id: "size", eyebrow: "22 KB", text: "One element, no dependencies, and this whole globe", hold: 6 }
+  { id: "size", eyebrow: "22 KB", text: "One element, no dependencies", hold: 6 }
 ];
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -69,6 +69,8 @@ const CSS = `
   padding:9px 12px;box-shadow:0 6px 22px -12px #0000004d;backdrop-filter:blur(7px)}
 .mappo-tour.on .mappo-tour-card{transform:translateY(-50%) scale(1);opacity:1}
 .mappo-tour.left .mappo-tour-card{left:auto;right:14px;transform-origin:right center}
+.mappo-tour.free .mappo-tour-card{left:0;right:auto;transform:translate(-50%,-50%) scale(0);transform-origin:center}
+.mappo-tour.free.on .mappo-tour-card{transform:translate(-50%,-50%) scale(1)}
 .mappo-tour-eyebrow{font-style:normal;font-size:10px;font-weight:640;letter-spacing:.06em;text-transform:uppercase;color:var(--faint,#9aa1ac)}
 .mappo-tour-eyebrow:empty,.mappo-tour-dot[hidden]{display:none}
 .mappo-tour-dot{width:8px;height:8px;border-radius:50%;background:var(--accent,#c2410c);
@@ -132,16 +134,28 @@ function start(el, options, ctl) {
   const score = (q) => q && q.front && allowed(q) ? q.depth + ((q.x < q.cx) === eastward ? 0.18 : 0) : -1;
   // Whether a card opening to one side of a page point would stay on the page
   // and off the boxes to keep clear.
-  const cardFits = (px, py, leftSide, w = CARD_W) => {
-    const x0 = leftSide ? px - 14 - w : px + 14, x1 = x0 + w, y0 = py - 18, y1 = py + 18;
+  const cardWidth = () => card.offsetWidth || CARD_W;
+  // The card must fit where the step starts and where the spin will have
+  // carried it by the end.
+  const fitsThrough = (px, py, side, w = cardWidth()) => cardFits(px, py, side, w) && cardFits(px + (eastward ? drift : -drift), py, side, w);
+  const cardFits = (px, py, side, w = cardWidth()) => {
+    const x0 = side === "center" ? px - w / 2 : side === true || side === "left" ? px - 14 - w : px + 14, x1 = x0 + w, y0 = py - 18, y1 = py + 18;
     if (x0 < 8 || x1 > innerWidth - 8) return false;
     return clear.every((r) => x1 < r.left || x0 > r.right || y1 < r.top || y0 > r.bottom);
   };
+  // Where a free card floats: a surface point that faces us, on the side
+  // turning toward the middle, with room for the whole card around it. Two
+  // latitudes, so the card sits over the upper part of the disc when it can.
   const frontPoint = () => {
     let best = null;
-    for (let lon = -180; lon < 180; lon += 6) {
-      const q = map.locate(14, lon);
-      if (score(q) > (best?.s ?? -1)) best = { s: score(q), lat: 14, lon };
+    for (const lat of [ 26, 8 ]) {
+      for (let lon = -180; lon < 180; lon += 6) {
+        const q = map.locate(lat, lon);
+        if (!q?.front || !box) { if (score(q) > (best?.s ?? -1)) best = { s: score(q), lat, lon }; continue; }
+        if (!fitsThrough(box.left + q.x, box.top + q.y, "center")) continue;
+        if (score(q) > (best?.s ?? -1)) best = { s: score(q), lat, lon };
+      }
+      if (best) break;
     }
     return best;
   };
@@ -218,15 +232,14 @@ function start(el, options, ctl) {
       // Room for the card beside the shape, after the shape has drifted through
       // the step: to the right of its east edge, else to the left of its west
       // edge; a region with room on neither side waits for another lap.
-      const dx = eastward ? drift : -drift;
-      const roomRight = !box || cardFits(box.left + east.x + dx, box.top + east.y, false);
-      const roomLeft = !box || cardFits(box.left + west.x + dx, box.top + west.y, true);
+      const roomRight = !box || fitsThrough(box.left + east.x, box.top + east.y, "right");
+      const roomLeft = !box || fitsThrough(box.left + west.x, box.top + west.y, "left");
       if (!roomRight && !roomLeft) return null;
       const side = roomRight ? "right" : "left", edge = roomRight ? east : west;
       return { kind: "region", region: best.r, anchor: { lat: edge.lat, lon: edge.lon, side } };
     }
     const f = frontPoint();
-    return f ? { kind: "label", anchor: { lat: f.lat, lon: f.lon } } : null;
+    return f ? { kind: "label", anchor: { lat: f.lat, lon: f.lon, side: "center" } } : null;
   };
 
   const advance = (now) => {
@@ -234,11 +247,11 @@ function start(el, options, ctl) {
     for (let n = 0; n < steps.length; n++) {
       state.i = (state.i + 1) % steps.length;
       const step = steps[state.i];
+      setCard(step);
       const subject = pick(step);
       if (options.debug) console.debug("[hero-tour]", step.id, subject ? subject.kind : "skipped", subject?.anchor ?? "");
       if (!subject) continue;              // nothing suitable in view: skip the step this lap
       state.step = step; state.subject = subject; state.anchor = subject.anchor; state.t0 = now;
-      setCard(step);
       if (subject.kind === "arc") {
         state.arc = arcs.add({ from: [ subject.from.lat, subject.from.lon ], to: [ subject.to.lat, subject.to.lon ],
           height: 0.16, range: [ 0, 0 ], tip: 3, width: 1.6 });
@@ -277,7 +290,7 @@ function start(el, options, ctl) {
     // way, and never off the page: a side that would overflow flips.
     if (q) {
       let left = state.anchor.side ? state.anchor.side === "left" : q.x > q.cx;
-      if (!state.anchor.side) {
+      if (!state.anchor.side && subject.kind !== "label") {
         const b = el.getBoundingClientRect(), px = b.left + q.x, py = b.top + q.y, w = card.offsetWidth || CARD_W;
         if (!cardFits(px, py, left, w) && cardFits(px, py, !left, w)) left = !left;
       }
@@ -287,10 +300,10 @@ function start(el, options, ctl) {
     const inK = ease(age / 0.4), outK = ease((total - age) / 0.35);
     ctx.lineJoin = ctx.lineCap = "round";
 
+    root.classList.toggle("free", subject.kind === "label");
     if (subject.kind === "label") {
-      if (!q?.front) return;
-      ctx.fillStyle = C.accent; ctx.strokeStyle = C.accent;
-      drawPin(ctx, q, Math.min(inK, outK), ((age * 0.45) % 1), C.accent);
+      // Nothing drawn: the card floats over the turning globe, pinned to no
+      // city and no marker, the way the Cloudflare captions float.
     } else if (subject.kind === "arc") {
       const head = ease(age / 1.8), tail = 1 - ease((total - age) / 1.4);
       state.arc.range = tail < head ? [ tail, head ] : [ 0, 0 ];
