@@ -510,8 +510,9 @@ highlight-color="#c2410c"</code></pre></div></div>
     <mappo-world id="flat-links" cols="120" figure-color="var(--coast)" marker-color="var(--accent)" marker-scale="1.1"
       places="London, New York, Los Angeles, Tokyo, Lagos, Sydney"></mappo-world>
   </div><div class="meta"><h3>Links, flat</h3>
-    <p>The arcs the globe draws, on the flat map: great circles cut at the seam — Los Angeles to Tokyo leaves one edge and
-    comes back on the other — arched up the page by their <code>height</code>, and a spike with a tip. <code>mappo/links</code>, 3 KB.</p>
+    <p>The arcs the globe draws, on the flat map, where an arc is a bow rather than an unrolled great circle: the short way
+    between two places, pushed off that line by its <code>height</code>, and cut at the seam, so Los Angeles to Tokyo leaves one
+    edge and comes back on the other. Plus a spike with a tip. <code>mappo/links</code>, 3.1 KB.</p>
     <pre><code>import { links } from "mappo/links";
 const layer = links(el.map, { color: "var(--accent)", width: 1.5 });
 layer.add({ from: "London", to: "New York" });
