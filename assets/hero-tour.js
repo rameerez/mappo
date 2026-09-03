@@ -105,7 +105,7 @@ export const STEPS = [
   // speed, with arcs drawn between the cities from Asia onward and left to
   // slide behind the edge.
   { kind: "voyage", text: "Labels and arcs hide behind the horizon, and come back as the globe turns", speed: 2.6, fast: 18, quicken: 8, arcsAfter: 11, frontLon: -90, cities: WORLD, count: 8 },
-  { kind: "label", style: "center", eyebrow: "22 KB", text: "And all of it is one element, with no dependencies", hold: 6, speed: 1.4 }
+  { kind: "label", style: "center", text: "Everything you see is one single HTML element, 22\u00a0KB, zero dependencies", hold: 6, speed: 1.4 }
 ];
 const TURN_SPEED = 40;   // degrees a second at full tilt, when turning to a step
 // A highlighted region is one tile per dot of the map, and a wave runs through
@@ -159,7 +159,7 @@ const CSS = `
 .mappo-tour-reset[hidden]{display:none}
 .mappo-tour-eyebrow{font-style:normal;white-space:nowrap;font-size:10px;font-weight:640;letter-spacing:.06em;text-transform:uppercase;color:var(--faint,#9aa1ac)}
 .mappo-tour-eyebrow:empty,.mappo-tour-dot[hidden]{display:none}
-.mappo-tour-dot{width:8px;height:8px;border-radius:50%;background:var(--accent,#c2410c);
+.mappo-tour-dot{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--accent,#c2410c);
   box-shadow:0 0 0 4px color-mix(in oklab,var(--accent,#c2410c) 20%,transparent)}
 .mappo-tour-label .in{position:absolute;left:12px;top:0;gap:7px;padding:6px 9px;font-size:11.5px;border-radius:8px;
   transform:translateY(-50%) scale(.6);transform-origin:left center;opacity:0;transition:transform .25s cubic-bezier(.2,.8,.2,1),opacity .2s}
