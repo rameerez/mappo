@@ -126,20 +126,11 @@ const CSS = `
 .mappo-tour.above.on .mappo-tour-card{transform:translate(-50%,calc(-100% - 14px)) scale(1)}
 .mappo-tour.below .mappo-tour-card{left:0;right:auto;transform:translate(-50%,14px) scale(0);transform-origin:center top}
 .mappo-tour.below.on .mappo-tour-card{transform:translate(-50%,14px) scale(1)}
-/* The title, the way the Cloudflare captions are drawn: a translucent box under
-   a blur, a dashed hairline in the accent, corner ticks, and the words in the
-   accent too. */
-.mappo-tour.title .mappo-tour-card{gap:0;padding:13px 18px;border-radius:0;box-shadow:none;
-  border:1px dashed var(--accent,#c2410c);background:color-mix(in oklab,var(--bg,#fff) 80%,transparent);
-  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
-  font-size:17px;font-weight:600;letter-spacing:-.012em;color:var(--accent,#c2410c)}
-.mappo-tour-corners{display:none}
-.mappo-tour.title .mappo-tour-corners{display:contents}
-.mappo-tour-corners b{position:absolute;width:16px;height:16px;pointer-events:none;border:0 solid var(--accent,#c2410c)}
-.mappo-tour-corners b:nth-child(1){left:-1.5px;top:-1.5px;border-top-width:2px;border-left-width:2px}
-.mappo-tour-corners b:nth-child(2){right:-1.5px;top:-1.5px;border-top-width:2px;border-right-width:2px}
-.mappo-tour-corners b:nth-child(3){left:-1.5px;bottom:-1.5px;border-bottom-width:2px;border-left-width:2px}
-.mappo-tour-corners b:nth-child(4){right:-1.5px;bottom:-1.5px;border-bottom-width:2px;border-right-width:2px}
+/* The title: the same card as every other one on the page, the rounded
+   translucent panel with its hairline and its accent dot, at title size. */
+.mappo-tour.title .mappo-tour-card{gap:11px;padding:13px 18px 13px 15px;border-radius:13px;
+  font-size:17px;font-weight:650;letter-spacing:-.016em}
+.mappo-tour.title .mappo-tour-dot{width:10px;height:10px;box-shadow:0 0 0 5px color-mix(in oklab,var(--accent,#c2410c) 18%,transparent)}
 .mappo-tour-reset{position:absolute;left:0;top:0;transform:translate(-50%,-50%);pointer-events:auto;z-index:6;cursor:pointer;
   font:600 12px/1 var(--sans,-apple-system,system-ui,sans-serif);color:var(--muted,#6b7280);
   background:color-mix(in oklab,var(--bg,#fff) 84%,transparent);border:1px solid var(--line,#e8e2d8);border-radius:999px;padding:8px 13px;
@@ -187,7 +178,7 @@ function start(el, options, ctl) {
   const root = document.createElement("div");
   root.className = "mappo-tour";
   root.setAttribute("aria-hidden", "true");
-  root.innerHTML = `<div class="mappo-tour-card"><span class="mappo-tour-dot"></span><i class="mappo-tour-eyebrow"></i><span class="mappo-tour-text"></span><span class="mappo-tour-corners"><b></b><b></b><b></b><b></b></span></div>`;
+  root.innerHTML = `<div class="mappo-tour-card"><span class="mappo-tour-dot"></span><i class="mappo-tour-eyebrow"></i><span class="mappo-tour-text"></span></div>`;
   el.appendChild(root);
   // A way back after a visitor has turned the globe somewhere else: shown once
   // they have, at the bottom of the disc, it restarts the story from the top.
@@ -327,7 +318,7 @@ function start(el, options, ctl) {
   const setCard = (step) => {
     eyebrow.textContent = step.eyebrow ?? "";
     text.textContent = step.text;
-    dot.hidden = !!step.eyebrow || step.style === "title";
+    dot.hidden = !!step.eyebrow;
     root.classList.toggle("title", step.style === "title");
   };
 
