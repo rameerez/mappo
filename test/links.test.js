@@ -224,6 +224,87 @@ test("links on the flat map: the curve goes through the projection and is cut at
   el.map.destroy();
 });
 
+test("links on a leaning flat map: drawn through the map's own tilt and perspective, the bow standing out of the plane", async () => {
+  // `tilt` is CSS on the map — rotateX about the box's centre under a 1000 px
+  // perspective from the same centre — and the layer canvas sits outside it,
+  // so the layer must do that transform itself or its arcs miss the pins.
+  // What CSS does to a point (px, py) of the box, lifted by z toward the viewer:
+  const css = (px, py, z, tiltDeg, P = 1000) => {
+    const t = tiltDeg * Math.PI / 180, yy = py * Math.cos(t) - z * Math.sin(t), zz = py * Math.sin(t) + z * Math.cos(t);
+    const k = P / (P - zz);
+    return [ 150 + px * k, 150 + yy * k ];
+  };
+  const el = await mount(`<mappo-world cols="80" tilt="40"></mappo-world>`);
+  const { links } = linksModule;
+  const layer = links(el.map, { width: 1 });
+  const xs = (h) => { const out = []; for (let k = 0; k < h.length; k += 4) out.push(h[k], h[k + 2]); return out; };
+  const ys = (h) => { const out = []; for (let k = 0; k < h.length; k += 4) out.push(h[k + 1], h[k + 3]); return out; };
+  // The 40th parallel's place in the untilted box, from the map's own band.
+  const [ latMin, latMax ] = el.map.options.latRange;
+  const py40 = 300 * (latMax - 40) / (latMax - latMin) - 150;
+
+  // Along the 40th parallel, 120 degrees of a 360 degree, 300 px box: the ends
+  // land exactly where CSS puts the pins, not where the untilted box has them.
+  const flat = layer.add({ from: [ 40, -60 ], to: [ 40, 60 ], height: 0 });
+  const bowed = layer.add({ from: [ 40, -60 ], to: [ 40, 60 ], height: 0.5 });
+  layer.redraw();
+  const fx = xs(flat._hits), fy = ys(flat._hits);
+  const [ ex, ey ] = css(100 - 150, py40, 0, 40);
+  assert.ok(near(fx[0], ex, 0.05) && near(fy[0], ey, 0.05), `the west end sits on its tilted pin (${fx[0].toFixed(2)}, ${fy[0].toFixed(2)}) vs CSS (${ex.toFixed(2)}, ${ey.toFixed(2)})`);
+  assert.ok(near(fx.at(-1), 300 - ex, 0.05) && near(fy.at(-1), ey, 0.05), "and the east end, mirrored");
+  assert.ok(Math.max(...fy) - Math.min(...fy) < 1e-6, "no height: the parallel stays a straight line on the leaning plane");
+
+  // With height the apex stands out of the plane by the sag the globe would
+  // show above the chord — height plus the sphere's bulge, 1 − cos(θ/2), in
+  // proportion to the chord's 100 px — straight up out of it: higher on the
+  // page, not moved across it.
+  const bx = xs(bowed._hits), by = ys(bowed._hits);
+  const s40 = Math.sin(40 * Math.PI / 180), c40 = Math.cos(40 * Math.PI / 180);
+  const theta = Math.acos(s40 * s40 + c40 * c40 * Math.cos(120 * Math.PI / 180));
+  const sag = (0.5 + 1 - Math.cos(theta / 2)) / (2 * Math.sin(theta / 2)) * 100;
+  const [ , apexY ] = css(0, py40, sag, 40);
+  assert.ok(near(Math.min(...by), apexY, 0.5), `the apex rises out of the plane (${Math.min(...by).toFixed(2)} vs ${apexY.toFixed(2)})`);
+  assert.ok(near(bx[by.indexOf(Math.min(...by))], 150, 0.5), "and stays over the middle of the chord");
+  assert.ok(near(bx[0], fx[0], 1e-6) && near(by[0], fy[0], 1e-6), "both ends stay on their pins");
+
+  // A spike stands up out of the plane too: same x, higher on the page. Its
+  // foot is locate()'s answer (in jsdom that is the svg's 2:1 box, not the
+  // square canvas, so the expectation starts from the map's own answer).
+  const spike = layer.add({ at: [ 40, 0 ], height: 0.2 });
+  layer.redraw();
+  const [ x0, y0, x1, y1 ] = spike._hits;
+  const foot = el.map.locate(40, 0);
+  const [ , footY ] = css(foot.x - 150, foot.y - 150, 0, 40), [ , topY ] = css(foot.x - 150, foot.y - 150, 0.2 * 300 / (2 * Math.PI), 40);
+  assert.ok(near(x0, 150, 1e-6) && near(x1, 150, 1e-6) && near(y0, footY, 0.05) && y1 < y0 && near(y1, topY, 0.05),
+    `the spike stands from its tilted foot to where CSS would lift its top (${y0.toFixed(2)} → ${y1.toFixed(2)} vs ${footY.toFixed(2)} → ${topY.toFixed(2)})`);
+  layer.destroy();
+  el.map.destroy();
+});
+
+test("links on the flat map: a named place ends on its marker's dot; [lat, lon] stays exact", async () => {
+  // The flat map snaps a marker to the nearest figure cell so it replaces a
+  // dot; an arc to "Lisbon" must end on that dot, not two pixels from it.
+  const el = await mount(`<mappo-world cols="80" places="Lisbon, Lagos"></mappo-world>`);
+  const { links } = linksModule;
+  const { snapToFigure, cellCenter, resolvePlace } = api;
+  const map = el.map, lisbon = resolvePlace("Lisbon", map.body);
+  const cell = snapToFigure(lisbon.lat, lisbon.lon, map.grid, map.body), dot = cellCenter(cell.col, cell.row, map.grid);
+  assert.ok(Math.abs(dot.lon - lisbon.lon) > 1e-6 || Math.abs(dot.lat - lisbon.lat) > 1e-6, "the marker's dot is not the exact coordinate (or this test proves nothing)");
+  const layer = links(map, { width: 1 });
+  const named = layer.add({ from: "Lisbon", to: "Lagos", height: 0 });
+  const exact = layer.add({ from: [ lisbon.lat, lisbon.lon ], to: "Lagos", height: 0 });
+  layer.redraw();
+  // In the 300 px square jsdom gives every box, the layer's frame is the
+  // projection's unit square scaled to it.
+  const at = (p) => { const q = map.grid.projection.forward(p.lat, p.lon); return [ q.x * 300, q.y * 300 ]; };
+  const onDot = at(dot), onPlace = at(lisbon);
+  assert.ok(near(named._hits[0], onDot[0], 1e-6) && near(named._hits[1], onDot[1], 1e-6), `a named end starts on the marker's dot (${named._hits[0].toFixed(2)}, ${named._hits[1].toFixed(2)}) vs (${onDot[0].toFixed(2)}, ${onDot[1].toFixed(2)})`);
+  assert.ok(near(exact._hits[0], onPlace[0], 1e-6) && near(exact._hits[1], onPlace[1], 1e-6), "a [lat, lon] end stays where it was asked");
+  assert.ok(Math.hypot(named._hits[0] - exact._hits[0], named._hits[1] - exact._hits[1]) > 0.5, "and the two differ, by the snap");
+  layer.destroy();
+  map.destroy();
+});
+
 test("links on the flat map: height bows the curve off the chord, at right angles to it on the page", async () => {
   const el = await mount(`<mappo-world cols="80"></mappo-world>`);
   const { links } = linksModule;

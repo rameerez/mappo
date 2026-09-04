@@ -269,23 +269,24 @@ label.classList.toggle("is-night", solarElevation(lat, lon, dec, sunLon) &lt; 0)
   </div>
 </div>
 
-<!-- ─────────────────────── GITHUB GLOBE ─────────────────────── -->
-<h2>GitHub Globe <span>— github.com/globe, rebuilt from its own source on <code>mappo/links</code></span></h2>
+<!-- ─────────────────────── LIVE GLOBE ─────────────────────── -->
+<h2>Live Globe <span>— a product's world, as it happens, on <code>mappo/links</code></span></h2>
 <div class="card">
   <div class="meta">
-    <h3><a href="./github-globe.html">GitHub Globe →</a></h3>
-    <p>The globe from github.com's home page: ~12,000 dots on a lit indigo sphere under a blue rim, a pink arc
-    for every merged pull request drawing in, holding and erasing, a blue spike for every open one rising and
-    sinking as the data window passes, the hover card, the pause toggle and an opening view turned by your
-    timezone. The scene constants, the rotation model and the timeline are the original's, read off the bundle
-    it ships; the lights are three CSS gradients; the lines are <code>mappo/links</code> on a second, empty
-    globe over them, so they stay unlit as in WebGL.</p>
+    <h3><a href="./live-globe.html">Live Globe →</a></h3>
+    <p>The globe a product with users everywhere puts on its front page: ~12,000 dots on a lit indigo sphere
+    under a blue rim, a blue spike wherever someone is sending right now, rising and sinking as the moment
+    passes, a pink arc for every message on its way, drawing in, holding, erasing and landing with a ring, the
+    hover card, the pause toggle and an opening view turned toward your part of the world. The feed is
+    synthetic: two hundred and sixty messages between a hundred and sixty cities, weighted the way people are, so
+    Asia and Africa carry most of it. The lights are three CSS gradients; the lines are <code>mappo/links</code> on a
+    second, empty globe over them, so they stay unlit.</p>
     <span class="tag">mappo/links</span><span class="tag">map.addLayer()</span><span class="tag">distribution="uniform"</span><span class="tag">distance="8.8"</span><span class="tag">locate().scale</span><span class="tag">two globes, one orientation</span>
     <pre><code>import { links } from "mappo/links";
 const arcs = links(sky.map, { color: "#f46bbe", width: 1.75, blend: "lighter" });
-const arc = arcs.add({ points: bezier, range: [ 0, 0 ], data: pullRequest });
+const arc = arcs.add({ points: bezier, range: [ 0, 0 ], data: message });
 arc.range = [ 0, drawn / total ];        // the original's 600 index units a second
-const hit = arcs.at(pointerEvent);       // the pull request under the pointer</code></pre>
+const hit = arcs.at(pointerEvent);       // the message under the pointer</code></pre>
   </div>
 </div>
 
@@ -512,7 +513,7 @@ highlight-color="#c2410c"</code></pre></div></div>
   </div><div class="meta"><h3>Links, flat</h3>
     <p>The arcs the globe draws, on the flat map, where an arc is a bow rather than an unrolled great circle: the short way
     between two places, pushed off that line by its <code>height</code>, and cut at the seam, so Los Angeles to Tokyo leaves one
-    edge and comes back on the other. Plus a spike with a tip. <code>mappo/links</code>, 3.1 KB.</p>
+    edge and comes back on the other. Plus a spike with a tip. <code>mappo/links</code>, 3.6 KB.</p>
     <pre><code>import { links } from "mappo/links";
 const layer = links(el.map, { color: "var(--accent)", width: 1.5 });
 layer.add({ from: "London", to: "New York" });
@@ -564,7 +565,7 @@ Full-screen versions: <a href="./orbit.html">orbit</a> · <a href="./land.html">
   bindThemeToggle(document.getElementById("theme"));
 </script>
 <script type="module">
-  // Links, flat: the same module the GitHub globe uses, on the flat card above.
+  // Links, flat: the same module the Live Globe uses, on the flat card above.
   import { links } from "../dist/all.js";
   const el = document.getElementById("flat-links");
   const ready = el.map ? Promise.resolve() : customElements.whenDefined("mappo-world").then(() => new Promise(queueMicrotask));

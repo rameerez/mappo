@@ -19,7 +19,13 @@
 // with the fog). On the flat map the same points go through the projection and
 // are cut at its seam, and `height` arches the curve up the page — toward the
 // north pole, by the same angle it would rise off the globe — so a hero map's
-// arcs bow the way they always have; a spike stands up the page.
+// arcs bow the way they always have; a spike stands up the page. A flat map
+// with `tilt` is a plane leaning in CSS, and this canvas is not inside that
+// transform: the layer does the lean, the turn and the perspective itself, and
+// there an arc stands up out of the plane by the sag it would show off the
+// globe — its `height` plus the bulge of the sphere under it, in proportion to
+// its chord — so it rises off a hero map the way it rises off the globe, and
+// lands on its pins.
 //
 // A link is a plain object you keep and mutate. A change to `from`, `to`, `at`,
 // `height`, `segments` or `points` rebuilds its curve on the next draw; the rest
@@ -30,8 +36,18 @@
 // Built on Mappo#addLayer and locate(): nothing here reaches into a renderer.
 
 import { resolvePlace } from "./body.js";
+import { snapToFigure } from "./renderer.js";
+import { cellCenter } from "./projection.js";
 import { resolveColor } from "./color.js";
 import { projectPolyline } from "./projections.js";
+
+const RAD = Math.PI / 180;
+
+// The great-circle angle between two places, in radians.
+function angleBetween(lat0, lon0, lat1, lon1) {
+  const a = lat0 * RAD, b = lat1 * RAD, d = (lon1 - lon0) * RAD;
+  return Math.acos(clamp(Math.sin(a) * Math.sin(b) + Math.cos(a) * Math.cos(b) * Math.cos(d), -1, 1));
+}
 
 const DEG = 180 / Math.PI;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -167,12 +183,23 @@ export class Links {
   }
 
   // A name from the body's gazetteer, [lat, lon] or { lat, lon } → { lat, lon }.
+  // A named place ends on the map's marker for it. The flat map snaps a
+  // marker to the centre of the nearest figure cell, so it replaces a dot
+  // rather than floating between two; the snap here is the same call, so an
+  // arc lands on its pin to the pixel. The globe draws markers on the place
+  // itself and has no grid to snap to. Coordinates given as [lat, lon] are a
+  // point of your own and stay exact.
   #place(v) {
     if (Array.isArray(v)) return Number.isFinite(v[0]) && Number.isFinite(v[1]) ? { lat: v[0], lon: v[1] } : null;
     const p = resolvePlace(v, this.map.body);
     if (!p && typeof v === "string" && !this.map.body?.pending && !(this._warned ??= new Set()).has(v)) {
       this._warned.add(v);
       console.warn(`[mappo/links] unknown place "${v}" on ${this.map.body?.name ?? "this body"}`);
+    }
+    const g = this.map.grid;
+    if (p && typeof v === "string" && g && this.map.body) {
+      const cell = snapToFigure(p.lat, p.lon, g, this.map.body), q = cell && cellCenter(cell.col, cell.row, g);
+      if (q) return { ...p, lat: q.lat, lon: q.lon };
     }
     return p;
   }
@@ -182,7 +209,9 @@ export class Links {
   // across the antimeridian; a chord can).
   #geometry(link) {
     const spike = link.at != null && link.to == null;
-    const key = JSON.stringify([ link.points ?? null, link.from ?? link.at ?? null, link.to ?? null, link.height ?? null, link.segments ?? null ]);
+    // The grid is in the key: a named end sits on a dot, and the dots move with cols and the band.
+    const g = this.map.grid;
+    const key = JSON.stringify([ link.points ?? null, link.from ?? link.at ?? null, link.to ?? null, link.height ?? null, link.segments ?? null, g ? [ g.cols, g.rows, g.latRange ] : null ]);
     if (link._key === key) return link._geom;
     let pts = null, lift = 0;
     if (Array.isArray(link.points) && link.points.length > 1) {
@@ -310,14 +339,35 @@ export class Links {
     const map = this.map, hits = link._hits = [];
     ctx.lineWidth = style.width;
     ctx.globalAlpha = style.opacity;
+    // The map's plane transform, done again here. `tilt`, `rotate` and
+    // `perspective` are CSS on the map's box (transform: rotateX(tilt)
+    // rotateZ(rotate) about its centre, under perspective from the same
+    // centre) and the layer canvas sits outside it, so a point is turned,
+    // leaned and put through the perspective the way CSS does it, with `z`
+    // its lift out of the plane, toward the viewer.
+    const o = map.options, W = view.width, H = view.height, hx = W / 2, hy = H / 2;
+    const tilt = (Number(o.tilt) || 0) * RAD, turn = (Number(o.rotate) || 0) * RAD;
+    const P = Number(o.perspective) > 0 ? Number(o.perspective) : Infinity;
+    const leaned = tilt !== 0 || turn !== 0;
+    const ct = Math.cos(tilt), st = Math.sin(tilt), cr = Math.cos(turn), sr = Math.sin(turn);
+    const screen = (x, y, z = 0) => {
+      if (!leaned) return [ x, y ];
+      const px = x - hx, py = y - hy;
+      const rx = px * cr - py * sr, ry = px * sr + py * cr;
+      const yy = ry * ct - z * st, zz = ry * st + z * ct;
+      const k = P === Infinity ? 1 : P / Math.max(1, P - zz);
+      return [ hx + rx * k, hy + yy * k ];
+    };
     let end = null;
     if (geom.spike) {
       const p = map.locate(geom.pts[0][0], geom.pts[0][1]);
       if (!p) return;
       const len = ((geom.pts[1][2] - 1) * view.width) / (2 * Math.PI);
-      const y0 = p.y - a * len, y1 = p.y - b * len;
-      if (style.width > 0) { ctx.beginPath(); ctx.moveTo(p.x, y0); ctx.lineTo(p.x, y1); ctx.stroke(); hits.push(p.x, y0, p.x, y1); }
-      end = [ p.x, y1 ];
+      // Up the page; on a leaning map, up out of the plane.
+      const at = (t) => (tilt ? screen(p.x, p.y, t * len) : screen(p.x, p.y - t * len));
+      const [ x0, y0 ] = at(a), [ x1, y1 ] = at(b);
+      if (style.width > 0) { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); hits.push(x0, y0, x1, y1); }
+      end = [ x1, y1 ];
     } else {
       const n = geom.pts.length - 1, line = [];
       const [ lat0, lon0 ] = geom.pts[0], [ lat1, lon1 ] = geom.pts[n];
@@ -327,9 +377,17 @@ export class Links {
       const [ latMin, latMax ] = map.options.latRange;
       const kx = view.width / 360, ky = view.height / (latMax - latMin);   // pixels a degree
       const cx = dLon * kx, cy = -dLat * ky, len = Math.hypot(cx, cy) || 1;
-      // At right angles to the chord, on the side that bows up the page.
-      const s = cx < 0 ? -1 : 1, peak = (geom.lift || 0) * len / 2;
+      // At right angles to the chord, on the side that bows up the page; on a
+      // leaning map the bow stands out of the plane instead. Seen from the
+      // side, an arc off the globe stands above its chord by its height plus
+      // the sphere's own bulge, 1 − cos(θ/2) for θ of great circle between the
+      // ends; the flat map has no sphere to bulge, so the arc takes that whole
+      // sag, in the same proportion to its chord the globe would show.
+      const s = cx < 0 ? -1 : 1, peak = tilt ? 0 : (geom.lift || 0) * len / 2;
       const oLon = s * cy / len * peak / kx, oLat = s * cx / len * peak / ky;
+      const theta = tilt && geom.lift > 0 ? angleBetween(lat0, lon0, lat1, lon1) : 0;
+      const rise = theta > 1e-9 ? (geom.lift + 1 - Math.cos(theta / 2)) / (2 * Math.sin(theta / 2)) * len : 0;
+      const byLon = Math.abs(dLon) >= Math.abs(dLat);
       for (let u = a * n; ; u = Math.min(b * n, Math.floor(u) + 1)) {
         const t = u / n, w = Math.sin(Math.PI * t);
         line.push([ clamp(lat0 + dLat * t + oLat * w, -89.9, 89.9), lon0 + dLon * t + oLon * w ]);
@@ -339,7 +397,16 @@ export class Links {
         let px, py;
         if (style.width > 0) ctx.beginPath();
         piece.forEach(([ x, y ], i) => {
-          const sx = x * view.width, sy = y * view.height;
+          let z = 0;
+          if (rise) {
+            // Where along the chord this vertex is, read back from the map,
+            // so the seam's inserted vertices are lifted with the rest.
+            const g = map.projection.inverse(x, y);
+            let t = g ? (byLon ? (((g.lon - lon0) % 360 + 540) % 360 - 180) / dLon : (g.lat - lat0) / dLat) : 0;
+            if (!Number.isFinite(t)) t = 0;
+            z = rise * Math.sin(Math.PI * Math.max(0, Math.min(1, t)));
+          }
+          const [ sx, sy ] = screen(x * W, y * H, z);
           if (style.width > 0) { if (i) { ctx.lineTo(sx, sy); hits.push(px, py, sx, sy); } else ctx.moveTo(sx, sy); }
           px = sx; py = sy;
           end = [ sx, sy ];

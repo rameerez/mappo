@@ -155,6 +155,45 @@ test("a body pack arriving after upgrade: nothing is drawn, then the body is", (
   unmount(element);
 });
 
+test("a highlight lights the dots of a dot map, and the region it was given", () => {
+  // The globe recoloured its dots and the flat map only painted figure cells,
+  // so a dot map — the default — showed no highlight at all.
+  const box = [ [ [ 40, -20 ], [ 40, 20 ], [ 80, 20 ], [ 80, -20 ], [ 40, -20 ] ] ];
+  const element = mount("mappo-world", {
+    cols: 36, "lat-min": -90, "lat-max": 90,
+    "highlight-polygon": JSON.stringify(box), "highlight-color": "#ff0000"
+  });
+  const lit = [ ...element.querySelectorAll(".mappo-dot-highlight") ];
+  assert.ok(lit.length > 0, "the dots inside the rings are lit");
+  assert.ok(lit.length < element.querySelectorAll(".mappo-dot").length, "and only those");
+  assert.match(element.querySelector("style").textContent, /\.mappo-dot-highlight \{ fill: #ff0000/,
+    "the lit dots take the highlight colour");
+
+  // Every lit dot's own cell centre is inside the rings.
+  const grid = { cols: 36, rows: 18, latRange: [ -90, 90 ] };
+  for (const use of lit) {
+    const cell = use.parentElement;
+    const c = api.cellCenter(Number(cell.dataset.col), Number(cell.dataset.row), grid);
+    assert.ok(c.lat >= 40 && c.lat <= 80 && c.lon >= -20 && c.lon <= 20,
+      `a lit dot at ${c.lat.toFixed(1)}, ${c.lon.toFixed(1)} is inside the region`);
+  }
+
+  // The same size, a different region: the dot markup is cached by size, so
+  // this is the case that would have served one map another's highlight.
+  const other = mount("mappo-world", {
+    cols: 36, "lat-min": -90, "lat-max": 90,
+    "highlight-polygon": JSON.stringify([ [ [ -40, -70 ], [ -40, -30 ], [ -10, -30 ], [ -10, -70 ], [ -40, -70 ] ] ]),
+    "highlight-color": "#ff0000"
+  });
+  const elsewhere = [ ...other.querySelectorAll(".mappo-dot-highlight") ]
+    .map((u) => u.parentElement.dataset.col + "," + u.parentElement.dataset.row);
+  const here = lit.map((u) => u.parentElement.dataset.col + "," + u.parentElement.dataset.row);
+  assert.ok(elsewhere.length > 0, "the other region is lit too");
+  assert.ok(!elsewhere.some((k) => here.includes(k)), "and it is a different set of dots");
+  unmount(other);
+  unmount(element);
+});
+
 test("one invalid live range cannot poison late registration and can recover", () => {
   const id = "late-narrow-body";
   const element = mount("mappo-world", { body: id, cols: 24, "lat-min": 70 });
@@ -883,5 +922,44 @@ test("overlays: a parked globe settles its overlay-still speed by itself, withou
     Object.assign(globalThis, { matchMedia: saved.matchMedia, requestAnimationFrame: saved.raf, cancelAnimationFrame: saved.caf });
     if (saved.raf === undefined) delete globalThis.requestAnimationFrame;
     if (saved.caf === undefined) delete globalThis.cancelAnimationFrame;
+  }
+});
+
+test("layer-bleed: the layer canvas reaches past the box, layers keep the box's coordinates", () => {
+  // jsdom lays nothing out: give every canvas a 300 px box for this test, as
+  // the layer seam's own tests do, and take it back after.
+  const proto = dom.window.HTMLCanvasElement.prototype;
+  for (const prop of [ "clientWidth", "clientHeight" ]) Object.defineProperty(proto, prop, { configurable: true, get: () => 300 });
+  try {
+    const el = mount("mappo-world", { mode: "globe", "rotate-speed": 0, "layer-bleed": 0.15 });
+    const views = [];
+    el.map.addLayer((ctx, view) => views.push(view));
+    const canvas = el.querySelector(".mappo-layer");
+    assert.ok(canvas, "a layer canvas was mounted");
+    const style = canvas.style;
+    assert.equal(style.left, "-15%");
+    assert.equal(style.top, "-15%");
+    assert.equal(style.width, "130%");
+    assert.equal(style.height, "130%");
+    assert.equal(style.pointerEvents, "none", "the bleed never takes the pointer");
+    assert.ok(views.length >= 1, "drawn on adding");
+    // The 300 px the stub reports is the whole canvas, bleed included: the box
+    // the layer draws in is what is left once the bleed is taken off.
+    assert.ok(Math.abs(views.at(-1).width - 300 / 1.3) < 1e-9, `view.width is the box, ${views.at(-1).width}`);
+    assert.ok(Math.abs(views.at(-1).height - 300 / 1.3) < 1e-9);
+    // Live change: back to the edge, and the box is the canvas again.
+    el.map.update({ layerBleed: 0 });
+    assert.equal(style.left, "0%");
+    assert.equal(style.width, "100%");
+    assert.equal(views.at(-1).width, 300);
+    // Nonsense is no bleed.
+    el.map.update({ layerBleed: -2 });
+    assert.equal(style.width, "100%");
+    el.setAttribute("layer-bleed", "banana");
+    assert.equal(style.width, "100%");
+    assert.equal(api.DEFAULTS.layerBleed, 0, "off by default");
+    unmount(el);
+  } finally {
+    for (const prop of [ "clientWidth", "clientHeight" ]) delete proto[prop];
   }
 });

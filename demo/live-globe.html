@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Globe · mappo</title>
+<meta name="description" content="A live-activity globe on mappo: twelve thousand dots on a lit indigo sphere, a blue spike wherever someone is sending right now, a pink arc for every message on its way, the hover card, the pause toggle and an opening view turned toward your part of the world.">
+<link rel="icon" href="../favicon/favicon-32x32.png">
+<style>
+  /* ── the page ─────────────────────────────────────────────────────────────── */
+  :root{
+    --bg:#0d1117; --globe-bg:#040d21;
+    --fg:#e6edf3; --fg-muted:#8b949e;
+    --line:#30363d; --accent:#58a6ff;
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";
+    --font-mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--fg);font:16px/1.5 var(--font-sans);
+    -webkit-font-smoothing:antialiased;min-height:100dvh;overflow-x:clip}
+  a{color:var(--accent)}
+  button{font:inherit}
+
+  .top{max-width:1280px;margin:0 auto;padding:22px 24px 0;display:flex;justify-content:space-between;gap:16px;align-items:baseline;
+    color:var(--fg-muted);font-size:14px}
+  .top a{white-space:nowrap}
+  .top strong{color:var(--fg);font-weight:600}
+  .top a{color:var(--fg-muted)}
+
+  /* ── the globe section ─────────────────────────────────────────────────────── */
+  .globe-root{position:relative;background:linear-gradient(var(--bg),var(--globe-bg) 18%,var(--globe-bg));
+    padding-top:48px;padding-bottom:32px;overflow:hidden}
+  /* The bottom of the globe fades into the page. */
+  .globe-scene{position:relative;z-index:2;user-select:none;-webkit-user-select:none;
+    margin-bottom:-120px;-webkit-mask-image:linear-gradient(#000 60%,transparent 75%);mask-image:linear-gradient(#000 60%,transparent 75%)}
+  .globe-scene:after{pointer-events:none;content:"";opacity:.3;display:block;position:absolute;inset:0;
+    background:linear-gradient(#040d2100 0%,var(--globe-bg) 60%)}
+  @media (min-width:544px){ .globe-scene{margin-bottom:-180px} }
+  @media (min-width:768px){ .globe-scene:after{background:linear-gradient(#040d2100 0%,var(--globe-bg) 40%)} }
+  /* A 900 × 900 stage; smaller screens scale the whole scene with it. */
+  .globe-box{position:relative;width:min(900px,100vw);aspect-ratio:1;margin:0 auto}
+  .globe-stage{position:relative;width:100%;height:100%;touch-action:pan-y;cursor:grab}
+  .globe-stage.dragging{cursor:grabbing}
+  .scene{position:absolute;inset:0;opacity:0;transform:scale(.8);transform-origin:50% 50%}
+  .scene.in{opacity:1;transform:none}
+
+  /* The lights, as CSS: a blue key light from the upper left, a violet fill
+     from the upper right, and a shadow that blacks out the lower right. The
+     sphere below carries the water's share of that; .shine and .shade carry
+     the dots' share, over the dot canvas and under the arcs, so the lines
+     stay unlit. */
+  .aurora{position:absolute;left:8%;right:8%;top:-8%;height:60%;pointer-events:none;
+    background:radial-gradient(ellipse 60% 55% at 50% 35%,rgba(120,60,170,.6),rgba(70,40,120,.28) 45%,transparent 75%);
+    filter:blur(28px);opacity:.28;transition:opacity 1.6s ease-in-out}
+  .scene.lit .aurora{opacity:1}
+  .halo,.rim{position:absolute;left:16.5%;top:16.5%;width:67%;height:67%;border-radius:50%;pointer-events:none}
+  .halo{background:radial-gradient(circle closest-side,transparent 89%,rgba(96,118,255,.95) 90.8%,rgba(70,88,220,.5) 93.5%,rgba(50,64,180,.16) 97%,transparent 100%);
+    -webkit-mask-image:linear-gradient(135deg,#000 30%,rgba(0,0,0,.6) 65%,rgba(0,0,0,.2) 100%);mask-image:linear-gradient(135deg,#000 30%,rgba(0,0,0,.6) 65%,rgba(0,0,0,.2) 100%)}
+  /* The lit side's rim: the same ring, brighter, masked to the upper left. */
+  .rim{background:radial-gradient(circle closest-side,transparent 89%,rgba(160,184,255,.95) 90.6%,rgba(120,150,255,.4) 93%,transparent 96.5%);
+    -webkit-mask-image:linear-gradient(135deg,#000 15%,rgba(0,0,0,.45) 45%,transparent 70%);mask-image:linear-gradient(135deg,#000 15%,rgba(0,0,0,.45) 45%,transparent 70%)}
+  .sphere{position:absolute;left:19.55%;top:19.55%;width:60.9%;height:60.9%;border-radius:50%;
+    background:
+      radial-gradient(circle at 78% 78%,rgba(2,3,8,.97) 0%,rgba(2,3,8,.8) 14%,rgba(2,3,8,0) 40%),
+      radial-gradient(circle at 16% 30%,rgba(92,120,255,.72) 0%,rgba(80,100,240,.34) 22%,rgba(80,100,240,0) 48%),
+      radial-gradient(circle at 84% 18%,rgba(110,70,170,.55) 0%,rgba(110,70,170,0) 36%),
+      radial-gradient(circle at 48% 46%,#353b96 0%,#2b2f80 30%,#202360 62%,#14163f 88%,#0e0f2c 100%)}
+  .scene mappo-world{position:absolute;left:11.95%;top:11.95%;width:76.1%;display:block}
+  #world{z-index:1}
+  .shine,.shade{position:absolute;left:19.55%;top:19.55%;width:60.9%;height:60.9%;border-radius:50%;pointer-events:none;z-index:2}
+  .shine{mix-blend-mode:screen;background:radial-gradient(circle at 16% 34%,rgba(90,130,255,.7) 0%,rgba(90,130,255,.28) 26%,rgba(90,130,255,0) 55%)}
+  .shade{background:radial-gradient(circle at 80% 76%,rgba(4,13,33,.72) 0%,rgba(4,13,33,.36) 20%,rgba(4,13,33,0) 46%)}
+  #sky{z-index:3}
+  #sky .mappo-overlay{z-index:4}
+
+  /* The flag at the primary region: a DOM overlay the sky globe positions. */
+  .flag-root{pointer-events:none}
+  .flag{display:block;width:14px;height:24px;padding:0;border:0;background:none;cursor:pointer;pointer-events:auto;
+    transform:translate(-50%,-100%);color:#4199ff;transition:opacity .25s;opacity:calc(var(--mappo-depth,1) * 1.4)}
+  .flag-root[data-mappo-behind] .flag{opacity:0;pointer-events:none}
+  .flag:hover,.flag.lit{color:#fff}
+  .flag svg{display:block;width:100%;height:100%;overflow:visible}
+
+  /* The loading placeholder: the sphere's outline while the scene comes. */
+  .globe-loading{position:absolute;inset:0;margin:auto;width:78.2%;height:78.2%;transform:scale(.8);pointer-events:none}
+
+  /* The hover card. */
+  .card{position:absolute;top:0;left:0;z-index:5;pointer-events:none;max-width:450px;border-radius:6px;
+    padding:16px 32px 16px 8px;font:12px/1.5 var(--font-mono);color:#fff;background:rgba(0,0,0,.4);
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    display:flex;flex-direction:row;align-items:flex-start}
+  .card[hidden]{display:none}
+  .card .icon{padding:4px 8px 0 8px;flex:none;width:32px;color:#fff}
+  .card .icon svg{display:block;width:16px;height:16px;fill:currentColor}
+  .card .icon svg[hidden]{display:none}
+  .card .icon .region{width:24px;height:24px;margin-top:-4px}
+  .card .header{font-size:16px;line-height:1.5;color:#fff}
+  .card .body{color:#959da5;white-space:pre-line}
+
+  /* The pause toggle under the globe. */
+  .toggle-row{position:relative;z-index:3;text-align:center;margin-top:-16px}
+  .pause-toggle{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:6px;font-size:14px;font-weight:500;
+    color:#c9d1d9;background:rgba(240,246,252,.06);border:1px solid rgba(240,246,252,.14);cursor:pointer;
+    transition:background .15s,border-color .15s}
+  .pause-toggle:hover{background:rgba(240,246,252,.12);border-color:rgba(240,246,252,.3)}
+  .pause-toggle svg{width:16px;height:16px;fill:currentColor}
+  .pause-toggle .play-label,.pause-toggle .play-icon{display:none}
+  .pause-toggle[aria-pressed="true"] .pause-label,.pause-toggle[aria-pressed="true"] .pause-icon{display:none}
+  .pause-toggle[aria-pressed="true"] .play-label,.pause-toggle[aria-pressed="true"] .play-icon{display:inline-block}
+
+  /* The wave into the next section, and the note. */
+  .wave{position:absolute;left:0;right:0;bottom:-1px;width:100%;height:40px;display:block;z-index:1}
+  .note{margin:56px auto 90px;padding-inline:24px;max-width:72ch;font-size:14px;line-height:1.6;color:var(--fg-muted)}
+  .note p{margin:0 0 10px}
+  .note code{font:.9em var(--font-mono);background:#161b22;border:1px solid var(--line);padding:.05em .35em;border-radius:4px}
+  @media (prefers-reduced-motion:reduce){ .scene{transition:none} }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div><strong>Live Globe</strong> · a product's world, as it happens</div>
+  <a href="./">More demos</a>
+</header>
+
+<div id="globe" class="globe-root">
+  <div class="globe-scene" id="scene-root" role="img" aria-label="People around the world are sending and receiving messages right now.">
+    <div class="globe-box">
+      <div class="globe-stage" id="stage">
+        <div class="scene" id="scene">
+          <div class="aurora" id="aurora"></div>
+          <div class="halo"></div>
+          <div class="rim"></div>
+          <div class="sphere"></div>
+          <!-- The world: 200 rows of dots become 314 columns at the equator on a
+               Fibonacci lattice; the camera sits 8.8 radii out, so the sphere has a
+               little perspective; the lean is a 0.3 rad tilt and a 0.05 rad roll,
+               recomputed each frame from the rotation model below. -->
+          <mappo-world id="world" mode="globe" cols="360" lat-min="-90" lat-max="90"
+            distribution="uniform" dot-shape="circle" dot-size="0.47" figure-color="#b4bbff"
+            distance="8.8" background="none" rotate-speed="0" interactive="false" overlays="false"></mappo-world>
+          <div class="shine"></div>
+          <div class="shade"></div>
+          <!-- The sky: a second globe with nothing on it, over the lights, carrying the
+               arcs, the spikes and the flag, so the lines are unlit. -->
+          <mappo-world id="sky" mode="globe" body="void" cols="8" lat-min="-90" lat-max="90"
+            distance="8.8" background="none" rotate-speed="0" interactive="false" overlay-horizon="0.1 0.02"
+            layer-bleed="0.157">
+            <div class="flag-root" data-lat="64.13" data-lon="-21.9">
+              <button class="flag" id="flag" type="button" aria-label="Primary region, Reykjavík">
+                <svg viewBox="0 0 14 24" aria-hidden="true"><path d="M1 0h1.6v24H1z" fill="currentColor"/><path d="M2.6 1.2c3.2-1.4 6.2 1.6 9.8.4v9.2c-3.6 1.2-6.6-1.8-9.8-.4z" fill="currentColor" opacity=".9"/></svg>
+              </button>
+            </div>
+          </mappo-world>
+        </div>
+        <svg class="globe-loading" id="loading" viewBox="0 0 704 704" fill="none" aria-hidden="true">
+          <circle cx="352" cy="352" r="274" stroke="#1c2462" stroke-width="2"/>
+          <ellipse cx="352" cy="352" rx="274" ry="96" stroke="#1c2462" stroke-width="1.5" opacity=".7"/>
+          <ellipse cx="352" cy="352" rx="96" ry="274" stroke="#1c2462" stroke-width="1.5" opacity=".7"/>
+          <ellipse cx="352" cy="352" rx="274" ry="214" stroke="#1c2462" stroke-width="1" opacity=".45"/>
+          <ellipse cx="352" cy="352" rx="214" ry="274" stroke="#1c2462" stroke-width="1" opacity=".45"/>
+        </svg>
+      </div>
+    </div>
+    <div class="card" id="popup" hidden role="status">
+      <div class="icon">
+        <svg class="send" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.72 1.22a.75.75 0 0 1 .8-.16l12 5.25a.75.75 0 0 1 0 1.38l-12 5.25a.75.75 0 0 1-1.03-.88L2.94 8 1.49 2.94a.75.75 0 0 1 .23-1.72ZM3.3 3.3l.97 3.45H8.5a.75.75 0 0 1 0 1.5H4.27L3.3 11.7 12.06 7.5 3.3 3.3Z"/></svg>
+        <svg class="region" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M12 0l2.4 9.6L24 12l-9.6 2.4L12 24l-2.4-9.6L0 12l9.6-2.4z"/></svg>
+      </div>
+      <div>
+        <div class="header" id="popup-header">Lagos → Jakarta</div>
+        <div class="body" id="popup-body"></div>
+      </div>
+    </div>
+  </div>
+  <div class="toggle-row">
+    <button type="button" id="toggle" class="pause-toggle" aria-pressed="false"
+      data-pause-aria-label="Globe is currently animating. Click to pause animation."
+      data-play-aria-label="Globe is paused. Click to play animation."
+      aria-label="Globe is currently animating. Click to pause animation.">
+      <svg class="pause-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2h2a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zm5 0h2a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/></svg>
+      <svg class="play-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11a.5.5 0 0 0 .77.42l8.5-5.5a.5.5 0 0 0 0-.84l-8.5-5.5A.5.5 0 0 0 4 2.5z"/></svg>
+      <span class="pause-label">Pause</span><span class="play-label">Play</span>
+    </button>
+  </div>
+  <svg class="wave" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" viewBox="0 0 1680 40" aria-hidden="true"><path d="M0 40h1680V30S1340 0 840 0 0 30 0 30z" fill="#0D1117"></path></svg>
+</div>
+
+<div class="note">
+  <p>The globe a product with users everywhere puts on its front page: a blue spike wherever someone is sending
+  right now, rising and sinking as the moment passes, and a pink arc for every message on its way, drawing in,
+  holding, erasing from its tail and landing with a ring where it was read. Twelve thousand dots on a lit indigo
+  sphere (<code>distribution="uniform" cols="360" distance="8.8"</code> on mappo's own Natural Earth mask), the
+  lights three CSS gradients, the lines <code>mappo/links</code> on a second, empty globe over them, so they stay
+  unlit. The feed is synthetic: two hundred and sixty messages between a hundred and sixty cities, weighted the way people
+  are, so Asia and Africa carry most of it and the lower half of the sphere is as awake as the upper.</p>
+  <p>The opening view depends on your clock: the globe starts turned toward your part of the world. Drag to spin;
+  the pointer feeds a velocity, not an angle. Drag up or down to lean within limits. Hover a line or a spike for
+  its card; the globe slows to a stop while the card shows, and a line waits until you let it go. The flag at
+  Reykjavík is the product's primary region. The scene's proportions, lighting and motion are a nod to the globe
+  on github.com's front page; everything here is mappo. <a href="./">More demos</a>.</p>
+</div>
+
+<script type="module">
+import { registerBody } from "../dist/mappo.js";
+import "../dist/globe.js";
+import { links } from "../dist/links.js";
+
+const RAD = Math.PI / 180, DEG = 180 / Math.PI;
+const $ = (id) => document.getElementById(id);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const params = new URLSearchParams(location.search);
+const stage = $("stage"), scene = $("scene"), worldEl = $("world"), skyEl = $("sky"), popup = $("popup"), toggle = $("toggle");
+
+// ── the scene's constants ────────────────────────────────────────────────────
+// Sizes are in a unit where the sphere's radius is 25, the way the CSS above
+// is proportioned; u() turns them into radii for mappo.
+const GLOBE_RADIUS = 25, CAMERA_Z = 220;                 // → distance 8.8 radii
+const isMobile = /iPhone|iPad|iPod|Android|BlackBerry|BB10/i.test(navigator.userAgent);
+const tzOffset = params.has("tz") ? Number(params.get("tz")) : (new Date().getTimezoneOffset() || 0);
+const S = {
+  baseTiltX: 0.3, rollZ: 0.05, spinY: 4.6 + (tzOffset / 720) * Math.PI,   // the lean, and the turn toward your timezone
+  autoRotationSpeed: 0.05,                                                // rad/s
+  rotateSpeed: isMobile ? 1.5 : 3, easing: 0.12, maxRotationX: 0.5,       // the controls
+  maxIndexDistance: 60, indexIncrementSpeed: 15,                          // the window of "sending now" spikes
+  dataIncrementSpeed: 1.5, lineAnimationSpeed: 600, pauseLengthFactor: 2, minPause: 3000,   // the message arcs
+  colors: { sending: "#2188ff", sendingTip: "#5da5f9", message: "#f46bbe", highlight: "#ffffff" },
+  spikeRadius: 0.06, tubeRadius: 0.08, landingRadius: 0.35, ring: [ 1.55, 1.8 ],   // in scene units (R = 25)
+  fps: { target: 60, sensitivity: 0.875, warningThreshold: 50, emergency: 12 }
+};
+const u = (v) => v / GLOBE_RADIUS;                       // scene units → radii
+const pixelRatio = Math.min(2, devicePixelRatio || 1);
+
+// ── the two globes ───────────────────────────────────────────────────────────
+registerBody({ id: "void", name: "Void", latRange: [ -90, 90 ], figure: () => false });
+const ready = (el) => el.map ? Promise.resolve() : customElements.whenDefined(el.localName).then(() => new Promise(queueMicrotask));
+await Promise.all([ ready(worldEl), ready(skyEl) ]);
+const world = worldEl.map, sky = skyEl.map;
+const scale = () => stage.clientWidth / 900;             // the stage is 900 px; every pixel size follows it
+
+// ── the rotation model: Rx(lean) · Ry(timezone) · Rz(roll) · Ry(spin), decomposed for mappo ──
+// The model's sphere has 90°W facing the camera where mappo has 0°: Ry(90°)
+// first. Then M = Rz(−roll) · Rx(tilt) · Ry(spin) is read back off the matrix.
+const rx = (a) => [ [ 1, 0, 0 ], [ 0, Math.cos(a), -Math.sin(a) ], [ 0, Math.sin(a), Math.cos(a) ] ];
+const ry = (a) => [ [ Math.cos(a), 0, Math.sin(a) ], [ 0, 1, 0 ], [ -Math.sin(a), 0, Math.cos(a) ] ];
+const rz = (a) => [ [ Math.cos(a), -Math.sin(a), 0 ], [ Math.sin(a), Math.cos(a), 0 ], [ 0, 0, 1 ] ];
+const mul = (A, B) => A.map((row) => [ 0, 1, 2 ].map((j) => row[0] * B[0][j] + row[1] * B[1][j] + row[2] * B[2][j]));
+function orientation(rotX, spin) {
+  const M = mul(rx(rotX), mul(ry(S.spinY), mul(rz(S.rollZ), mul(ry(spin), ry(Math.PI / 2)))));
+  const tilt = Math.asin(clamp(M[2][1], -1, 1));
+  const roll = Math.atan2(M[0][1], M[1][1]);
+  const N = mul(rx(-tilt), mul(rz(roll), M));
+  const spinOut = Math.atan2(N[0][2], N[0][0]);
+  return { roll: roll * DEG, tilt: tilt * DEG, focus: { lat: 0, lon: -spinOut * DEG } };
+}
+
+// ── the feed: a hundred and sixty cities, weighted the way people are ────────
+// [city, lat, lon, weight]. The weight is how often a message leaves or lands
+// there, and so how tall the spikes stand; Asia and Africa carry most of it,
+// as any real feed of people does.
+const CITIES = [
+  // Asia
+  [ "Tokyo", 35.68, 139.69, 8 ], [ "Osaka", 34.69, 135.5, 4 ], [ "Seoul", 37.57, 126.98, 6 ], [ "Beijing", 39.9, 116.4, 6 ],
+  [ "Shanghai", 31.23, 121.47, 7 ], [ "Shenzhen", 22.54, 114.06, 6 ], [ "Guangzhou", 23.13, 113.26, 4 ], [ "Chengdu", 30.57, 104.07, 3 ],
+  [ "Wuhan", 30.59, 114.31, 2 ], [ "Hong Kong", 22.32, 114.17, 5 ], [ "Taipei", 25.03, 121.57, 4 ], [ "Manila", 14.6, 120.98, 7 ],
+  [ "Cebu", 10.32, 123.9, 2 ], [ "Hanoi", 21.03, 105.85, 4 ], [ "Ho Chi Minh City", 10.82, 106.63, 5 ], [ "Bangkok", 13.76, 100.5, 6 ],
+  [ "Kuala Lumpur", 3.14, 101.69, 4 ], [ "Singapore", 1.35, 103.82, 5 ], [ "Jakarta", -6.21, 106.85, 8 ], [ "Surabaya", -7.26, 112.75, 3 ],
+  [ "Bandung", -6.92, 107.61, 2 ], [ "Dhaka", 23.81, 90.41, 6 ], [ "Kolkata", 22.57, 88.36, 4 ], [ "Delhi", 28.61, 77.21, 8 ],
+  [ "Mumbai", 19.08, 72.88, 8 ], [ "Bengaluru", 12.97, 77.59, 6 ], [ "Hyderabad", 17.39, 78.49, 4 ], [ "Chennai", 13.08, 80.27, 4 ],
+  [ "Pune", 18.52, 73.86, 3 ], [ "Ahmedabad", 23.02, 72.57, 2 ], [ "Karachi", 24.86, 67.01, 6 ], [ "Lahore", 31.55, 74.34, 5 ],
+  [ "Islamabad", 33.69, 73.04, 2 ], [ "Colombo", 6.93, 79.85, 2 ], [ "Kathmandu", 27.72, 85.32, 2 ], [ "Tashkent", 41.3, 69.24, 2 ],
+  [ "Almaty", 43.24, 76.89, 2 ], [ "Tehran", 35.69, 51.39, 4 ], [ "Baghdad", 33.31, 44.37, 2 ], [ "Riyadh", 24.71, 46.68, 3 ],
+  [ "Jeddah", 21.49, 39.19, 2 ], [ "Dubai", 25.2, 55.27, 4 ], [ "Doha", 25.29, 51.53, 2 ], [ "Tel Aviv", 32.09, 34.78, 3 ],
+  [ "Amman", 31.95, 35.93, 2 ], [ "Istanbul", 41.01, 28.98, 6 ], [ "Ulaanbaatar", 47.89, 106.91, 1 ], [ "Phnom Penh", 11.56, 104.92, 2 ],
+  [ "Yangon", 16.87, 96.2, 2 ],
+  // Africa
+  [ "Lagos", 6.52, 3.38, 8 ], [ "Abuja", 9.06, 7.49, 3 ], [ "Kano", 12.0, 8.52, 3 ], [ "Ibadan", 7.38, 3.95, 2 ],
+  [ "Accra", 5.6, -0.19, 4 ], [ "Kumasi", 6.69, -1.62, 2 ], [ "Abidjan", 5.36, -4.01, 4 ], [ "Dakar", 14.72, -17.47, 3 ],
+  [ "Bamako", 12.64, -8.0, 2 ], [ "Ouagadougou", 12.37, -1.52, 2 ], [ "Addis Ababa", 9.03, 38.74, 5 ], [ "Nairobi", -1.29, 36.82, 6 ],
+  [ "Mombasa", -4.04, 39.67, 2 ], [ "Kampala", 0.35, 32.58, 4 ], [ "Kigali", -1.94, 30.06, 3 ], [ "Dar es Salaam", -6.79, 39.28, 4 ],
+  [ "Lusaka", -15.39, 28.32, 3 ], [ "Harare", -17.83, 31.05, 3 ], [ "Johannesburg", -26.2, 28.04, 6 ], [ "Cape Town", -33.92, 18.42, 4 ],
+  [ "Durban", -29.86, 31.02, 2 ], [ "Maputo", -25.97, 32.57, 2 ], [ "Luanda", -8.84, 13.23, 4 ], [ "Kinshasa", -4.44, 15.27, 6 ],
+  [ "Douala", 4.05, 9.7, 3 ], [ "Yaoundé", 3.87, 11.52, 2 ], [ "Casablanca", 33.57, -7.59, 4 ], [ "Algiers", 36.75, 3.06, 4 ],
+  [ "Tunis", 36.81, 10.18, 3 ], [ "Cairo", 30.04, 31.24, 8 ], [ "Alexandria", 31.2, 29.92, 3 ], [ "Khartoum", 15.5, 32.56, 3 ],
+  [ "Antananarivo", -18.88, 47.51, 2 ], [ "Tripoli", 32.89, 13.19, 2 ],
+  // Europe
+  [ "London", 51.51, -0.13, 7 ], [ "Paris", 48.86, 2.35, 6 ], [ "Berlin", 52.52, 13.4, 4 ], [ "Madrid", 40.42, -3.7, 4 ],
+  [ "Barcelona", 41.39, 2.17, 3 ], [ "Lisbon", 38.72, -9.14, 3 ], [ "Rome", 41.9, 12.5, 3 ], [ "Milan", 45.46, 9.19, 3 ],
+  [ "Amsterdam", 52.37, 4.9, 3 ], [ "Brussels", 50.85, 4.35, 2 ], [ "Stockholm", 59.33, 18.07, 2 ], [ "Warsaw", 52.23, 21.01, 3 ],
+  [ "Kyiv", 50.45, 30.52, 3 ], [ "Athens", 37.98, 23.73, 2 ], [ "Dublin", 53.35, -6.26, 2 ], [ "Prague", 50.08, 14.44, 2 ],
+  [ "Vienna", 48.21, 16.37, 2 ], [ "Zurich", 47.38, 8.54, 2 ], [ "Helsinki", 60.17, 24.94, 1 ], [ "Oslo", 59.91, 10.75, 1 ],
+  [ "Copenhagen", 55.68, 12.57, 2 ], [ "Bucharest", 44.43, 26.1, 2 ], [ "Moscow", 55.76, 37.62, 5 ], [ "Saint Petersburg", 59.93, 30.32, 2 ],
+  [ "Budapest", 47.5, 19.04, 2 ], [ "Belgrade", 44.79, 20.45, 1 ], [ "Edinburgh", 55.95, -3.19, 1 ], [ "Manchester", 53.48, -2.24, 2 ],
+  [ "Munich", 48.14, 11.58, 2 ], [ "Hamburg", 53.55, 9.99, 1 ],
+  // North America
+  [ "New York", 40.71, -74.01, 7 ], [ "Los Angeles", 34.05, -118.24, 5 ], [ "Chicago", 41.88, -87.63, 3 ], [ "San Francisco", 37.77, -122.42, 4 ],
+  [ "Seattle", 47.61, -122.33, 2 ], [ "Austin", 30.27, -97.74, 2 ], [ "Miami", 25.76, -80.19, 3 ], [ "Atlanta", 33.75, -84.39, 2 ],
+  [ "Denver", 39.74, -104.99, 1 ], [ "Boston", 42.36, -71.06, 2 ], [ "Washington", 38.91, -77.04, 2 ], [ "Dallas", 32.78, -96.8, 2 ],
+  [ "Houston", 29.76, -95.37, 2 ], [ "Toronto", 43.65, -79.38, 4 ], [ "Vancouver", 49.28, -123.12, 2 ], [ "Montreal", 45.5, -73.57, 2 ],
+  [ "Mexico City", 19.43, -99.13, 7 ], [ "Guadalajara", 20.66, -103.35, 2 ], [ "Monterrey", 25.69, -100.32, 2 ], [ "Havana", 23.11, -82.37, 1 ],
+  [ "Guatemala City", 14.63, -90.51, 2 ], [ "San José", 9.93, -84.08, 1 ], [ "Panama City", 8.98, -79.52, 1 ], [ "Santo Domingo", 18.49, -69.93, 2 ],
+  // South America
+  [ "São Paulo", -23.55, -46.63, 7 ], [ "Rio de Janeiro", -22.91, -43.17, 4 ], [ "Brasília", -15.79, -47.88, 2 ], [ "Recife", -8.05, -34.88, 2 ],
+  [ "Salvador", -12.97, -38.51, 2 ], [ "Belo Horizonte", -19.92, -43.94, 2 ], [ "Buenos Aires", -34.6, -58.38, 5 ], [ "Córdoba", -31.42, -64.18, 1 ],
+  [ "Santiago", -33.45, -70.67, 3 ], [ "Lima", -12.05, -77.04, 4 ], [ "Bogotá", 4.71, -74.07, 4 ], [ "Medellín", 6.25, -75.56, 2 ],
+  [ "Quito", -0.18, -78.47, 2 ], [ "Caracas", 10.48, -66.9, 2 ], [ "Montevideo", -34.9, -56.16, 1 ], [ "La Paz", -16.5, -68.15, 1 ],
+  [ "Asunción", -25.26, -57.58, 1 ],
+  // Oceania
+  [ "Sydney", -33.87, 151.21, 4 ], [ "Melbourne", -37.81, 144.96, 3 ], [ "Brisbane", -27.47, 153.03, 2 ], [ "Perth", -31.95, 115.86, 1 ],
+  [ "Auckland", -36.85, 174.76, 2 ], [ "Wellington", -41.29, 174.78, 1 ], [ "Port Moresby", -9.44, 147.18, 1 ], [ "Suva", -18.14, 178.44, 1 ]
+].map(([ city, lat, lon, weight ]) => ({ city, lat, lon, weight }));
+const PLATFORMS = { Android: "#3ddc84", iOS: "#a5b4fc", Web: "#58a6ff", Desktop: "#f2cc60" };
+
+// mulberry32: a small deterministic generator, so the feed is the same feed
+// on every load and only its order is shuffled, as a live one would be.
+const prng = (seed) => () => {
+  seed = (seed + 0x6D2B79F5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+// Two hundred and sixty messages: a sender drawn by weight, a reader drawn by
+// weight and nearness (most messages stay in their part of the world, with a
+// long tail across it; drawn at random they would nearly all be
+// intercontinental, and the sphere would wear only the highest loops), never
+// the same city, sent within the last hour and a half, from one of four platforms.
+function generate(count, seed = 7) {
+  const r = prng(seed);
+  const angle = (a, b) => Math.acos(clamp(Math.sin(a.lat * RAD) * Math.sin(b.lat * RAD) + Math.cos(a.lat * RAD) * Math.cos(b.lat * RAD) * Math.cos((b.lon - a.lon) * RAD), -1, 1)) * DEG;
+  const draw = (weigh) => {
+    const w = CITIES.map(weigh), total = w.reduce((n, v) => n + v, 0);
+    let k = r() * total;
+    for (let i = 0; i < CITIES.length; i++) { k -= w[i]; if (k <= 0) return CITIES[i]; }
+    return CITIES[CITIES.length - 1];
+  };
+  const platform = () => { const k = r(); return k < 0.4 ? "Android" : k < 0.65 ? "iOS" : k < 0.9 ? "Web" : "Desktop"; };
+  const now = Date.now(), out = [];
+  while (out.length < count) {
+    const from = draw((c) => c.weight);
+    const far = r() < 0.2;   // one in five goes anywhere; the rest favour the neighbourhood
+    const to = draw((c) => c === from ? 0 : c.weight * (far ? 1 : Math.exp(-angle(from, c) / 40)));
+    if (to === from) continue;
+    out.push({ from, to, at: now - r() * 90 * 60e3, platform: platform() });
+  }
+  return out;
+}
+// The timeline: shuffled by random insertion, and padded with the last 60 and
+// the first 60 so the window wraps seamlessly.
+function timeline(rows) {
+  const t = [];
+  for (const n of rows) t.splice(Math.floor(Math.random() * (t.length + 1)), 0, n);
+  return t.slice(t.length - 60).concat(t, t.slice(0, 60));
+}
+const valid = ({ lat, lon }) => Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lon) && lon >= -180 && lon <= 180;
+const xyz = (lat, lon, r = 1) => { const c = Math.cos(lat * RAD); return [ c * Math.sin(lon * RAD) * r, Math.sin(lat * RAD) * r, c * Math.cos(lon * RAD) * r ]; };
+const toLatLon = ([ x, y, z ]) => { const r = Math.hypot(x, y, z); return [ Math.asin(y / r) * DEG, Math.atan2(x, z) * DEG, r ]; };
+const map = (e, t, i, n, r) => (r - n) * ((e - t) / (i - t) || 0) + n;   // linear map, no clamp
+
+const data = timeline(generate(260));
+const maxAmount = data.length;
+
+// ── sending now: spikes, tallest where the feed is densest ───────────────────
+// For each spike, the others within 10 units are counted and the count mapped
+// onto 0.05…0.2 radii of height. Tips sit 0.25 units above the spike.
+const spikePos = data.map((d) => ({ lat: d.from.lat, lon: d.from.lon }));
+const spikeXYZ = spikePos.map((p) => valid(p) ? xyz(p.lat, p.lon) : null);
+const density = spikeXYZ.map((a) => a ? spikeXYZ.reduce((n, b) => n + (b && b !== a && Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) <= u(10) ? 1 : 0), 0) : 0);
+const minDensity = Math.min(...density), maxDensity = Math.max(...density);
+const spikeHeight = density.map((d) => map(d, minDensity, maxDensity, 0.05, 0.2));
+
+// ── the messages: a bezier in three altitude tiers, resampled by arc length ──
+// distance → altitude tiers (1.5 / 2.3 / 3.25 of the radius for the midpoint),
+// then two control points pulled off a first bezier at 0.2 and 0.8 and pushed
+// out again, then the cubic through them, sampled evenly along its length.
+// Skipped under 1.5 units of chord: a message across town is a spike, not an arc.
+function midpoint(lat1, lon1, lat2, lon2) {
+  const p1 = lat1 * RAD, l1 = lon1 * RAD, p2 = lat2 * RAD, dl = (lon2 - lon1) * RAD;
+  const bx = Math.cos(p2) * Math.cos(dl), by = Math.cos(p2) * Math.sin(dl);
+  return [ Math.atan2(Math.sin(p1) + Math.sin(p2), Math.sqrt((Math.cos(p1) + bx) ** 2 + by * by)) * DEG, (l1 + Math.atan2(by, Math.cos(p1) + bx)) * DEG ];
+}
+const bezier = (A, B, C, D, t) => [ 0, 1, 2 ].map((i) => { const mt = 1 - t; return mt * mt * mt * A[i] + 3 * mt * mt * t * B[i] + 3 * mt * t * t * C[i] + t * t * t * D[i]; });
+function resample(pts, segments) {
+  const cum = [ 0 ];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]));
+  const total = cum[cum.length - 1], out = [];
+  let j = 0;
+  for (let s = 0; s <= segments; s++) {
+    const target = (s / segments) * total;
+    while (j < cum.length - 2 && cum[j + 1] < target) j++;
+    const span = cum[j + 1] - cum[j] || 1, f = (target - cum[j]) / span;
+    out.push([ 0, 1, 2 ].map((c) => pts[j][c] + (pts[j + 1][c] - pts[j][c]) * f));
+  }
+  return { points: out, length: total };
+}
+const lines = [];   // { index, points: [lat, lon, r][], total, landing }
+data.forEach((d, index) => {
+  const a = d.from, b = d.to;
+  if (!valid(a) || !valid(b)) return;
+  const o = xyz(a.lat, a.lon), l = xyz(b.lat, b.lon);
+  const h = Math.hypot(o[0] - l[0], o[1] - l[1], o[2] - l[2]);
+  if (h <= u(1.5)) return;
+  let e = map(h, 0, 2, 1, h > 1.85 ? 3.25 : h > 1.4 ? 2.3 : 1.5);
+  const [ mlat, mlon ] = midpoint(a.lat, a.lon, b.lat, b.lon);
+  const m = xyz(mlat, mlon, e);
+  const d1 = map(h, u(10), u(30), 0.2, 0.15), p1 = map(h, u(10), u(30), 0.8, 0.85);
+  e = map(h, 0, 2, 1, 1.7);
+  const c = bezier(o, m, m, l, d1).map((v) => v * e), q = bezier(o, m, m, l, p1).map((v) => v * e);
+  const dense = [];
+  for (let i = 0; i <= 200; i++) dense.push(bezier(o, c, q, l, i / 200));
+  const rough = resample(dense, 200);
+  const segments = 20 + Math.floor(rough.length * GLOBE_RADIUS);
+  const { points } = resample(dense, segments);
+  lines.push({ index, points: points.map(toLatLon), total: segments * 3 * 6, landing: b });   // index count: segments × 3 radial × 6
+});
+
+// ── the layers ───────────────────────────────────────────────────────────────
+const s0 = scale();
+const arcs = links(sky, { color: S.colors.message, width: u(S.tubeRadius) * 2 * 274 * s0, opacity: 0.95, blend: "lighter" });
+const spikes = links(sky, { color: S.colors.sending, width: u(S.spikeRadius) * 2 * 274 * pixelRatio * s0, opacity: 0.4, blend: "lighter" });
+const tips = links(sky, { width: 0, opacity: 1, tip: { radius: 0.8 * s0, color: S.colors.sendingTip } });
+const landings = [];   // { line, dot: scale, ring: scale | null, out: bool }
+sky.addLayer((ctx) => {
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = ctx.strokeStyle = S.colors.message;
+  for (const L of landings) {
+    const p = sky.locate(L.line.landing.lat, L.line.landing.lon, 1 + 1e-4);
+    if (!p?.front) continue;
+    const k = p.scale;
+    if (L.dot > 0) {
+      ctx.globalAlpha = 0.95;
+      ctx.beginPath(); ctx.arc(p.x, p.y, u(S.landingRadius) * k * L.dot, 0, 6.2832); ctx.fill();
+    }
+    if (L.ring != null && L.ring > 0.01) {
+      const r = (u(S.ring[0]) + u(S.ring[1])) / 2 * k * L.ring;
+      ctx.globalAlpha = Math.max(0, 1 - L.ring);
+      ctx.lineWidth = Math.max(0.5, (u(S.ring[1]) - u(S.ring[0])) * k * L.ring);
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.2832); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+});
+function resizeWidths() {
+  const s = scale();
+  arcs.defaults.width = u(S.tubeRadius) * 2 * 274 * s;
+  spikes.defaults.width = u(S.spikeRadius) * 2 * 274 * pixelRatio * s;
+  tips.defaults.tip = { radius: 0.8 * s, color: S.colors.sendingTip };
+}
+new ResizeObserver(resizeWidths).observe(stage);
+
+// ── state ────────────────────────────────────────────────────────────────────
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const st = {
+  spin: 0, rotX: S.baseTiltX, targetX: 0, targetY: 0,
+  mouse: { x: 0.5, y: 0.5 }, lastMouse: { x: 0.5, y: 0.5 }, dragging: false, downAt: null, moved: false,
+  speedScalar: 1, speedScalarTarget: 1,
+  frozen: reduceMotion || params.has("still"), active: true, loaded: false,
+  visibleIndex: S.maxIndexDistance, indexIncrementSpeed: S.indexIncrementSpeed,
+  lineIndex: 0, animating: [], highlighted: null, hovered: null, dataItem: null
+};
+const liveSpikes = new Map();   // data index → { spike, tip }
+const smooth = (edge0, edge1, x) => { const t = clamp((x - edge0) / (edge1 - edge0), 0, 1); return t * t * (3 - 2 * t); };
+const sineInOut = (t) => -0.5 * (Math.cos(Math.PI * t) - 1);
+
+// The window of what is being sent now: spikes exist while within
+// maxIndexDistance of the index, grow and shrink with sineInOut of their
+// distance to it, tips a little later.
+function updateSpikes() {
+  const vi = st.visibleIndex, lo = Math.max(0, Math.floor(vi - S.maxIndexDistance)), hi = Math.min(maxAmount - 1, Math.ceil(vi + S.maxIndexDistance));
+  for (const [ i, s ] of liveSpikes) if (i < lo || i > hi) { spikes.remove(s.spike); tips.remove(s.tip); liveSpikes.delete(i); }
+  for (let i = lo; i <= hi; i++) {
+    if (!spikeXYZ[i]) continue;
+    let s = liveSpikes.get(i);
+    if (!s) {
+      const at = [ spikePos[i].lat, spikePos[i].lon ];
+      s = { spike: spikes.add({ at, height: 0.01, data: data[i], index: i }), tip: tips.add({ at, height: 0.01, opacity: 0 }) };
+      liveSpikes.set(i, s);
+    }
+    const dist = Math.abs(i - vi);
+    const grow = sineInOut(smooth(S.maxIndexDistance, 0, dist));
+    s.spike.height = Math.max(0.0005, spikeHeight[i] * grow);
+    s.spike.range = grow > 0.01 ? [ 0, 1 ] : [ 0, 0 ];
+    s.tip.height = s.spike.height + u(0.25);
+    const alpha = smooth(S.maxIndexDistance * 0.75, 0, dist);
+    s.tip.opacity = alpha;
+    s.tip.range = alpha > 0.05 ? [ 0, 1 ] : [ 0, 0 ];
+    const lit = st.highlighted?.kind === "spike" && st.highlighted.index === i;
+    s.spike.color = lit ? S.colors.highlight : S.colors.sending;
+    s.spike.opacity = lit ? 1 : 0.4;
+  }
+}
+
+// The messages: one leaves every 1/1.5 s; each draws in at 600 index units a
+// second, holds, erases from its start, and lands a dot that grows while a
+// ring grows and fades.
+function startLine(i) {
+  const line = lines[i];
+  const arc = arcs.add({ points: line.points, range: [ 0, 0 ], data: data[line.index], lineIndex: i });
+  const L = { line, dot: 0, ring: 0, out: false };
+  landings.push(L);
+  st.animating.push({ arc, line, count: 0, start: 0, landing: L });
+}
+// On load the globe is empty and fills at one line every two thirds of a
+// second, so the first ten seconds are the quietest ten seconds there are.
+// Seeding puts a set of lines on it already in flight, spread across the
+// draw-in and the hold, so it opens the way it looks a minute in.
+function seedLines(n) {
+  const count = Math.min(n, lines.length);
+  for (let k = 0; k < count; k++) {
+    startLine(k);
+    const t = st.animating[st.animating.length - 1];
+    if (!t) continue;
+    const phase = (k + 0.5) / count;
+    t.count = t.line.total * (0.15 + phase * (S.pauseLengthFactor - 0.2));
+    t.start = Math.max(0, t.count - t.line.total * 0.92);
+    t.arc.range = [ clamp(t.start / t.line.total, 0, 1), clamp(t.count / t.line.total, 0, 1) ];
+  }
+  st.lineIndex = count;
+}
+
+function updateLines(dt, frames) {
+  let i = Math.floor(st.lineIndex + dt * S.dataIncrementSpeed);
+  if (i >= lines.length) { i = 0; st.lineIndex = 0; }
+  if (i > st.lineIndex) startLine(i);
+  const keep = [];
+  for (const t of st.animating) {
+    const total = t.line.total;
+    const count = t.count + dt * S.lineAnimationSpeed;
+    const start = t.start + dt * S.lineAnimationSpeed;
+    if (count >= total && start < total) landingIn(t.landing, frames);
+    if (count >= total * S.pauseLengthFactor + S.minPause && start < total) {
+      if (t.arc === st.highlighted?.arc) { keep.push(t); continue; }   // a hovered line waits
+      t.count = count; t.start = start;
+      t.arc.range = [ clamp(start / total, 0, 1), clamp(count / total, 0, 1) ];
+      keep.push(t);
+    } else if (start < total) {
+      t.count = count;
+      t.arc.range = [ 0, clamp(count / total, 0, 1) ];
+      keep.push(t);
+    } else {
+      arcs.remove(t.arc);
+      t.landing.out = true;
+    }
+  }
+  st.animating = keep;
+  for (let k = landings.length - 1; k >= 0; k--) if (landings[k].out && !landingOut(landings[k], frames)) landings.splice(k, 1);
+  st.lineIndex += dt * S.dataIncrementSpeed;
+}
+function landingIn(L, frames) {
+  if (L.dot > 0.99) { L.ring = null; return; }
+  const k = 1 - Math.pow(1 - 0.06, frames);
+  L.dot += k * (1 - L.dot);
+  if (L.ring != null) L.ring += k * (1 - L.ring);
+}
+function landingOut(L, frames) {
+  if (L.dot < 0.01) return false;
+  L.dot -= (1 - Math.pow(1 - 0.15, frames)) * L.dot;
+  L.ring = null;
+  return true;
+}
+
+// ── the frame ────────────────────────────────────────────────────────────────
+let lastT = null, raf = null;
+const fps = { then: performance.now() / 1000, warnings: 0, storage: [], quality: params.has("tier") ? Number(params.get("tier")) : 4, locked: params.has("tier") };
+function frame(now) {
+  raf = null;
+  const elapsed = lastT == null ? 1 / 60 : Math.min(0.1, (now - lastT) / 1000);
+  lastT = now;
+  const dt = st.frozen ? 0 : elapsed;          // pausing stops the clock; the controls keep easing per frame
+  const frames = Math.min(6, elapsed * 60);    // the easing is per frame at 60 fps
+  monitorFps();
+
+  // controls: velocity follows the pointer with easing, spin follows velocity × rotateSpeed;
+  // vertical drag leans within [−0.5, +0.3] of the base tilt; auto-rotation when the hand is off.
+  let dx = 0, dy = 0;
+  if (st.dragging) {
+    dx = st.mouse.x - st.lastMouse.x; dy = st.mouse.y - st.lastMouse.y;
+    st.targetY = clamp(st.targetY - dy, -S.maxRotationX, 0.6 * S.maxRotationX);
+  }
+  const k = 1 - Math.pow(1 - S.easing, frames);
+  st.rotX += (st.targetY + S.baseTiltX - st.rotX) * k;
+  st.targetX += (dx - st.targetX) * k;
+  st.spin += st.targetX * S.rotateSpeed * frames;
+  if (!st.dragging) st.spin += dt * S.autoRotationSpeed * st.speedScalar;
+  st.speedScalar += (st.speedScalarTarget - st.speedScalar) * (1 - Math.pow(1 - 0.05, frames));
+  st.lastMouse = { ...st.mouse };
+
+  // the data window and the lines
+  if (st.loaded) {
+    st.visibleIndex += dt * st.indexIncrementSpeed;
+    if (st.visibleIndex >= maxAmount - S.maxIndexDistance) st.visibleIndex = S.maxIndexDistance;
+    updateSpikes();
+    updateLines(dt, frames);
+  }
+
+  // one orientation, both globes; the sky's frame draws the links and the landings
+  const o = orientation(st.rotX, st.spin);
+  world.update(o);
+  sky.update(o);
+  arcs.redraw();   // what changed above did not always move the map
+
+  if (popupShown) placePopup();
+  if (st.active) raf = requestAnimationFrame(frame);
+}
+
+// Four quality tiers, judged on the last ten frames.
+function monitorFps() {
+  if (fps.locked || fps.quality === 1) return;
+  const now = performance.now() / 1000, dt = now - fps.then;
+  fps.then = now;
+  fps.storage.push(Math.round(1 / dt));
+  if (fps.storage.length > 10) fps.storage.shift();
+  const avg = fps.storage.reduce((a, b) => a + b, 0) / fps.storage.length;
+  if (avg < S.fps.target * S.fps.sensitivity && fps.storage.length > 9) {
+    if (++fps.warnings > S.fps.warningThreshold) { fps.quality = Math.max(1, fps.quality - 1); fps.warnings = 0; fps.storage = []; applyQuality(); }
+  } else if (fps.storage.length > 9 && avg < S.fps.emergency) { fps.quality = 1; applyQuality(); }
+  else fps.warnings = 0;
+}
+function applyQuality() {
+  const q = fps.quality;
+  const dpr = q === 4 ? 2 : q === 3 ? 1.85 : q === 2 ? 1.5 : 1;
+  const cols = q >= 3 ? 360 : q === 2 ? 324 : 252;       // 200 / 180 / 140 dot rows
+  st.indexIncrementSpeed = q === 4 ? 15 : q === 3 ? 13 : q === 2 ? 10 : 5;
+  for (const el of [ worldEl, skyEl ]) el.setAttribute("max-dpr", String(dpr));
+  if (worldEl.getAttribute("cols") !== String(cols)) worldEl.setAttribute("cols", String(cols));
+  console.info(`[live-globe] render quality → tier ${q}`);
+}
+
+// ── pointer: drag to spin and lean, hover for the card ───────────────────────
+const setMouse = (e) => { const r = stage.getBoundingClientRect(); st.mouse = { x: (e.clientX - r.left) / r.width * 2 - 1, y: -((e.clientY - r.top) / r.height) * 2 + 1 }; };
+stage.addEventListener("pointerdown", (e) => {
+  if (e.target.closest?.(".flag")) return;
+  setMouse(e); st.lastMouse = { ...st.mouse };
+  st.dragging = true; st.moved = false; st.downAt = { x: e.clientX, y: e.clientY };
+  stage.classList.add("dragging");
+  stage.setPointerCapture?.(e.pointerId);
+  hideCard();
+});
+stage.addEventListener("pointermove", (e) => {
+  setMouse(e);
+  mouseScreen = { x: e.clientX, y: e.clientY };
+  if (st.dragging) {
+    if (st.downAt && (Math.abs(e.clientX - st.downAt.x) > 2 || Math.abs(e.clientY - st.downAt.y) > 2)) st.moved = true;
+    return;
+  }
+  hover(e);
+});
+const release = (e) => { if (!st.dragging) return; setMouse(e); st.dragging = false; stage.classList.remove("dragging"); };
+stage.addEventListener("pointerup", release);
+stage.addEventListener("pointercancel", release);
+stage.addEventListener("pointerleave", () => { st.dragging = false; stage.classList.remove("dragging"); hideCard(); });
+
+let mouseScreen = { x: -9999, y: -9999 }, popupShown = false;
+function hover(e) {
+  const arc = arcs.at(e, 6 * scale());
+  const spike = arc ? null : spikes.at(e, 4 * scale());
+  if (arc) return show({ kind: "arc", arc, item: { ...arc.data, type: "message" } });
+  if (spike) return show({ kind: "spike", index: spike.index, item: { ...spike.data, type: "sending" } });
+  hideCard();
+}
+function show(hit) {
+  if (st.highlighted?.arc && st.highlighted.arc !== hit.arc) resetArc(st.highlighted.arc);
+  if (hit.arc) { hit.arc.color = S.colors.highlight; hit.arc.opacity = 1; hit.arc.blend = "source-over"; }
+  st.highlighted = hit;
+  setDataInfo(hit.item);
+  showCard();
+}
+function resetArc(arc) { arc.color = S.colors.message; arc.opacity = 0.95; arc.blend = "lighter"; }
+function showCard() { if (popupShown) return; popup.hidden = false; popupShown = true; st.speedScalarTarget = 0; placePopup(); }
+function hideCard() {
+  if (st.highlighted?.arc) resetArc(st.highlighted.arc);
+  st.highlighted = null; st.dataItem = null;
+  if (!popupShown) return;
+  popup.hidden = true; popupShown = false; st.speedScalarTarget = 1;
+}
+function placePopup() {
+  const root = $("scene-root").getBoundingClientRect();
+  const x = mouseScreen.x - root.left + 10, y = mouseScreen.y - root.top + 16;
+  const box = popup.getBoundingClientRect();
+  const left = Math.min(x, window.innerWidth - root.left - box.width - 10);
+  const below = mouseScreen.y + 16 + box.height > window.innerHeight;
+  const top = below ? mouseScreen.y - root.top - box.height - 8 : y;
+  popup.style.transform = `translate(${left}px, ${top}px)`;
+}
+
+// The card's words: who sent what where, and how long ago, with the platform
+// in its colour.
+const relativeTime = (ms) => {
+  const s = Math.round((Date.now() - ms) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} minutes ago`;
+  return `${Math.floor(s / 3600)} hours ago`;
+};
+function setDataInfo(item) {
+  st.dataItem = item;
+  const h = $("popup-header"), b = $("popup-body");
+  popup.querySelector(".send").hidden = item.type === "custom";
+  popup.querySelector(".region").hidden = item.type !== "custom";
+  if (item.type === "custom") { h.textContent = item.header; b.textContent = item.body; return; }
+  const when = item.at != null && Date.now() - item.at < 864e5 ? ` ${relativeTime(item.at)}` : "";
+  h.textContent = item.type === "message" ? `${item.from.city} → ${item.to.city}` : item.from.city;
+  b.textContent = item.type === "message" ? `Sent from ${item.from.city},\ndelivered${when} in ${item.to.city}` : `Sending${when} from ${item.from.city}`;
+  if (item.platform) {
+    const dot = document.createElement("span");
+    dot.style.color = PLATFORMS[item.platform] ?? "#8b949e";
+    dot.textContent = " • ";
+    b.prepend(item.platform, dot);
+  }
+}
+
+// The primary region: hover lights the flag, the aurora and its card.
+const flag = $("flag");
+flag.addEventListener("pointerenter", (e) => {
+  mouseScreen = { x: e.clientX, y: e.clientY };
+  flag.classList.add("lit"); scene.classList.add("lit");
+  show({ kind: "flag", item: { header: "Primary region", body: "Reykjavík • Where every message is stored, on geothermal power.\nAll systems normal.", type: "custom" } });
+});
+flag.addEventListener("pointermove", (e) => { mouseScreen = { x: e.clientX, y: e.clientY }; });
+flag.addEventListener("pointerleave", () => { flag.classList.remove("lit"); scene.classList.remove("lit"); hideCard(); });
+
+// ── pause / play ─────────────────────────────────────────────────────────────
+function setFrozen(frozen) {
+  st.frozen = frozen;
+  toggle.setAttribute("aria-pressed", String(frozen));
+  toggle.setAttribute("aria-label", toggle.dataset[frozen ? "playAriaLabel" : "pauseAriaLabel"]);
+}
+toggle.addEventListener("click", () => setFrozen(!st.frozen));
+setFrozen(st.frozen);
+
+// ── the loop, only while on screen; the entrance once the first frame has data ──
+new IntersectionObserver(([ entry ]) => {
+  st.active = entry.isIntersecting;
+  if (st.active && !raf) { lastT = null; raf = requestAnimationFrame(frame); }
+}, { rootMargin: "120px" }).observe(stage);
+document.addEventListener("visibilitychange", () => { if (document.hidden) { st.active = false; } else if (!raf) { st.active = true; lastT = null; raf = requestAnimationFrame(frame); } });
+
+st.loaded = maxAmount > 0;
+applyQuality();
+// For the curious and for the harnesses: the moving parts, read-only by convention.
+window.liveGlobe = { world, sky, arcs, spikes, tips, state: st, data, lines, cities: CITIES, orientation, setFrozen };
+seedLines(18);
+frame(performance.now());
+requestAnimationFrame(() => {
+  const opts = { duration: 600, easing: "ease", fill: "both" };
+  scene.classList.add("in");
+  scene.animate([ { opacity: 0, transform: "scale(0.8)" }, { opacity: 1, transform: "scale(1)" } ], opts);
+  const loading = $("loading");
+  loading.animate([ { opacity: 1, transform: "scale(0.8)" }, { opacity: 0, transform: "scale(1)" } ], opts).addEventListener("finish", () => loading.remove());
+});
+</script>
+</body>
+</html>

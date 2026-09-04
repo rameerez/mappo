@@ -95,6 +95,8 @@ const ATTR_MAP = {
                         } ],
   "overlay-still":      [ "overlayStill", Number ],
   "max-dpr":            [ "maxDpr", Number ],
+  // How far layers (addLayer, mappo/links) may draw past the box, as a fraction of it.
+  "layer-bleed":        [ "layerBleed", Number ],
   // The globe's camera and atmosphere (the flat map ignores both): the camera's
   // distance in body radii, and fog as "near far" in radii from the centre plane.
   "distance":           [ "distance", Number ],

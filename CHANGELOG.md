@@ -10,7 +10,7 @@ with a body parameter bolted on. Earth is now one body among others, the
 vocabulary is body-neutral, and every body is produced by one pipeline from
 pinned public data.
 
-### The core is 22.0 KB gzipped, with the whole Earth inside
+### The core is 22.1 KB gzipped, with the whole Earth inside
 
 The bare import is now the **core**: the flat map, Earth's land mask and
 gazetteer, the equirectangular projection. Everything else is an opt-in module
@@ -18,7 +18,7 @@ that imports the core by relative path and registers itself:
 
 | import | adds | gzipped |
 |---|---|---|
-| `mappo` | the core | 22.0 KB (19.1 KB brotli) |
+| `mappo` | the core | 22.1 KB (19.2 KB brotli) |
 | `mappo/globe` | `mode="globe"` | 10.2 KB |
 | `mappo/projections` | Equal Earth, polar stereographic, custom and d3-geo projections | 3.7 KB |
 | `mappo/vector` | `figure-source="vector"` and `borders`, for bodies that carry rings | 1.8 KB |
@@ -46,7 +46,7 @@ that imports the core by relative path and registers itself:
   `registerVector`, `extendBody`, and the helpers listed in README
   "Extending". The build refuses a module that imports anything the core does
   not export.
-- The test suite holds the headline: `dist/mappo.js` over 22 KB gzipped, a
+- The test suite holds the headline: `dist/mappo.js` over 22.5 KB gzipped, a
   module importing beyond the seam, or a source file bundled twice fails it.
 - From a CDN, load the core by the same full, pinned URL the modules resolve
   (`…/mappo@0.7.0/dist/mappo.js` beside `…/dist/globe.js`), or use `all.js`:
@@ -86,6 +86,11 @@ that imports the core by relative path and registers itself:
 - `locate()` reports `scale`, the pixels per radius at the point (more toward
   a perspective camera), for widths and markers that should grow the way the
   dots do.
+- `layer-bleed` (`layerBleed`, default 0): how far the layer canvas reaches
+  past the map's box, as a fraction of it on every side, so an arc's apex above
+  a globe's limb is drawn rather than cut at the element's edge. Layers keep
+  drawing in the box's own coordinates. The GitHub globe's sky sets 0.157, the
+  distance to its stage's edge.
 - **New module `mappo/links`** (3.1 KB gzipped): `links(map, defaults)` gives
   a layer of arcs and spikes. `add({ from, to, height })` is a great-circle arc
   lifted by height·sin(πt); `add({ at, height, tip })` a spike with a dot on

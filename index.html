@@ -1,739 +1,1199 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>mappo — a world map web component · dots or coastlines, flat or globe</title>
-  <meta name="description" content="A world map as a single ES module. Dot field or real Natural Earth coastlines, flat SVG or a leaning canvas globe, country borders, a graticule, city markers by name, your own DOM positioned on the sphere. Zero dependencies, no build step, no network calls.">
-  <link rel="canonical" href="https://rameerez.github.io/mappo/">
-  <meta property="og:title" content="mappo — a world map web component">
-  <meta property="og:description" content="Dots or real coastlines. Flat or globe. Borders, a graticule, city markers by name, and your own HTML positioned on the sphere — one ES module, no build step.">
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://rameerez.github.io/mappo/">
-  <meta property="og:image" content="https://rameerez.github.io/mappo/assets/mappo-logo.webp">
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "SoftwareSourceCode",
-    "name": "mappo",
-    "description": "A world map as a zero-dependency web component: a dot field or real Natural Earth coastlines, flat SVG or a rotating canvas globe, country borders, a graticule, a built-in city registry, and host DOM positioned on the sphere.",
-    "codeRepository": "https://github.com/rameerez/mappo",
-    "programmingLanguage": "JavaScript",
-    "license": "https://opensource.org/licenses/MIT",
-    "author": { "@type": "Person", "name": "rameerez", "url": "https://github.com/rameerez" }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mappo · World maps for designers with taste</title>
+<link rel="icon" href="./favicon/favicon-32x32.png">
+<meta name="description" content="World maps for designers with taste. A spinning globe or a flat map as one line of HTML, 22 KB, on any homepage. Earth in the box, the Moon and Mars included.">
+<link rel="canonical" href="https://mappojs.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="mappo">
+<meta property="og:title" content="mappo · World maps for designers with taste">
+<meta property="og:description" content="A spinning globe or a flat map as one line of HTML, 22 KB, on any homepage. Earth in the box, the Moon and Mars included.">
+<meta property="og:url" content="https://mappojs.com/">
+<meta property="og:image" content="https://mappojs.com/assets/landing-starlink.webp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@rameerez">
+<style>
+  /* Dark first, and on purpose: the demos below span red, orange, blue and
+     green, so the page they sit on has to be a neutral that lets each of them
+     own its colour rather than competing with all four. */
+  /* Light is the default and dark is opt-in, because assets/theme.js works that
+     way and the choice has to survive walking from here into the demos. */
+  :root{
+    --bg:#fffbf5; --panel:#fff; --ink:#16181d; --muted:#6b7280; --faint:#9aa1ac;
+    --line:#e8e2d8; --accent:#c2410c; --on-accent:#fff5ee;
+    --globe-dot:#c2410c; --globe-grid:#a08d7c; --tint:#00000008;
+    --arc:#0b7285; --area:#0b7285; --pin:#111418;
+    --logo-filter:none;
+    --sans:-apple-system,"SF Pro Display","Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
   }
-  </script>
-  <link rel="shortcut icon" href="./favicon/favicon.ico" type="image/x-icon">
-  <link rel="icon" href="./favicon/favicon.ico" type="image/x-icon">
-  <link rel="icon" type="image/png" sizes="32x32" href="./favicon/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="96x96" href="./favicon/favicon-96x96.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="./favicon/favicon-16x16.png">
-  <link rel="icon" type="image/png" sizes="192x192" href="./favicon/android-icon-192x192.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="./favicon/apple-icon-180x180.png">
-  <meta name="theme-color" content="#c2410c">
-  <link rel="stylesheet" href="./assets/site.css">
-  <link rel="stylesheet" href="./demo/coloris.css">
-  <style>
-    /* ── the masthead ─────────────────────────────────────────────────── */
-    .masthead{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
-    .masthead img{display:block;height:34px;width:auto}
-    /* The wordmark is black artwork with one blue dot in it. Inverting turns the
-       black to white and the blue to orange; rotating the hue back by half a
-       turn puts the dot back where it belongs. */
-    html[data-theme="dark"] .masthead img{filter:invert(1) hue-rotate(180deg)}
-    .nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .nav a{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border-radius:9px;
-      border:1px solid var(--line);background:var(--card);color:var(--ink);
-      text-decoration:none;font-size:14px;font-weight:500}
-    .nav a:hover{border-color:var(--accent);color:var(--accent)}
-    .nav a svg{display:block;flex:none}
-    .nav .stars{font-variant-numeric:tabular-nums;color:var(--muted);
-      padding-left:8px;margin-left:1px;border-left:1px solid var(--line)}
-    .nav .stars[hidden]{display:none}
+  :root[data-theme="dark"]{
+    --bg:#06080b; --panel:#0b0f15; --ink:#e8edf4; --muted:#8b98a8; --faint:#556374;
+    --line:#161d26; --accent:#ff7a45; --on-accent:#160800;
+    --globe-dot:#ff7a45; --globe-grid:#38485c; --tint:#ffffff0a;
+    --arc:#38d9c0; --area:#38d9c0; --pin:#ffffff;
+    /* The wordmark is dark ink on transparent — invisible on a dark ground
+       until it is flipped. One asset, both themes. */
+    --logo-filter:invert(1) brightness(1.9);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--sans);
+    -webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:inherit}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
 
-    /* ── the hero ─────────────────────────────────────────────────────── */
-    /* The globe first, and big. A library whose whole value is what it looks
-       like should not open with a paragraph about what it looks like. */
-    .hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);
-      gap:34px;align-items:center;margin:26px 0 0;
-      background:var(--card);border:1px solid var(--line);border-radius:20px;padding:34px 34px 34px 38px}
-    .hero>div{min-width:0}
-    @media(max-width:900px){.hero{grid-template-columns:minmax(0,1fr);gap:22px;padding:24px}}
-    .hero h1{font-size:38px;line-height:1.12;letter-spacing:-.03em;margin:0 0 14px;max-width:14ch}
-    @media(max-width:900px){.hero h1{font-size:30px}}
-    .hero .lede{font-size:16px;margin:0 0 18px;max-width:44ch}
-    .hero .lede strong{color:var(--ink);font-weight:600}
-    .hero pre{margin:0 0 18px}
-    .hero-stage{position:relative;min-width:0}
-    .hero-stage mappo-world{max-width:470px;margin:0 auto}
+  /* ── navbar ───────────────────────────────────────────────────────────── */
+  .nav{position:sticky;top:0;z-index:40;background:color-mix(in oklab,var(--bg) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid transparent;transition:border-color .2s}
+  .nav.stuck{border-bottom-color:var(--line)}
+  .nav .wrap{display:flex;align-items:center;gap:20px;height:74px}
+  .brand{display:flex;align-items:center;text-decoration:none;margin-right:auto}
+  .brand img{height:32px;width:auto;display:block;filter:var(--logo-filter)}
+  .nav a.link{color:var(--muted);text-decoration:none;font-size:14px;font-weight:520;white-space:nowrap}
+  /* A phone keeps the brand, Demos, the star and the theme; the rest is in the footer. */
+  @media (max-width:600px){
+    .nav .wrap{gap:14px;padding:0 18px}
+    .nav .brand img{height:24px}
+    .nav a.link[href="#start"],.nav a.link[href*="npmjs"],.nav .ghstar .count{display:none}
+  }
+  .nav a.link:hover{color:var(--ink)}
+  .icon-btn{display:grid;place-items:center;width:34px;height:34px;flex:none;
+    border:1px solid var(--line);border-radius:9px;background:none;color:var(--muted);
+    cursor:pointer;padding:0}
+  .icon-btn:hover{color:var(--ink)}
+  .icon-btn svg{width:16px;height:16px;display:block}
+  /* One button, two glyphs: it shows the theme you would GET, not the one you
+     are already in. */
+  .icon-btn .moon{display:none}
+  :root[data-theme="dark"] .icon-btn .moon{display:block}
+  :root[data-theme="dark"] .icon-btn .sun{display:none}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .sprite{position:absolute;width:0;height:0;overflow:hidden}
 
-    /* Pills over the sphere. mappo hands each one a depth from 0 to 1 and hides
-       the ones that have turned away; the rest is ordinary CSS. */
-    .pin{pointer-events:auto;text-decoration:none}
-    .pin>span{display:flex;align-items:center;gap:6px;white-space:nowrap;transform:translate(-50%,-50%);
-      background:var(--pill);color:var(--ink);border:1px solid var(--line);border-radius:999px;
-      padding:3px 10px;font-size:11.5px;font-weight:600;box-shadow:0 2px 10px rgb(0 0 0/.16);
-      opacity:calc(.28 + .72*var(--mappo-depth,1))}
-    .pin>span::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--accent)}
-    .pin[data-mappo-behind]{visibility:hidden}
+  /* GitHub's own star widget, rebuilt: two attached boxes in GitHub's greys,
+     the count pointing back at the button with a caret. Its colours are its
+     own, not the page's — that is what makes it read as GitHub's control
+     rather than as one of ours wearing their logo. */
+  .ghstar{display:inline-flex;align-items:stretch;gap:5px;font:600 12.5px/1 var(--sans);
+    --gh-bg:#f6f8fa; --gh-bg-hi:#eef1f4; --gh-line:#d1d9e0; --gh-fg:#24292f}
+  :root[data-theme="dark"] .ghstar{--gh-bg:#21262d; --gh-bg-hi:#30363d; --gh-line:#3d444d; --gh-fg:#f0f6fc}
+  .ghstar a{display:inline-flex;align-items:center;gap:6px;padding:0 11px;height:30px;
+    background:var(--gh-bg);border:1px solid var(--gh-line);border-radius:6px;
+    color:var(--gh-fg);text-decoration:none}
+  .ghstar a:hover{background:var(--gh-bg-hi);border-color:var(--gh-line)}
+  .ghstar svg{width:15px;height:15px;fill:currentColor;flex:none}
+  .nav .ghstar{margin-left:2px}
+  .ghstar .count{position:relative;padding:0 10px}
+  .ghstar .count[hidden]{display:none}
+  /* The caret: two triangles, the outer one the border colour, so the notch
+     has a 1px edge like the real one. */
+  .ghstar .count::before,.ghstar .count::after{content:"";position:absolute;top:50%;
+    transform:translateY(-50%);border:5px solid transparent;border-left-width:0}
+  .ghstar .count::before{left:-6px;border-right-color:var(--gh-line)}
+  .ghstar .count::after{left:-5px;border-right-color:var(--gh-bg)}
+  .ghstar .count:hover::after{border-right-color:var(--gh-bg-hi)}
 
-    /* ── worlds strip ─────────────────────────────────────────────────── */
-    /* Two up, and every art box the same height — otherwise a globe (as tall as
-       it is wide) and a flat map (a third of that) leave the row ragged. A globe
-       is therefore sized by height and a flat map by width. */
-    .worlds{grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr))}
-    @media(max-width:600px){.worlds{grid-template-columns:minmax(0,1fr)}.worlds .card{min-width:0}}
-    .worlds .art{height:262px;display:grid;place-items:center;overflow:hidden;
-      padding:0;background:var(--bg);border-bottom:1px solid var(--line)}
-    .worlds .art.round mappo-world{width:262px}
-    .worlds .card p{min-height:4.4em}
-    .worlds .card pre{font-size:11.5px}
+  /* ── hero ─────────────────────────────────────────────────────────────── */
+  /* Split hero: copy on the left half, globe on the right, the two sharing a
+     vertical centre. The three dials below are the whole composition, so they
+     are named and kept together. --globe-x/y is where the sphere's CENTRE
+     sits, which is what lets it bleed past the right edge and under the band
+     while the copy stays inside the text column.
+     min-height is the viewport LESS the nav, so the hero and the band it is
+     cut by both fit on the first screen instead of the band hanging below. */
+  .hero{--globe-size:min(70vw,980px);--globe-x:88%;--globe-y:50%;
+    position:relative;min-height:calc(100vh - 74px);display:flex;
+    flex-direction:column;overflow:hidden}
+  .hero-in{position:relative;z-index:2;flex:1;width:100%;max-width:1180px;
+    margin:0 auto;padding:0 28px;display:grid;align-items:center;
+    grid-template-columns:minmax(0,1.02fr) minmax(0,1fr);
+    /* The row is only a frame. It must not swallow drags meant for the globe
+       behind it, so it lets pointer events through and the copy takes its
+       own back below. */
+    pointer-events:none}
+  /* Positioned against .hero-in, NOT .hero. .hero also contains the band, so a
+     percentage of it puts the sphere ~130px below the copy it is meant to line
+     up with: the same 50%, measured in two different boxes. The band still
+     paints over it, because .band carries a higher z-index than this row. */
+  .hero-globe{position:absolute;left:var(--globe-x);top:var(--globe-y);
+    transform:translate(-50%,-50%);width:var(--globe-size);aspect-ratio:1;
+    pointer-events:auto;z-index:0}
+  .hero-globe mappo-world{display:block;width:100%}
+  .hero-copy{position:relative;z-index:2;text-align:left;pointer-events:auto}
+  h1{margin:0 0 18px;font-size:clamp(40px,5vw,64px);line-height:1.01;
+    letter-spacing:-.035em;font-weight:680}
+  .hero-copy p{margin:0 0 26px;color:var(--muted);font-size:clamp(16px,1.4vw,18.5px);
+    max-width:34ch;line-height:1.5}
+  .cta{display:flex;gap:12px;justify-content:flex-start;margin-top:8px;flex-wrap:wrap;align-items:stretch}
+  .cta a{font:600 14px/1 var(--sans);padding:13px 20px;border-radius:10px;
+    text-decoration:none;border:1px solid var(--line);color:var(--ink)}
+  /* Beside a primary button the star widget grows to the button's height, so
+     the two read as one row rather than a button and a badge. */
+  .cta .ghstar{font-size:14px}
+  .cta .ghstar a{height:auto;padding:0 16px;gap:8px;border-radius:10px}
+  .cta .ghstar svg{width:16px;height:16px}
+  .cta a.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+  .cta a:hover{border-color:var(--muted)}
+  .cta a.primary:hover{filter:brightness(1.08)}
 
-    /* ── the playground ───────────────────────────────────────────────── */
-    .bench{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:0;
-      background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
-    @media(max-width:940px){.bench{grid-template-columns:1fr}.knobs{border-left:0!important;border-top:1px solid var(--line)}}
-    .bench-view{min-width:0;display:flex;flex-direction:column;justify-content:center;padding:20px}
-    .bench-view mappo-world{max-width:620px;margin:0 auto}
-    #eventlog{font:12px/1.5 ui-monospace,monospace;color:var(--muted);
-      min-height:1.5em;margin:.5rem 0 0;text-align:center}
-    .knobs{display:flex;flex-direction:column;gap:16px;margin:0;padding:20px;
-      border-left:1px solid var(--line);background:var(--bg)}
-    .knob-eyebrow{margin:0 0 7px;font-size:.64rem;font-weight:700;letter-spacing:.1em;
-      text-transform:uppercase;color:var(--muted);opacity:.75}
-    .knob-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 11px}
-    .knob-grid .span2{grid-column:span 2}
-    .knobs label{display:flex;flex-direction:column;gap:.25rem;min-width:0;
-      font:600 .68rem/1.4 ui-monospace,monospace;color:var(--muted)}
-    .knobs input,.knobs select{width:100%;font:inherit;font-size:.8rem;padding:.3rem .5rem;
-      border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
-    .knobs input[type="range"]{padding:0;height:1.4rem;accent-color:var(--accent)}
-    .knobs .clr-field{width:100%;display:flex}
-    .knobs .clr-field input{padding-right:2.3rem;font-family:ui-monospace,monospace}
-    .knobs .clr-field button{width:1.5rem;border-radius:0 6px 6px 0}
-    .knobs label.off{opacity:.35}
-    .knobs label.off input,.knobs label.off select{pointer-events:none}
-    .seg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);
-      border-radius:8px;overflow:hidden}
-    .seg button{padding:.45rem .5rem;font:600 .8rem/1.4 ui-monospace,monospace;
-      background:var(--card);border:0;cursor:pointer;color:var(--muted)}
-    .seg button+button{border-left:1px solid var(--line)}
-    .seg button.active{background:var(--accent);color:#fff}
+  /* Under 980px the two halves stop being halves: the copy centres and the
+     globe goes back to sitting under it, full width, cut by the band.
+     --globe-y:100% puts the sphere's centre ON the band, so its top half
+     rises behind the copy and the rest is cut away. Same centre-based model
+     as the split layout, which is why no bottom/transform override is
+     needed here: an offset written against .hero would now be measured
+     against .hero-in and ride up over the buttons. */
+  @media (max-width:980px){
+    .hero{--globe-size:min(960px,120vw);--globe-x:50%;--globe-y:100%;
+      min-height:auto;padding-top:12vh}
+    .hero-in{grid-template-columns:1fr;justify-items:center;
+      padding-bottom:min(52vw,420px)}
+    .hero-copy{text-align:center;max-width:42ch}
+    .hero-copy p{margin-left:auto;margin-right:auto}
+    .cta{justify-content:center}
+  }
 
-    /* ── reasons + reference ──────────────────────────────────────────── */
-    .reasons{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:22px 30px}
-    .reasons h3{margin:0 0 5px;font-size:15px}
-    .reasons p{margin:0;color:var(--muted);font-size:13.5px}
-    .ref h3{font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
-      margin:26px 0 8px;font-weight:700}
-    table{border-collapse:collapse;width:100%;font-size:13.5px}
-    td,th{border-bottom:1px solid var(--line);padding:.5rem .6rem;text-align:left;vertical-align:top}
-    th{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
-    td:first-child{font-family:ui-monospace,monospace;white-space:nowrap;color:var(--ink)}
-    td em{font-style:normal;color:var(--muted)}
-    .note{color:var(--muted);font-size:13.5px;max-width:72ch}
-    /* An attribute name is nowrap so it reads as one token; on a phone that is
-       what would push the table off the screen, so there it wraps. */
-    @media(max-width:700px){
-      td:first-child{white-space:normal}
-      table{font-size:12.5px}
-      .hero{padding:20px}
-      .knobs .knob-grid{grid-template-columns:1fr 1fr}
-    }
-  </style>
-  <script type="module" src="./assets/theme.js"></script>
-  <script type="module" src="./dist/all.js"></script>
-</head>
-<body>
-<div class="wrap">
 
-<header class="masthead">
-  <img src="./assets/mappo-logo.webp" alt="mappo" width="440" height="68">
-  <nav class="nav">
-    <a href="./demo/">Demos</a>
-    <a href="https://github.com/rameerez/mappo" aria-label="mappo on GitHub">
-      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
-      GitHub<span class="stars" id="stars" hidden></span>
+  /* The band that cuts the globe off. Opaque, so the sphere really is clipped
+     by it rather than fading out behind a gradient. */
+  .band{position:relative;z-index:3;background:var(--bg);border-top:1px solid var(--line);
+    border-bottom:1px solid var(--line);margin-top:auto}
+  .band .wrap{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+    background:var(--line);border-left:1px solid var(--line);border-right:1px solid var(--line);
+    padding:0}
+  .band div{background:var(--bg);padding:26px 24px}
+  .band h3{margin:0 0 6px;font-size:15px;font-weight:640;letter-spacing:-.01em}
+  .band p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.55}
+  .band b{color:var(--ink);font-variant-numeric:tabular-nums}
+  @media (max-width:820px){.band .wrap{grid-template-columns:1fr}}
+
+  /* ── showcase ─────────────────────────────────────────────────────────── */
+  .show{padding:104px 0 0}
+  .show-head{max-width:52ch;margin:0 auto 54px;text-align:center}
+  .show-head h2{margin:0 0 12px;font-size:clamp(28px,3.6vw,40px);letter-spacing:-.028em;
+    line-height:1.1;font-weight:660}
+  .show-head p{margin:0;color:var(--muted)}
+
+  .tile{position:relative;border:1px solid var(--line);border-radius:18px;
+    overflow:hidden;margin-bottom:26px;background:var(--panel)}
+  .tile .stage{position:relative;height:min(58vh,470px);display:grid;place-items:center;
+    overflow:hidden}
+  .tile .meta{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;
+    padding:20px 24px 22px;border-top:1px solid var(--line)}
+  .tile .meta h3{margin:0 0 5px;font-size:17px;font-weight:640;letter-spacing:-.012em}
+  .tile .meta p{margin:0;color:var(--muted);font-size:13.5px;max-width:62ch;line-height:1.55}
+  .tile .meta a{flex:none;font:600 12.5px/1 var(--sans);text-decoration:none;
+    border:1px solid var(--line);border-radius:9px;padding:9px 14px;white-space:nowrap}
+  .tile .meta a:hover{border-color:var(--muted)}
+
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+  @media (max-width:920px){
+    .pair{grid-template-columns:1fr}
+    /* Stacked on a phone, a 470 px stage is mostly empty around a flat map two
+       to one wide. Globes keep more height than flat maps. */
+    .tile .stage{height:min(84vw,400px)}
+    #t-standby .stage,#t-analytics .stage,#t-skew .stage{height:min(56vw,280px)} #t-mars .stage,#t-moon .stage{height:min(66vw,300px)}
+  }
+
+  /* per-tile worlds, each owning its palette */
+  #t-standby .stage{background:#000}
+  #t-worlds .stage{background:#05070b}
+  #t-skew .stage{background:var(--panel)}
+  #t-nowhere .stage{background:#0b0f15}
+  /* Full width, the planet takes the stage's height rather than its width. */
+  @media (min-width:921px){#t-nowhere .stage{height:min(70vh,560px)}}
+  #t-nowhere .planet{width:auto;height:90%}
+  #t-nowhere .mini{width:min(34%,300px)}
+  /* The two landing charts: each card sets the world's own palette; the
+     pins, labels and legend read the tokens. */
+  #t-mars{--ground:#120906;--pin:#ffd166;--label:#ffd9b8;--legend:#b07a5e;--swatch:#b4522c99;--swatch-line:#e8804a}
+  #t-moon{--ground:#0a0d12;--pin:#ffffff;--label:#eef3fa;--legend:#7d8b9c;--swatch:#aeb8c6;--swatch-line:#dbe4f0}
+  #t-mars .stage,#t-moon .stage{background:var(--ground)}
+  /* The Moon: the generator's sphere and minimap, in the Moon's greys. */
+  #t-moon .planet{width:auto;height:88%;--glow:#6b7688;--deep:#12161d}
+  #t-moon .mini{width:min(34%,220px)}
+  /* Top right, clear of the minimap in the other corner. */
+  .legend.right{left:auto;right:18px;bottom:auto;top:16px;text-align:right}
+  @media (max-width:600px){.legend.right{left:auto;right:12px;bottom:auto;top:10px}}
+  /* On the globe a site rides the sphere and goes with it behind the limb;
+     in the minimap the pins stay and the names go. */
+  .site{transition:opacity .2s}
+  .site[data-mappo-behind]{opacity:0}
+  .mini .site b{width:5px;height:5px;left:-2.5px;top:-2.5px;box-shadow:0 0 0 1px var(--ground)}
+  .mini .site i{display:none}
+  /* The landing sites: pin and name in one overlay, on the exact coordinates.
+     mappo positions the wrapper; the pin and the label are offsets inside it,
+     so the two cannot disagree. (mappo's own markers snap to the dot grid,
+     right for a hero, wrong for a landing site.) */
+  .site{position:absolute;pointer-events:none}
+  .site b{position:absolute;left:-3.5px;top:-3.5px;width:7px;height:7px;border-radius:50%;
+    background:var(--pin);box-shadow:0 0 0 1.5px var(--ground),0 0 8px color-mix(in oklab,var(--pin) 60%,transparent)}
+  .site i{position:absolute;left:8px;bottom:5px;font:600 9.5px/1 var(--mono);
+    letter-spacing:.04em;text-transform:uppercase;color:var(--label);white-space:nowrap;
+    text-shadow:0 0 4px var(--ground),0 0 2px var(--ground)}
+  .site.w i{left:auto;right:8px}
+  .site.s i{bottom:auto;top:5px}
+  .legend{position:absolute;left:18px;bottom:14px;z-index:2;margin:0;font:500 10px/1.6 var(--mono);
+    letter-spacing:.06em;text-transform:uppercase;color:var(--legend)}
+  .legend b{display:inline-block;width:9px;height:9px;margin:0 6px -1px 0;border-radius:2px;background:var(--swatch);border:1px solid var(--swatch-line)}
+  @media (max-width:600px){.site i,.legend .more{display:none} .legend{left:12px;bottom:8px;font-size:9px;white-space:nowrap}}
+  /* The two flat cards are wider than they are tall: a two-to-one map does
+     not want a square stage around it. (Phones set their own heights above.) */
+  @media (min-width:921px){#t-analytics .stage,#t-skew .stage{height:300px} #t-mars .stage,#t-moon .stage{height:380px}}
+
+  /* The choropleth card wears the analytics demo's own tokens (Tailwind's
+     slate scale, one step across in dark), so it is that card and not a
+     picture of it. The fills and marks come from demo/analytics-choropleth.js. */
+  #t-analytics{--nodata:#e2e8f0;--ramp-lo:#cbd5e1;--ramp-hi:#1e293b;--seam:#ffffff}
+  :root[data-theme="dark"] #t-analytics{--nodata:#1e293b;--ramp-lo:#334155;--ramp-hi:#e2e8f0;--seam:#0f172a}
+  #t-analytics .stage{background:#fff}
+  :root[data-theme="dark"] #t-analytics .stage{background:#0f172a}
+  .choro{position:relative;margin:0;width:94%;container-type:inline-size}
+  .choro mappo-world{display:block;width:100%}
+
+  /* A planet that does not exist, lit the way github.com lights theirs: the
+     sphere and its glow are CSS gradients in the palette the generator picks,
+     the dots are mappo's, and the button makes another one. */
+  .planet{position:relative;width:78%;aspect-ratio:1;--dots:#b4bbff;--glow:#5b3fd6;--deep:#0e0f2c}
+  .planet .glow{position:absolute;inset:-4%;border-radius:50%;pointer-events:none;
+    background:radial-gradient(circle,color-mix(in oklab,var(--glow) 50%,transparent) 0%,transparent 60%);
+    filter:blur(22px);opacity:.75}
+  .planet .sphere{position:absolute;left:10%;top:10%;width:80%;height:80%;border-radius:50%;pointer-events:none;
+    background:
+      radial-gradient(circle at 78% 78%,rgba(2,3,8,.95) 0%,rgba(2,3,8,.7) 16%,rgba(2,3,8,0) 42%),
+      radial-gradient(circle at 18% 28%,color-mix(in oklab,var(--glow) 75%,white) 0%,color-mix(in oklab,var(--glow) 40%,transparent) 24%,transparent 50%),
+      radial-gradient(circle at 48% 46%,color-mix(in oklab,var(--deep) 60%,var(--glow)) 0%,var(--deep) 60%,#05060e 100%)}
+  .planet mappo-world{position:relative;display:block;width:100%;z-index:1;cursor:grab}
+  /* The same world, unrolled, in the corner: the second renderer on the same
+     body, so a press redraws both from one function. */
+  .mini{position:absolute;left:14px;bottom:14px;z-index:3;width:34%;padding:6px;border-radius:9px;
+    border:1px solid #ffffff22;background:#00000059;backdrop-filter:blur(6px)}
+  .mini mappo-world{display:block;width:100%}
+  .gen{position:absolute;right:14px;top:14px;z-index:3;font:600 12.5px/1 var(--sans);padding:9px 13px;
+    border-radius:9px;border:1px solid #ffffff2e;background:#ffffff14;color:#e8edf4;cursor:pointer;
+    backdrop-filter:blur(6px)}
+  .gen:hover{background:#ffffff26}
+
+  /* ── sections ─────────────────────────────────────────────────────────── */
+  .show{padding:0}
+  .sec{padding:96px 0 0}
+  .sec .show-head{margin-bottom:44px}
+  .show-head p{max-width:60ch;margin-left:auto;margin-right:auto}
+  /* Picture tiles: the two demos too heavy to run inside a card (ten thousand
+     satellites, a whole orbit) are captures that link to the live page. */
+  .tile.img .stage{display:block;height:auto;padding:0}
+  .tile.img img{display:block;width:100%;height:auto}
+  /* The GitHub card frames the demo page itself, so the two can never drift:
+     the iframe is the demo's 900 px stage, scaled and offset by script so the
+     sphere sits in the middle of the card. */
+  .frame{background:#040d21}
+  /* No pointer events: the card is a window onto the demo, not the demo. A
+     wheel over it scrolls this page, never the frame. */
+  .frame iframe{position:absolute;left:0;top:0;width:900px;height:1040px;border:0;transform-origin:0 0;pointer-events:none}
+
+  /* ── get started ─────────────────────────────────────────────────────── */
+  /* Three steps across, then two lists, then the reading list. Every grid
+     column is minmax(0, …) and every code block wraps, so nothing on this
+     section can ever scroll sideways, on any screen. */
+  .steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px;margin:0;padding:0;list-style:none}
+  .start-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:22px;align-items:stretch;margin-top:22px}
+  @media (max-width:920px){.steps,.start-grid{grid-template-columns:minmax(0,1fr)}}
+  .box{position:relative;border:1px solid var(--line);border-radius:18px;background:var(--panel);padding:26px 26px 26px;min-width:0}
+  @media (max-width:600px){.box{padding:20px 18px 22px}}
+  .box h3{margin:0 0 8px;font-size:18px;font-weight:640;letter-spacing:-.014em}
+  .box > p{margin:0 0 16px;color:var(--muted);font-size:13.5px;line-height:1.55}
+  .box p.after{margin:14px 0 0}
+  .box h4{margin:20px 0 8px;font:600 10.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+  .step .num{position:absolute;right:22px;top:20px;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;
+    font:700 13px/1 var(--mono);color:var(--on-accent);background:var(--accent)}
+  .step h3{padding-right:44px}
+  .code{position:relative;margin:0;padding:13px 14px;border-radius:12px;background:var(--tint);border:1px solid var(--line);
+    font:12.5px/1.65 var(--mono);color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;overflow:hidden}
+  .code code{background:none;padding:0;font-size:inherit}
+  .code .c{color:var(--faint)}
+  .code + .code{margin-top:8px}
+  .code .cp{position:absolute;right:8px;top:8px;font:600 11px/1 var(--sans);padding:6px 9px;border-radius:7px;
+    border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;opacity:0;transition:opacity .15s}
+  .code:hover .cp,.code .cp:focus-visible{opacity:1}
+  .code .cp:hover{color:var(--ink);border-color:var(--muted)}
+  .or{margin:10px 0;text-align:center;color:var(--faint);font:600 10.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase}
+  .box ul{margin:0;padding:0;list-style:none;display:grid;gap:11px}
+  .box ul.two{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 22px}
+  @media (max-width:600px){.box ul.two{grid-template-columns:minmax(0,1fr)}}
+  .box li{position:relative;padding-left:24px;color:var(--muted);font-size:13.5px;line-height:1.5}
+  .box li b{color:var(--ink);font-weight:600}
+  .box li::before{content:"";position:absolute;left:0;top:.5em;width:11px;height:11px;border-radius:50%;
+    background:color-mix(in oklab,var(--accent) 18%,transparent);box-shadow:inset 0 0 0 1.5px var(--accent)}
+  .box.not li::before{background:none;box-shadow:inset 0 0 0 1.5px var(--faint)}
+  .next{display:flex;flex-wrap:wrap;gap:18px 40px;align-items:flex-start;margin-top:22px}
+  .next > div{flex:1 1 320px;min-width:0}
+  .next h4{margin:0 0 10px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:0}
+  .chips a{font:12.5px/1 var(--mono);text-decoration:none;color:var(--muted);
+    border:1px solid var(--line);border-radius:8px;padding:8px 11px}
+  .chips a:hover{color:var(--ink);border-color:var(--muted)}
+
+  /* ── the close ────────────────────────────────────────────────────────── */
+  /* The words, then the top half of a globe rising out of the footer's edge:
+     its centre sits ON the section's bottom border, and overflow:hidden does
+     the cut, the same way the band cuts the hero's. --r is the visible half. */
+  .final{--r:min(400px,44vw);position:relative;overflow:hidden;margin-top:128px;
+    padding:136px 0 calc(var(--r) + 64px);border-top:1px solid var(--line);text-align:center;
+    background:radial-gradient(ellipse 60% 55% at 50% 100%,color-mix(in oklab,var(--accent) 14%,transparent),transparent 70%)}
+  .final .wrap{position:relative;z-index:2}
+  .final-globe{position:absolute;left:50%;bottom:0;z-index:1;width:calc(var(--r) * 2);aspect-ratio:1;
+    transform:translate(-50%,50%);pointer-events:none}
+  .final-globe mappo-world{display:block;width:100%}
+  .final h2{margin:0 auto 20px;max-width:18ch;font-size:clamp(36px,5vw,60px);letter-spacing:-.036em;
+    line-height:1.02;font-weight:680}
+  .final p{margin:0 auto 44px;color:var(--muted);max-width:44ch;font-size:clamp(16px,1.35vw,19px);line-height:1.5}
+  .snippet{display:inline-flex;align-items:center;gap:16px;max-width:100%;background:var(--panel);
+    border:1px solid var(--line);border-radius:14px;padding:12px 12px 12px 20px;text-align:left;
+    box-shadow:0 1px 0 var(--tint),0 12px 40px -24px #0006}
+  .snippet code{background:none;padding:0;font-size:13.5px;white-space:nowrap;overflow:auto;color:var(--ink)}
+  .snippet button{flex:none;font:600 13.5px/1 var(--sans);padding:11px 16px;border-radius:9px;
+    border:1px solid var(--line);background:var(--tint);color:var(--ink);cursor:pointer}
+  .snippet button:hover{border-color:var(--muted)}
+  /* On a phone the one line is wider than the screen: let it wrap rather than
+     scroll, with the button underneath. */
+  @media (max-width:600px){
+    .snippet{flex-direction:column;align-items:stretch;gap:10px;padding:12px}
+    .snippet code{white-space:pre-wrap;word-break:break-all;font-size:12px}
+  }
+  .final .cta{justify-content:center;margin-top:40px;gap:14px}
+
+  .clockface{position:absolute;left:6%;bottom:12%;font-family:var(--sans);
+    line-height:1;pointer-events:none}
+  .clockface .city{font-size:16px;font-weight:600;letter-spacing:-.01em;margin-bottom:9px;color:#ff3b30}
+  .clockface .time{font-size:clamp(44px,7vw,72px);font-weight:700;letter-spacing:-.045em;
+    font-variant-numeric:tabular-nums}
+
+  /* ── footer ───────────────────────────────────────────────────────────── */
+  footer{border-top:1px solid var(--line);padding:64px 0 56px;text-align:center}
+  .foot{display:flex;flex-direction:column;align-items:center;gap:24px}
+  footer .brand{margin:0}
+  footer .brand img{height:26px}
+  .foot-links{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 24px}
+  .foot-links a{color:var(--muted);text-decoration:none;font-size:14px;font-weight:520}
+  .foot-links a:hover{color:var(--ink)}
+  .foot-note{color:var(--faint);font-size:12.5px;margin:0;max-width:62ch;line-height:1.6}
+  .foot-line{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:14px 18px;
+    width:100%;padding-top:24px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+  .foot-line a{color:var(--ink);text-decoration:none}
+  .foot-line a:hover{text-decoration:underline}
+  .social{display:inline-flex;gap:8px}
+  .social a{display:grid;place-items:center;width:32px;height:32px;border:1px solid var(--line);
+    border-radius:9px;color:var(--muted)}
+  .social a:hover{color:var(--ink);border-color:var(--muted)}
+  .social svg{width:14px;height:14px;fill:currentColor;display:block}
+  #demos{scroll-margin-top:74px}
+  code{font-family:var(--mono);font-size:.9em;background:var(--tint);padding:.12em .36em;
+    border-radius:4px}
+</style>
+
+<!-- Two glyphs the page uses more than once, drawn once. -->
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-github" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117Z"/></symbol>
+</svg>
+<!-- GitHub's star widget, once: stamped into every .ghstar-slot by script, and
+     every copy's count is filled from one fetch. -->
+<template id="ghstar-tpl">
+  <span class="ghstar">
+    <a href="https://github.com/rameerez/mappo" aria-label="Star mappo on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg>Star</a>
+    <a class="count" href="https://github.com/rameerez/mappo/stargazers" hidden><span></span></a>
+  </span>
+</template>
+
+<nav class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="./" aria-label="mappo">
+      <img src="./assets/mappo-logo.webp" alt="mappo" width="1263" height="194">
     </a>
-    <a href="https://www.npmjs.com/package/mappo">npm</a>
-    <button id="theme" type="button">Dark</button>
-  </nav>
+    <a class="link" href="#demos">Demos</a>
+    <a class="link" href="#start">Get started</a>
+    <a class="link" href="https://www.npmjs.com/package/mappo">npm</a>
+    <span class="ghstar-slot"></span>
+    <button class="icon-btn" id="theme" type="button" aria-label="Toggle dark mode">
+      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+           stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path
+           d="M12 2.3v2.4M12 19.3v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.3 12h2.4M19.3 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>
+      <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path
+           d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.6 8.6 0 1 0 11.1 11.1Z"/></svg>
+    </button>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="hero-in">
+    <!-- Inside the row, not beside it: that is what makes --globe-y measure
+         the same box the copy is centred in. -->
+    <div class="hero-globe">
+      <!-- graticule-opacity is a literal, not a custom property: mappo resolves
+           var() for COLOURS, and Number("var(--x)") is NaN — silently, with a
+           fallback. So the theme difference lives in the colour, which resolves,
+           and the opacity stays a number. -->
+      <!-- The hero is the Cloudflare composition: a uniform lattice of tangent
+           squares, a graticule at 4% and a fog that takes the far side toward the
+           page. Four attributes on one element; the land is mappo's own mask. -->
+      <mappo-world id="hero" mode="globe" cols="440" lat-min="-90" lat-max="90"
+        distribution="uniform" dot-shape="tile" dot-size="0.38"
+        figure="dots" figure-color="var(--globe-dot)"
+        distance="2.42" fog="-0.62 1.02"
+        rotate-speed="2.2" background="none" focus="45,10" tilt="16"
+        graticule meridians="24" parallels="23"
+        graticule-color="var(--globe-grid)" equator-color="var(--globe-grid)"
+        graticule-opacity="0.18" equator-opacity="0.18" graticule-width="0.5"></mappo-world>
+
+    </div>
+    <div class="hero-copy">
+      <h1>World maps for designers with taste.</h1>
+      <p>Mappo is a JS library to create beautiful geo visualizations on a globe or flat map. It's one single line of HTML, weighs only 22 KB, and looks like eye candy on any homepage.</p>
+      <div class="cta">
+        <a class="primary" href="#demos">See the demos</a>
+        <span class="ghstar-slot"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="band">
+    <div class="wrap">
+      <div><h3>22 KB, the whole Earth inside</h3><p>The core is <b>22.1&nbsp;KB gzipped</b>
+        and carries the engine, Earth's land and 160 cities by name. The globe,
+        coastlines, arcs and other worlds load <b>only if you use them</b>.</p></div>
+      <div><h3>One line of HTML</h3><p>Drop <code>&lt;mappo-world&gt;</code> on any
+        page. No build step, no framework, no bundler. Colours follow your CSS
+        variables, so dark mode costs nothing.</p></div>
+      <div><h3>Moon and Mars included</h3><p>Earth ships in the box. The Moon is
+        <b>9.5 KB</b>, Mars <b>6.9 KB</b>, and any world you can describe as a
+        function draws with the same tag.</p></div>
+    </div>
+  </div>
 </header>
 
-<!-- ───────────────────────────── HERO ───────────────────────────── -->
-<section class="hero">
-  <div>
-    <h1>A world map you drop into a page</h1>
-    <p class="lede">One custom element. A <strong>dot field</strong> or <strong>real
-    coastlines</strong>, flat or as a leaning globe you can spin, with country borders,
-    a graticule, and your own HTML pinned to places on it. No build step, no API key,
-    no network calls — the whole planet ships in the file.</p>
-    <pre><code>&lt;script type="module" src="https://unpkg.com/mappo/dist/all.js"&gt;&lt;/script&gt;
+<main class="show" id="demos">
+  <!-- Every panel is a live <mappo-world> unless its caption says it is a picture. -->
 
-&lt;mappo-world mode="globe"
-  figure="solid outline" figure-source="vector"&gt;&lt;/mappo-world&gt;</code></pre>
-    <p class="note">That is the entire integration. The core is <strong>22.0&nbsp;KB gzipped</strong>
-    with the whole Earth inside, zero dependencies, MIT. The globe, real coastlines, the other
-    projections and other worlds are opt-in modules — or take everything at once in
-    <code>all.js</code>, 60&nbsp;KB. Any world you can describe as a function is a body too.</p>
-  </div>
-  <div class="hero-stage">
-    <mappo-world id="hero" mode="globe" cols="170" rotate-speed="5"
-      tilt="18" roll="-14.3"
-      figure="solid outline" figure-source="vector"
-      figure-color="var(--land)" figure-stroke="var(--coast)" figure-stroke-width="0.75"
-      borders borders-color="var(--coast)" borders-width="0.35" borders-opacity="0.3"
-      background="var(--sea)" ground-color="var(--ocean)"
-      graticule meridians="24" parallels="11"
-      graticule-color="var(--coast)" equator-color="var(--coast)"
-      graticule-opacity="0.3" equator-opacity="0.34" globe-ring="true">
-      <a class="pin" data-lat="38.7"  data-lon="-9.1"  href="./demo/"><span>Lisbon</span></a>
-      <a class="pin" data-lat="35.7"  data-lon="139.7" href="./demo/"><span>Tokyo</span></a>
-      <a class="pin" data-lat="-23.5" data-lon="-46.6" href="./demo/"><span>São Paulo</span></a>
-      <a class="pin" data-lat="-1.29" data-lon="36.82" href="./demo/"><span>Nairobi</span></a>
-      <a class="pin" data-lat="40.7"  data-lon="-74.0" href="./demo/"><span>New York</span></a>
-      <a class="pin" data-lat="1.35"  data-lon="103.8" href="./demo/"><span>Singapore</span></a>
-      <a class="pin" data-lat="55.75" data-lon="37.62" href="./demo/"><span>Moscow</span></a>
-    </mappo-world>
-  </div>
-</section>
-
-<!-- ───────────────────────── FOUR WORLDS ───────────────────────── -->
-<h2>One element <span>— four very different worlds</span></h2>
-<div class="grid worlds">
-
-  <div class="card">
-    <div class="art">
-      <mappo-world cols="130" places="London, Lagos, Singapore, New York, São Paulo, Sydney"
-        figure-color="var(--dot)" marker-color="var(--accent)" marker-scale="1.6"
-        animation="wave" animation-period="7" tilt="34" perspective="900"></mappo-world>
+  <section class="sec wrap" id="flat">
+    <div class="show-head">
+      <h2>Flat maps too? Flat maps too.</h2>
+      <p>The same map, unrolled. Dots or coastlines, pins by city name, arcs
+        between them, on a page that never spins.</p>
     </div>
-    <div class="meta">
-      <h3>The dot field, lying down</h3>
-      <p>The look mappo is named for: land as dots at whatever resolution you ask for,
-      a surface wave that reads as height under tilt, places by name.</p>
-      <pre><code>&lt;mappo-world tilt="34" animation="wave"
-  places="London, Lagos, Singapore"&gt;</code></pre>
-    </div>
-  </div>
 
-  <div class="card">
-    <div class="art">
-      <mappo-world cols="260" lat-min="-56" lat-max="78"
-        figure="solid outline" figure-source="vector" borders
-        figure-color="var(--land)" figure-stroke="var(--coast)" figure-stroke-width="0.5"
-        borders-color="var(--coast)" borders-width="0.35" borders-opacity="0.4"
-        background="var(--sea)" ground-color="var(--ocean)"></mappo-world>
-    </div>
-    <div class="meta">
-      <h3>Real coastlines, and borders</h3>
-      <p>The Natural Earth outline instead of the grid — smooth at any size, with
-      country borders a raster could never express, over a dotted sea.</p>
-      <pre><code>&lt;mappo-world figure="solid outline"
-  figure-source="vector" borders
-  ground-color="#dfe6da"&gt;</code></pre>
-    </div>
-  </div>
+    <section class="tile" id="t-standby">
+      <div class="stage">
+        <div id="standby-map" style="width:min(760px,92%)"></div>
+        <div class="clockface"><div class="city" id="sb-city">&nbsp;</div><div class="time" id="sb-time">00:00</div></div>
+      </div>
+      <div class="meta">
+        <div>
+          <h3>The clock that knows where the sun is</h3>
+          <p>A dot field, and the night computed from the real position of the
+            sun, drawn on a canvas the map keeps over itself so it can never lag
+            the geography by a frame.</p>
+        </div>
+        <a href="./demo/standby.html">Open →</a>
+      </div>
+    </section>
 
-  <div class="card">
-    <div class="art round">
-      <mappo-world mode="globe" cols="170" rotate-speed="7" tilt="24"
-        figure-color="var(--dot)" background="var(--ocean)"
-        places="Reykjavik, Cairo, Delhi, Perth, Santiago"
-        marker-color="var(--accent)" marker-scale="1.6"></mappo-world>
-    </div>
-    <div class="meta">
-      <h3>A globe you can grab</h3>
-      <p>The same dots on a canvas sphere: drag to spin, flick for momentum,
-      release and it keeps its heading. Hover and click still reach every dot.</p>
-      <pre><code>&lt;mappo-world mode="globe" tilt="24"
-  rotate-speed="7" ground-color="#dfe6da"&gt;</code></pre>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="art round">
-      <mappo-world mode="globe" cols="230" rotate-speed="0" interactive="false"
-        focus="46.5,2.35" tilt="26"
-        figure-color="var(--dot)" background="var(--ocean)"
-        markers="France@48.86,2.35" marker-shape="pin" marker-scale="4"
-        marker-color="var(--accent)" marker-pulse="true"
-        highlight-color="var(--coast)"
-        highlight-polygon='[[[51.1,2.5],[50.4,1.5],[49.4,-1.1],[48.6,-4.6],[47.3,-2.5],[46.2,-1.2],[43.4,-1.8],[42.5,3.0],[43.5,7.0],[44.3,7.5],[46.4,6.8],[47.6,7.6],[49.0,8.1],[49.5,6.3],[50.4,4.9],[51.1,2.5]]]'></mappo-world>
-    </div>
-    <div class="meta">
-      <h3>Pointing at one place</h3>
-      <p>A globe that faces a country, drops a real map pin on it and lights up the
-      whole territory. You bring the rings; mappo ships no boundary data on purpose.</p>
-      <pre><code>&lt;mappo-world focus="46.5,2.35" rotate-speed="0"
-  marker-shape="pin" highlight-polygon="[…]"&gt;</code></pre>
-    </div>
-  </div>
-</div>
-<p class="note" style="margin-top:16px">Every one of these is live and copyable —
-along with the leaning globe above, a day/night terminator computed from your own clock,
-and an Earth in orbit — in the <a href="./demo/">demo gallery</a>.</p>
-
-<h2>Built with it <span>— and worth a look on its own</span></h2>
-<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(400px,100%),1fr))">
-<div class="card">
-  <div class="meta" style="padding:20px 22px 22px">
-    <h3 style="font-size:17px"><a href="./demo/satellites.html">Starlink, right now →</a></h3>
-    <p style="font-size:14px;max-width:76ch">All 10,725 satellites in the constellation and
-    the ISS, plotted where they actually are this second, on a full-screen globe. The
-    element sets come from CelesTrak and the positions from an SGP4 propagator in the
-    page — the map is mappo, and every dot is placed by <code>locate()</code>.</p>
-  </div>
-</div>
-<div class="card">
-  <div class="meta" style="padding:20px 22px 22px">
-    <h3 style="font-size:17px"><a href="./demo/year.html">Where the Earth is →</a></h3>
-    <p style="font-size:14px;max-width:76ch">The orbit drawn to scale with the Sun at its
-    focus, and the Earth shown as the Sun sees it — the edge of the disc is the
-    terminator, and the pole leaning toward you is the season. Kepler solved in the
-    page; scrub a year either way.</p>
-  </div>
-</div>
-<div class="card">
-  <div class="meta" style="padding:20px 22px 22px">
-    <h3 style="font-size:17px"><a href="./demo/region-earth.html">Region: Earth →</a></h3>
-    <p style="font-size:14px;max-width:76ch">cloudflare.com's glass globe, rebuilt: fourteen thousand tiles on a
-    Fibonacci lattice, a perspective camera, fog that lets the far side show through, and the pins, captions
-    and arcs positioned by mappo — four attributes on one element.</p>
-  </div>
-</div>
-<div class="card">
-  <div class="meta" style="padding:20px 22px 22px">
-    <h3 style="font-size:17px"><a href="./demo/github-globe.html">GitHub Globe →</a></h3>
-    <p style="font-size:14px;max-width:76ch">github.com's globe, rebuilt from its own source: twelve thousand dots on
-    a lit sphere, a pink arc for every merged pull request and a blue spike for every open one, drawn by
-    <code>mappo/links</code> on the original's clock — with its hover card, its pause toggle and an opening view
-    turned by your timezone.</p>
-  </div>
-</div>
-<div class="card">
-  <div class="meta" style="padding:20px 22px 22px">
-    <h3 style="font-size:17px"><a href="./demo/worlds.html">The Moon and Mars →</a></h3>
-    <p style="font-size:14px;max-width:76ch">The same flat and globe renderers drawing
-    lunar maria and Martian lowlands from opt-in body packs—plus landing sites and all
-    three worlds at their true relative diameters.</p>
-  </div>
-</div>
-</div>
-
-<!-- ───────────────────────── INSTALL ───────────────────────── -->
-<h2>Install <span>— pick the line that matches your stack</span></h2>
-<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
-  <div class="card"><div class="meta">
-    <h3>A script tag</h3>
-    <p>The 22.0&nbsp;KB core; the element registers itself. For the globe, real coastlines and the
-    other projections, load <code>all.js</code> instead.</p>
-    <pre><code>&lt;script type="module"
-  src="https://unpkg.com/mappo"&gt;&lt;/script&gt;
-
-&lt;!-- or everything, one file --&gt;
-&lt;script type="module"
-  src="https://unpkg.com/mappo@0.7.0/dist/all.js"&gt;&lt;/script&gt;</code></pre>
-  </div></div>
-  <div class="card"><div class="meta">
-    <h3>An import map</h3>
-    <p>Modules find the core by the URL next to them, so map the core to its full path.</p>
-    <pre><code>&lt;script type="importmap"&gt;
-{ "imports": {
-  "mappo":       "https://unpkg.com/mappo@0.7.0/dist/mappo.js",
-  "mappo/globe": "https://unpkg.com/mappo@0.7.0/dist/globe.js" } }
-&lt;/script&gt;
-&lt;script type="module"&gt;import "mappo"; import "mappo/globe"&lt;/script&gt;</code></pre>
-  </div></div>
-  <div class="card"><div class="meta">
-    <h3>npm</h3>
-    <p>Though the point is that you don't need a bundler. Import only what the page uses.</p>
-    <pre><code>npm install mappo
-
-import "mappo";              // 22.0 KB: the flat map, the whole Earth
-import "mappo/globe";        // + the globe
-import "mappo/projections";  // + Equal Earth, the poles, d3-geo</code></pre>
-  </div></div>
-</div>
-
-<!-- ───────────────────────── PLAYGROUND ───────────────────────── -->
-<h2>Try every knob <span>— this is the build you would install</span></h2>
-<div class="bench">
-  <div class="bench-view">
-    <mappo-world id="map" mode="globe" tilt="30"
-      background="var(--sea)" ground-color="var(--ocean)" figure-color="#9fb08f"
-      places="London, Lagos, Singapore, New York, Tokyo, Sao Paulo, Nairobi, Sydney"></mappo-world>
-    <p id="eventlog">Hover the dots. Click a city.</p>
-  </div>
-  <aside class="knobs" aria-label="Live options">
-    <div>
-      <p class="knob-eyebrow">World</p>
-      <div class="knob-grid">
-        <label class="span2">mode
-          <div class="seg" id="mode-seg" role="radiogroup" aria-label="mode">
-            <button type="button" data-value="flat" role="radio" aria-checked="false">flat</button>
-            <button type="button" data-value="globe" role="radio" aria-checked="true">globe</button>
+    <div class="pair">
+      <section class="tile" id="t-analytics">
+        <div class="stage"><figure class="choro" id="analytics-map" aria-label="World map shaded by users per country"></figure></div>
+        <div class="meta">
+          <div>
+            <h3>Where your users are</h3>
+            <p>Every country as its own shape, shaded by a number. The
+              choropleth every dashboard wants.</p>
           </div>
-        </label>
-        <label>body
-          <select id="body"><option>earth</option><option>moon</option><option>mars</option></select>
-        </label>
-        <label>cols <input id="cols" type="range" min="40" max="260" value="170"></label>
-        <label>ground-color
-          <select id="ground-color"><option value="var(--ocean)">sea</option><option>none</option><option value="#c4daee">blue</option><option value="#223041">off-dark</option></select>
-        </label>
-        <label>background
-          <select id="background"><option value="var(--sea)">paper</option><option>none</option><option value="#dbe9f6">sky</option><option value="#0b1220">midnight</option></select>
-        </label>
+          <a href="./demo/analytics.html">Open →</a>
+        </div>
+      </section>
+
+      <section class="tile" id="t-skew">
+        <div class="stage"><div id="skew-map" style="width:100%"></div></div>
+        <div class="meta">
+          <div>
+            <h3>Every place you're in, joined up</h3>
+            <p>Pins by city name, arcs between them, and the map lying down at
+              forty degrees. The hero look, with no globe involved.</p>
+          </div>
+          <a href="./demo/">Open →</a>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <section class="sec wrap" id="planet">
+    <div class="show-head">
+      <h2>Your homepage needs a planet. Whichever it is.</h2>
+      <p>We've got you covered for when you open your first office on Mars. Or
+        when you have to ship packages to the first Moon settlement.</p>
+    </div>
+
+    <div class="pair">
+      <section class="tile" id="t-live">
+        <div class="stage frame"><iframe id="live-frame" src="./demo/live-globe.html" title="Live Globe: a product's world, as it happens" loading="lazy" tabindex="-1" scrolling="no"></iframe></div>
+        <div class="meta">
+          <div>
+            <h3>Your users, live, on a card</h3>
+            <p>A blue spike wherever someone is sending right now, a pink arc for
+              every message on its way, landing with a ring where it's read.
+              This card is the full demo running, not a copy of it.</p>
+          </div>
+          <a href="./demo/live-globe.html">Open →</a>
+        </div>
+      </section>
+
+      <section class="tile" id="t-worlds">
+        <div class="stage"><div id="worlds-row" style="display:flex;align-items:center;gap:5%;width:88%"></div></div>
+        <div class="meta">
+          <div>
+            <h3>Earth, Mars and the Moon, to scale</h3>
+            <p>Same component, same attributes, three bodies, at their true
+              relative size.</p>
+          </div>
+          <a href="./demo/worlds.html">Open →</a>
+        </div>
+      </section>
+    </div>
+
+    <section class="tile img" id="t-starlink">
+      <a class="stage" href="./demo/satellites.html"><img src="./assets/landing-starlink.webp" alt="Ten thousand Starlink satellites and the ISS drawn over a mappo globe" width="1440" height="900" loading="lazy"></a>
+      <div class="meta">
+        <div>
+          <h3>Ten thousand satellites, where they are this second</h3>
+          <p>Every Starlink satellite and the ISS, from published orbital
+            elements, plotted on the globe as they pass. A picture here; live on
+            the demo page.</p>
+        </div>
+        <a href="./demo/satellites.html">Open →</a>
+      </div>
+    </section>
+  </section>
+
+  <section class="sec wrap" id="worlds-real">
+    <div class="show-head">
+      <h2>Precise enough for NASA data. Loose enough for a fantasy map.</h2>
+      <p>Earth comes from Natural Earth, the Moon from the Clementine mosaic,
+        Mars from MOLA topography, each in its own coordinate convention, and a
+        point lands where the ephemeris says it should. Or hand mappo a function
+        and it draws a world that never existed. Space missions, science demos,
+        videogames, novels.</p>
+    </div>
+
+    <section class="tile" id="t-nowhere">
+        <div class="stage">
+          <div class="planet" id="planet"><div class="glow"></div><div class="sphere"></div><div id="nowhere-map"></div></div>
+          <div class="mini" id="minimap" aria-label="The same world, flat"></div>
+          <button class="gen" id="gen" type="button">Generate planet</button>
+        </div>
+        <div class="meta">
+          <div>
+            <h3>A planet that doesn't exist</h3>
+            <p>One function decides land from sea, and every press writes a new
+              one: new continents, new colours, new tilt. Yours can be your game's
+              terrain, a novel's continents, or a dataset nobody has mapped yet.</p>
+          </div>
+          <a href="./demo/worlds.html">Open →</a>
+        </div>
+      </section>
+
+    <div class="pair">
+      <section class="tile" id="t-mars">
+        <div class="stage"><div id="mars-map" style="width:92%"></div>
+          <p class="legend"><b></b>Lowlands, MOLA · Equal Earth<span class="more"> · planetocentric</span> · 10 landings, 1976–2021</p></div>
+        <div class="meta">
+          <div>
+            <h3>Every landing on Mars, where it stopped</h3>
+            <p>Ten spacecraft on an equal-area map of Mars, the projection global
+              science maps are drawn in, with the northern lowlands from MOLA
+              topography. Coordinates are planetocentric, as the IAU defines them,
+              and every pin lands where the record says, to double precision.</p>
+          </div>
+          <a href="./demo/worlds.html">Open →</a>
+        </div>
+      </section>
+
+      <section class="tile" id="t-moon">
+        <div class="stage">
+          <div class="planet" id="moon-planet"><div class="glow"></div><div class="sphere"></div><div id="moon-map"></div></div>
+          <div class="mini" id="moon-mini" aria-label="The same Moon, flat"></div>
+          <p class="legend right"><b></b>Maria, Clementine<span class="more"> · drag to turn</span> · 9 landings, 1966–2024</p>
+        </div>
+        <div class="meta">
+          <div>
+            <h3>Everywhere we've landed on the Moon</h3>
+            <p>Nine soft landings on a Moon you can turn, with the maria from the
+              Clementine mosaic, and the same Moon unrolled in the corner so the
+              far side shows too. Apollo's six sit on the side that always faces
+              us; Chang'e 4 and 6 landed where the Earth never rises.</p>
+          </div>
+          <a href="./demo/worlds.html">Open →</a>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <section class="sec wrap" id="boring">
+    <div class="show-head">
+      <h2>No three.js. No WebGL. No build step.</h2>
+      <p>Just simple, boring, reliable web technologies. Mappo rejects
+        complexity: drop <code>mappo.js</code> from any CDN into your website
+        and start building without downloading half of the internet to make it
+        work.</p>
+    </div>
+
+    <section class="tile img" id="t-year">
+      <a class="stage" href="./demo/year.html"><img src="./assets/landing-year.webp" alt="The Earth's orbit around the Sun and the planet as the Sun sees it, drawn on mappo" width="1440" height="900" loading="lazy"></a>
+      <div class="meta">
+        <div>
+          <h3>The Earth's orbit, Kepler solved in the page</h3>
+          <p>Everything on that page is HTML, CSS and plain JavaScript on top of
+            mappo. No framework, no bundler, no third library. View the source.</p>
+        </div>
+        <a href="./demo/year.html">Open →</a>
+      </div>
+    </section>
+  </section>
+
+  <section class="sec wrap" id="start">
+    <div class="show-head">
+      <h2>Up and running in a minute.</h2>
+      <p>One script tag from a CDN, or an npm install. No build step, no
+        framework, nothing to configure. Then one tag wherever you want a world.</p>
+    </div>
+
+    <ol class="steps">
+      <li class="box step">
+        <span class="num" aria-hidden="true">1</span>
+        <h3>Install</h3>
+        <p>One script tag from a CDN, and the whole library is on the page.</p>
+        <pre class="code"><code>&lt;script type="module" src="https://unpkg.com/mappo@0.7.0/dist/all.js"&gt;&lt;/script&gt;</code></pre>
+        <p class="or">or</p>
+        <pre class="code"><code>npm install mappo</code></pre>
+        <pre class="code"><code>import "mappo/all"; <span class="c">// or "mappo" alone: the 22 KB core</span></code></pre>
+      </li>
+      <li class="box step">
+        <span class="num" aria-hidden="true">2</span>
+        <h3>Add the tag</h3>
+        <p>Anywhere in your HTML. That is a spinning globe with three pins on it.</p>
+        <pre class="code"><code>&lt;mappo-world mode="globe"
+  places="Lisbon, Tokyo, São Paulo"
+  rotate-speed="2"&gt;
+&lt;/mappo-world&gt;</code></pre>
+      </li>
+      <li class="box step">
+        <span class="num" aria-hidden="true">3</span>
+        <h3>Make it yours</h3>
+        <p>Flat or globe, dots or coastlines, your colours from your CSS variables, another planet if you like.</p>
+        <pre class="code"><code>&lt;mappo-world mode="flat" tilt="36"
+  figure-color="var(--brand)"
+  places="Berlin, Nairobi, Jakarta"&gt;
+&lt;/mappo-world&gt;</code></pre>
+        <p class="after">Every attribute is documented in the <a href="https://github.com/rameerez/mappo#the-element">README</a>.
+          The globe, the coastlines, the arcs and the other worlds are modules a
+          map loads only when it asks for them.</p>
+      </li>
+    </ol>
+
+    <div class="start-grid">
+      <div class="box">
+        <h3>What's in the box</h3>
+        <p>Everything below is one tag and a few attributes.</p>
+        <ul class="two">
+          <li><b>Flat map or globe</b>, the same tag and the same attributes: <code>mode="flat"</code> or <code>mode="globe"</code>.</li>
+          <li><b>Dots, fills or coastlines.</b> A dot field, a solid figure, or Natural Earth's outlines and borders.</li>
+          <li><b>Places by name.</b> 160 cities in the box, or any <code>lat,lon</code>; markers that pulse and answer to hover.</li>
+          <li><b>Arcs and spikes</b> between places, animated by a range you set, over the globe or the flat map.</li>
+          <li><b>Other worlds.</b> The Moon and Mars as packs, or your own planet from one function that says land or sea.</li>
+          <li><b>Projections.</b> Equirectangular, Equal Earth, polar stereographic, or any d3-geo projection.</li>
+          <li><b>Your HTML on the map.</b> Children with <code>data-lat</code> and <code>data-lon</code> ride the geography; a canvas layer draws over it every frame.</li>
+          <li><b>The glass globe.</b> A perspective camera, fog, tilt, roll and a Fibonacci lattice.</li>
+          <li><b>Colours from your CSS variables</b>, so dark mode costs nothing. 22 KB core, zero dependencies, MIT.</li>
+        </ul>
+      </div>
+      <div class="box not">
+        <h3>What it isn't</h3>
+        <p>So you know before you start.</p>
+        <ul>
+          <li><b>Not a slippy map.</b> No street tiles, no zooming into a city block. Leaflet and MapLibre do that; mappo draws the world.</li>
+          <li><b>Not WebGL.</b> SVG for the flat map, canvas for the globe: fast at the sizes a homepage uses, and a WebGL renderer is on the roadmap for the very large.</li>
+          <li><b>Not an astronomy library.</b> The satellite and orbit demos carry their own math; the package knows surfaces, outlines, regions and places.</li>
+          <li><b>No geocoding.</b> You bring coordinates, or use the names in the box.</li>
+          <li><b>Filled land on the globe comes from a mask</b>, not from the vectors. Outlines are exact everywhere; fills on the sphere follow the grid.</li>
+        </ul>
       </div>
     </div>
-    <div>
-      <p class="knob-eyebrow">Figure</p>
-      <div class="knob-grid">
-        <label>figure
-          <select id="figure"><option>dots</option><option>solid</option><option>outline</option><option>solid outline</option></select>
-        </label>
-        <label>figure-source
-          <select id="figure-source"><option>grid</option><option>vector</option></select>
-        </label>
-        <label>figure-color <input id="figure-color" type="text" data-coloris value="#9fb08f"></label>
-        <label>borders
-          <select id="borders"><option>false</option><option>true</option></select>
-        </label>
+
+    <div class="next">
+      <div><h4>Read</h4><div class="chips" id="start-links"></div></div>
+      <div><h4>Every demo</h4><div class="chips" id="start-demos"></div></div>
+    </div>
+  </section>
+
+  <section class="final">
+    <div class="wrap">
+      <h2>World maps your competitors will screenshot.</h2>
+      <p>Free and open source. The whole install is one line on your website.</p>
+      <div class="snippet"><code id="cdn">&lt;script type="module" src="https://unpkg.com/mappo@0.7.0/dist/all.js"&gt;&lt;/script&gt;</code><button type="button" id="copy">Copy</button></div>
+      <div class="cta">
+        <a class="primary" href="https://github.com/rameerez/mappo#readme">Read the docs</a>
+        <span class="ghstar-slot"></span>
       </div>
     </div>
-    <div>
-      <p class="knob-eyebrow">Dots</p>
-      <div class="knob-grid">
-        <label>dot-shape
-          <select id="dot-shape"><option>circle</option><option>square</option><option>triangle</option></select>
-        </label>
-        <label>dot-size <input id="dot-size" type="range" min="0.2" max="1" step="0.05" value="0.55"></label>
-      </div>
+    <div class="final-globe" aria-hidden="true">
+      <!-- The hero's globe again, slower, and rising from below: the page ends
+           the way it began. -->
+      <mappo-world id="final-globe" mode="globe" cols="360" lat-min="-90" lat-max="90"
+        distribution="uniform" dot-shape="tile" dot-size="0.38"
+        figure="dots" figure-color="var(--globe-dot)"
+        distance="2.42" fog="-0.62 1.02"
+        rotate-speed="1.4" background="none" focus="24,-20" tilt="14" interactive="false"
+        graticule meridians="24" parallels="23"
+        graticule-color="var(--globe-grid)" equator-color="var(--globe-grid)"
+        graticule-opacity="0.18" equator-opacity="0.18" graticule-width="0.5"></mappo-world>
     </div>
-    <div>
-      <p class="knob-eyebrow">Globe</p>
-      <div class="knob-grid">
-        <label>rotate-speed <input id="rotate-speed" type="range" min="0" max="30" step="0.5" value="4"></label>
-        <label>roll <input id="roll" type="range" min="-45" max="45" step="0.5" value="0"></label>
-        <label>graticule
-          <select id="graticule"><option>false</option><option>true</option></select>
-        </label>
-        <label>globe-ring
-          <select id="globe-ring"><option>false</option><option>true</option></select>
-        </label>
-      </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <a class="brand" href="#" aria-label="mappo, back to the top">
+      <img src="./assets/mappo-logo.webp" alt="mappo" width="1263" height="194">
+    </a>
+    <nav class="foot-links" aria-label="Footer">
+      <a href="#demos">Demos</a>
+      <a href="#start">Get started</a>
+      <a href="./demo/">Every demo</a>
+      <a href="https://github.com/rameerez/mappo#readme">Docs</a>
+      <a href="https://github.com/rameerez/mappo/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/rameerez/mappo">GitHub</a>
+      <a href="https://www.npmjs.com/package/mappo">npm</a>
+    </nav>
+    <p class="foot-note">Land and borders from Natural Earth (public domain),
+      pinned by checksum. Lunar maria from the Clementine albedo mosaic, Martian
+      lowlands from MOLA topography. Both are NASA, and both are public domain.</p>
+    <div class="foot-line">
+      <span>MIT © 2026 <a href="https://github.com/rameerez">@rameerez</a></span>
+      <span class="social">
+        <a href="https://x.com/rameerez" aria-label="rameerez on X"><svg aria-hidden="true"><use href="#i-x"/></svg></a>
+        <a href="https://github.com/rameerez" aria-label="rameerez on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg></a>
+      </span>
     </div>
-    <div>
-      <p class="knob-eyebrow">Markers</p>
-      <div class="knob-grid">
-        <label class="span2">places <input id="places" value="London, Lagos, Singapore, New York, Tokyo, Sao Paulo, Nairobi, Sydney"></label>
-        <label>marker-shape
-          <select id="marker-shape"><option>circle</option><option>square</option><option>triangle</option><option>pin</option></select>
-        </label>
-        <label>marker-color <input id="marker-color" type="text" data-coloris value="#c2410c"></label>
-        <label>marker-scale <input id="marker-scale" type="range" min="0.6" max="4" step="0.1" value="1.5"></label>
-        <label>marker-pulse
-          <select id="marker-pulse"><option>false</option><option>true</option></select>
-        </label>
-      </div>
-    </div>
-    <div>
-      <p class="knob-eyebrow">Motion</p>
-      <div class="knob-grid">
-        <label>tilt <input id="tilt" type="range" min="0" max="60" value="30"></label>
-        <label>animation
-          <select id="animation"><option>none</option><option>wave</option><option>noise</option><option>ripple</option><option>sweep</option><option>sparkle</option></select>
-        </label>
-        <label>animation-period <input id="animation-period" type="range" min="2" max="15" step="0.5" value="6"></label>
-        <label>animation-height <input id="animation-height" type="range" min="0.2" max="1.6" step="0.1" value="0.8"></label>
-        <label class="span2">animation-width <input id="animation-width" type="range" min="0.03" max="0.35" step="0.01" value="0.13"></label>
-      </div>
-    </div>
-  </aside>
-</div>
-
-<!-- ───────────────────────── WHY ───────────────────────── -->
-<h2>Why this one</h2>
-<div class="reasons">
-  <div>
-    <h3>Two levels of detail of the same world</h3>
-    <p>A 3.6&nbsp;KB run-length land mask (Natural Earth, public domain) generates the dot
-    grid at any resolution — resolution is a slider, not a redesign. Ask for
-    <code>figure-source="vector"</code> instead and you get the real coastline, smooth at
-    any size, plus borders that follow rivers.</p>
   </div>
-  <div>
-    <h3>The same options on both renderers</h3>
-    <p>The flat map is SVG and the globe is canvas, because each is right for its job —
-    but <code>figure</code>, <code>borders</code>, <code>ground-color</code> and the rest are
-    one vocabulary across both. Switching <code>mode</code> keeps your styling.</p>
-  </div>
-  <div>
-    <h3>Your DOM, on a sphere</h3>
-    <p>Put an <code>&lt;a data-lat data-lon&gt;</code> inside the element and mappo
-    positions it every frame, publishing how far it has turned away as
-    <code>--mappo-depth</code> and marking it <code>data-mappo-behind</code> at the horizon.
-    Labels fade and hide with plain CSS — mappo never dictates how they look.</p>
-  </div>
-  <div>
-    <h3>Places by name, on any world</h3>
-    <p>Every body carries its own gazetteer: <code>places="Nairobi, Seoul"</code> on Earth
-    (~160 cities), <code>places="Apollo 11, Shackleton"</code> on the Moon,
-    <code>places="Curiosity"</code> on Mars. Coordinates snap to the nearest figure dot. Or
-    skip the gazetteer entirely with <code>markers="Name@lat,lon"</code>.</p>
-  </div>
-  <div>
-    <h3>Any world, one interface</h3>
-    <p>Earth ships in the core; the Moon and Mars are opt-in packs of 7–10&nbsp;KB. A body
-    is a small object — <code>figure(lat, lon)</code>, optional outlines, borders and places —
-    so an invented planet for a game is a function, and <code>registerBody()</code> gives it
-    a <code>&lt;mappo-yourworld&gt;</code> tag.</p>
-  </div>
-  <div>
-    <h3>Real elements, your CSS</h3>
-    <p>The flat map is light DOM: every dot hoverable, every marker focusable, everything
-    restylable from your stylesheet. Colours accept <code>var(--token)</code> and are
-    re-resolved on a theme flip, so a dark-mode toggle repaints the map for free. Events
-    bubble as <code>mappo:placeclick</code> and friends in both modes — the globe
-    re-earns them with canvas hit-testing.</p>
-  </div>
-  <div>
-    <h3>Zero everything</h3>
-    <p>No dependencies, no build step, no network calls, no API keys, no tracking. One ES
-    module — script tag, import map, or npm — with differential updates, adaptive
-    debouncing tuned to your machine's real frame cost, and a budgeted perf harness in the
-    repo. <code>prefers-reduced-motion</code> respected. MIT.</p>
-  </div>
-</div>
-
-<!-- ───────────────────────── REFERENCE ───────────────────────── -->
-<h2>Every attribute</h2>
-<div class="ref">
-
-  <h3>The world</h3>
-  <table>
-    <tr><th>attribute</th><th>what it does</th></tr>
-    <tr><td>mode</td><td><em>flat</em> (default) · <em>globe</em> — a rotating, grabbable canvas sphere. Drag to spin, flick for momentum.</td></tr>
-    <tr><td>cols</td><td>Resolution: dots across the full longitude span. Auto: 120 flat · 170 globe; hard max 260.</td></tr>
-    <tr><td>body</td><td>Which world: <em>earth</em> (default, in the bundle) or any registered body — <em>moon</em>, <em>mars</em>, your own. Every body also has its own tag: <code>&lt;mappo-moon&gt;</code>.</td></tr>
-    <tr><td>lat-min / lat-max</td><td>The latitude band drawn. Defaults to the body's own framing: <code>-58</code>…<code>84</code> on Earth (Antarctica and the arctic emptiness cut), pole to pole on the Moon and Mars.</td></tr>
-    <tr><td>background</td><td>A uniform fill behind everything: the rect on the flat map, the disc on the globe.</td></tr>
-    <tr><td>ground-color</td><td>Everything that is not figure — the ocean, the highlands — as filler dots in their own shade. Draws under any figure style, so solid continents can still sit on a dotted sea.</td></tr>
-    <tr><td>interactive / cursor</td><td>Turn pointer behaviour off for pure decoration; set the cursor over the map.</td></tr>
-    <tr><td>max-dpr</td><td>Caps the canvas backing store (default 2). 3× devices buy no visible detail on a dot field and pay full fill-rate for it.</td></tr>
-  </table>
-
-  <h3>The figure</h3>
-  <p class="note">Every map draws a <strong>figure</strong> on a <strong>ground</strong>. On Earth the figure is land and the ground is ocean; on the Moon, maria on highlands; on Mars, lowlands on highlands; on your own world, whatever you say. Every option that styles the figure starts with <code>figure-</code>.</p>
-  <table>
-    <tr><th>attribute</th><th>what it does</th></tr>
-    <tr><td>figure</td><td>A space-separated token list, so it reads the way you would say it: <em>dots</em> (default) · <em>solid</em> · <em>outline</em> · <em>solid outline</em>.</td></tr>
-    <tr><td>figure-source</td><td><em>grid</em> — contours traced from the body on the dot grid: blocky by design, follows <code>cols</code>, costs nothing extra. <em>vector</em> — the body's own outlines (Natural Earth on Earth), smooth at any size.</td></tr>
-    <tr><td>figure-color</td><td>The figure's colour: the dots, or the fill. Any colour, including <code>var(--token)</code>.</td></tr>
-    <tr><td>figure-stroke / figure-stroke-width</td><td>The edge — the coastline on Earth. Defaults to <code>figure-color</code>.</td></tr>
-    <tr><td>borders</td><td>Region boundaries where the body has them: country borders on Earth. Vector data, so they work under any figure style; a 512×256 raster cannot express a border that follows a river.</td></tr>
-    <tr><td>borders-color / -width / -opacity</td><td>Default to the edge colour at <code>0.5</code> and <code>0.55</code>.</td></tr>
-  </table>
-
-  <h3>Dots</h3>
-  <table>
-    <tr><th>attribute</th><th>what it does</th></tr>
-    <tr><td>dot-shape</td><td>circle · square · triangle · <em>tile</em>, a square lying on the surface (a sliver at the globe's limb, a square on the flat map) · a custom SVG path (24×24 units).</td></tr>
-    <tr><td>dot-size</td><td>Fraction of a grid cell the dot fills (default <code>0.55</code>).</td></tr>
-    <tr><td>dot-hover-color / -scale</td><td>Hover colour auto-derives as a contrast-aware shade of <code>figure-color</code> — darker for light dots, lighter for dark. Override either.</td></tr>
-  </table>
-
-  <h3>The globe</h3>
-  <table>
-    <tr><th>attribute</th><th>what it does</th></tr>
-    <tr><td>rotate-speed</td><td>Degrees per second. <code>0</code> parks it.</td></tr>
-    <tr><td>roll</td><td>The lean, in the plane of the screen. This is what makes a globe look photographed rather than diagrammed.</td></tr>
-    <tr><td>tilt</td><td>Axial tilt on the globe; degrees of <code>rotateX</code> on the flat map.</td></tr>
-    <tr><td>focus</td><td><code>"lat,lon"</code> the globe starts facing — with <code>rotate-speed="0"</code> it holds there.</td></tr>
-    <tr><td>globe-ring</td><td>A hairline halo at the limb. Off by default.</td></tr>
-    <tr><td>graticule</td><td>The meridian and parallel grid.</td></tr>
-    <tr><td>meridians / parallels</td><td>How many of each (12 and 11). The equator is drawn separately, so it can carry its own weight.</td></tr>
-    <tr><td>graticule-color / -opacity</td><td>Default to <code>figure-color</code> at <code>0.28</code>.</td></tr>
-    <tr><td>equator-color / -opacity</td><td>Default to the graticule at <code>0.36</code> — a touch above its neighbours, never a stripe.</td></tr>
-    <tr><td>graticule-width</td><td>Line width, CSS px on the globe (<code>0.5</code> is one device pixel on a 2× screen); a multiplier of the flat map's hairline.</td></tr>
-    <tr><td>distance</td><td>A perspective camera that many body radii from the centre. Default <em>Infinity</em>, the orthographic view; <code>2.4</code> is a globe seen from close by — near side larger, far side smaller, the limb on the same disc.</td></tr>
-    <tr><td>fog</td><td><code>"near far"</code> in radii from the centre plane. Set, the globe is glass: the far hemisphere shows through and everything fades from opaque at <em>near</em> to gone at <em>far</em>.</td></tr>
-    <tr><td>fog-color</td><td>The fog's colour. Unset, the fog fades to transparent; set, everything in it is drawn in its own colour mixed toward this one, as a WebGL fog blends.</td></tr>
-    <tr><td>distribution</td><td><em>grid</em> (the lat/lon grid) · <em>uniform</em>, a Fibonacci lattice with equal area per dot and no bunching at the poles.</td></tr>
-  </table>
-
-  <h3>Markers and overlays</h3>
-  <table>
-    <tr><th>attribute</th><th>what it does</th></tr>
-    <tr><td>places</td><td>Comma-separated names from the body's gazetteer: <code>"Nairobi, Seoul"</code> on Earth, <code>"Apollo 11"</code> on the Moon.</td></tr>
-    <tr><td>markers</td><td>Coordinates without the gazetteer: <code>"Name@lat,lon;…"</code> — same pipeline and events as places.</td></tr>
-    <tr><td>marker-shape</td><td>circle · square · triangle · <strong>pin</strong>, the map-pin silhouette, anchored at its tip.</td></tr>
-    <tr><td>marker-color / -scale / -cursor</td><td>Any colour; size relative to a dot; the cursor over a marker.</td></tr>
-    <tr><td>marker-pulse</td><td>A radar ping: an expanding, fading ring.</td></tr>
-    <tr><td>overlays</td><td>Position host children carrying <code>data-lat</code>/<code>data-lon</code> over the map (globe). On by default; each gets <code>--mappo-depth</code> and <code>data-mappo-behind</code>.</td></tr>
-    <tr><td>highlight-polygon / -color</td><td>JSON rings of <code>[lat, lon]</code> — every figure dot inside draws in the highlight colour. You supply the shape; the point-in-polygon test runs once per geometry build, never per frame.</td></tr>
-  </table>
-
-  <h3>Motion and the hero look</h3>
-  <table>
-    <tr><th>attribute</th><th>what it does</th></tr>
-    <tr><td>tilt / rotate / perspective</td><td>The lying-down hero look: degrees of <code>rotateX</code> and <code>rotateZ</code>, perspective in px.</td></tr>
-    <tr><td>animation</td><td>none · <em>wave</em>, a thin rolling crest · <em>noise</em>, two-octave perlin · <em>ripple</em> · <em>sweep</em>, a sonar pass · <em>sparkle</em>.</td></tr>
-    <tr><td>animation-period / -height / -width</td><td>Seconds per cycle · crest height in cells · crest thinness as a fraction of the cycle.</td></tr>
-  </table>
-</div>
-
-<p class="note" style="margin-top:22px">
-  The full API — the <code>Mappo</code> class, callbacks, the body interface for your own
-  worlds, and low-level exports like <code>EARTH.figure(lat, lon)</code>,
-  <code>EARTH.outlines()</code> and <code>EARTH.places</code> — is in the
-  <a href="https://github.com/rameerez/mappo#readme">README</a>.
-</p>
-
-<p class="foot">
-  MIT © <a href="https://github.com/rameerez">@rameerez</a> ·
-  Land shapes derived from <a href="https://www.naturalearthdata.com">Natural Earth</a> (public domain) ·
-  <a href="https://github.com/rameerez/mappo">Source &amp; issues</a>
-</p>
-
-</div>
+</footer>
 
 <script type="module">
-  import { bindThemeToggle } from "./assets/theme.js";
-  import Coloris from "./demo/coloris.js";
-  import { registerBody } from "./dist/all.js";
-  import { MOON } from "./dist/bodies/moon.js";
-  import { MARS } from "./dist/bodies/mars.js";
+// Modular on purpose: this page loads the core, the globe renderer, vector
+// outlines, Earth's rings, the projections, links and two other worlds, which
+// is exactly the story the band tells. A page that only wanted a flat dot map
+// would load the first line alone.
+import "./dist/mappo.js";
+import "./dist/globe.js";
+import "./dist/vector.js";
+import "./dist/projections.js";
+import "./dist/bodies/earth-vector.js";
+import { links } from "./dist/links.js";
+import { EARTH, registerBody, noise2, resolveProjection, resolvePlace } from "./dist/mappo.js";
+import { MOON } from "./dist/bodies/moon.js";
+import { MARS } from "./dist/bodies/mars.js";
+registerBody(MOON);
+registerBody(MARS);
 
-  // The playground's body knob. Two opt-in packs, registered by name; the
-  // <mappo-world> below adopts whichever one its attribute asks for.
-  registerBody(MOON);
-  registerBody(MARS);
+import { earthAt } from "./demo/astro.js";
+import { FACE, faceAttrs, paintFace, clockFor } from "./demo/standby-face.js";
+import { regions } from "./demo/countries.js";
+import { FLAT, landAttrs, seamsAttrs, fillCountries, markUnshaped, FILL_CSS } from "./demo/analytics-choropleth.js";
+import { flights, LAYER } from "./assets/arc-flights.js";
+import { heroTour } from "./assets/hero-tour.js";
+import { bindThemeToggle } from "./assets/theme.js";
 
-  bindThemeToggle(document.getElementById("theme"));
+const $ = (id) => document.getElementById(id);
 
-  // Coloris (vendored, MIT) replaces the native OS colour dialog with an
-  // in-page picker. It fires real input events on the bound field, so the
-  // generic knob wiring below needs zero special-casing.
-  Coloris.init();
-  Coloris({
-    theme: "polaroid", themeMode: "light", format: "hex", alpha: false, wrap: true,
-    swatches: [ "#9fb08f", "#c9d3bd", "#5f7a4a", "#c2410c", "#16181d", "#dfe6da", "#f4f6f2",
-                "#2262fe", "#dbe9f6", "#0b1220" ]
-  });
+// ── theme ───────────────────────────────────────────────────────────────────
+// assets/theme.js owns the storage key, the data-theme attribute and the
+// before-paint apply, so the choice survives walking into the demos. It writes
+// a word into whatever element it is given, though, which would eat an icon —
+// so it drives an offscreen button and this one forwards to it.
+const themeState = document.createElement("button");
+themeState.className = "sr";
+document.body.appendChild(themeState);
+bindThemeToggle(themeState);
+const themeBtn = $("theme");
+themeBtn.addEventListener("click", () => {
+  themeState.click();
+  themeBtn.setAttribute("aria-pressed", themeState.getAttribute("aria-pressed"));
+});
+themeBtn.setAttribute("aria-pressed", themeState.getAttribute("aria-pressed") ?? "false");
 
-  // Micro syntax highlighting: strings → tags → attributes → keywords, in that
-  // order so each pass can anchor on the previous one's output.
-  const highlight = (code) => code
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/("[^"]*")/g, '<span class="tok-s">$1</span>')
-    .replace(/(&lt;\/?)([a-zA-Z][\w-]*)/g, '$1<span class="tok-t">$2</span>')
-    .replace(/([\w-]+)=(?=&quot;|<span class="tok-s")/g, '<span class="tok-a">$1</span>=')
-    .replace(/\b(import|from|npm|install)\b/g, '<span class="tok-k">$1</span>');
-  for (const code of document.querySelectorAll("pre code")) {
-    code.innerHTML = highlight(code.textContent);
-  }
+// A hairline under the navbar, but only once the page has left the top.
+const nav = $("nav");
+const onScroll = () => nav.classList.toggle("stuck", scrollY > 8);
+addEventListener("scroll", onScroll, { passive: true });
+onScroll();
 
-  // ── the playground ────────────────────────────────────────────────────
-  const map = document.getElementById("map");
-  const log = document.getElementById("eventlog");
-  for (const input of document.querySelectorAll(".knobs input, .knobs select")) {
-    // Browsers restore form state across reloads without firing input events —
-    // sync every knob into the element once, so a restored control can never
-    // disagree with the map it is supposed to describe.
-    if (map.getAttribute(input.id) !== input.value) map.setAttribute(input.id, input.value);
-    input.addEventListener("input", () => map.setAttribute(input.id, input.value));
-  }
+// ── the star widget, stamped ────────────────────────────────────────────────
+// One template, three places: the nav, the hero and the close.
+const ghTpl = $("ghstar-tpl");
+for (const slot of document.querySelectorAll(".ghstar-slot")) slot.replaceWith(ghTpl.content.cloneNode(true));
 
-  // Mode is a segmented control (one position, always). Switching modes greys
-  // out the knobs that do not apply and — until you touch the cols slider
-  // yourself — tracks the mode's auto resolution.
-  const seg = document.getElementById("mode-seg");
-  const colsInput = document.getElementById("cols");
-  let colsTouched = false;
-  colsInput.addEventListener("input", () => { colsTouched = true; });
-  const MODE_ONLY = {
-    "rotate-speed": "globe", "roll": "globe", "graticule": "globe",
-    "globe-ring": "globe", "marker-pulse": "flat"
-  };
-  const applyMode = (mode) => {
-    for (const b of seg.querySelectorAll("button")) {
-      const on = b.dataset.value === mode;
-      b.classList.toggle("active", on);
-      b.setAttribute("aria-checked", String(on));
-    }
-    map.setAttribute("mode", mode);
-    for (const [ id, only ] of Object.entries(MODE_ONLY)) {
-      const el = document.getElementById(id);
-      el.disabled = only !== mode;
-      el.closest("label").classList.toggle("off", only !== mode);
-    }
-    if (!colsTouched) {
-      colsInput.value = mode === "globe" ? 170 : 120;
-      map.setAttribute("cols", colsInput.value);
-    }
-  };
-  for (const b of seg.querySelectorAll("button")) {
-    b.addEventListener("click", () => applyMode(b.dataset.value));
-  }
-  applyMode("globe");
-
-  // Figure style decides which knobs still mean anything: with the dot field
-  // off, dot-shape and dot-size describe nothing on screen; with it on, the
-  // edge source and borders do not apply.
-  const figureSel = document.getElementById("figure");
-  const syncFigure = () => {
-    const dots = figureSel.value.split(/\s+/).includes("dots");
-    for (const id of [ "dot-shape", "dot-size" ]) {
-      const el = document.getElementById(id);
-      el.disabled = !dots;
-      el.closest("label").classList.toggle("off", !dots);
-    }
-    for (const id of [ "figure-source", "borders" ]) {
-      const el = document.getElementById(id);
-      el.closest("label").classList.toggle("off", dots);
-    }
-  };
-  figureSel.addEventListener("input", syncFigure);
-  syncFigure();
-
-  // Each world brings its own gazetteer, so the places knob follows the body.
-  const PLACES = {
-    earth: "London, Lagos, Singapore, New York, Tokyo, Sao Paulo, Nairobi, Sydney",
-    moon: "Apollo 11, Apollo 17, Luna 9, Chang'e 4, Shackleton",
-    mars: "Curiosity, Perseverance, Viking 1, Olympus Mons, Hellas Planitia"
-  };
-  const bodySel = document.getElementById("body");
-  const placesInput = document.getElementById("places");
-  bodySel.addEventListener("input", () => {
-    placesInput.value = PLACES[bodySel.value];
-    map.setAttribute("places", placesInput.value);
-    log.textContent = `${bodySel.value}: ${map.map.body.terms.figure} against ${map.map.body.terms.ground}`;
-  });
-
-  map.addEventListener("mappo:placeclick", (e) =>
-    log.textContent = `place click → ${e.detail.name} (${e.detail.lat}, ${e.detail.lon})`);
-  map.addEventListener("mappo:dotclick", (e) =>
-    log.textContent = `dot click → lat ${e.detail.lat.toFixed(1)}, lon ${e.detail.lon.toFixed(1)}`);
-
-  // Live star count. Unauthenticated GitHub API (60 req/h per visitor IP),
-  // cached for the session; the pill simply stays hidden if the fetch fails.
+// ── stars ───────────────────────────────────────────────────────────────────
+// Cached for the session: the unauthenticated API allows sixty calls an hour
+// per address, and a landing page reloaded while it is being written would eat
+// them. A count that will not load simply does not appear.
+(async () => {
   try {
-    const el = document.getElementById("stars");
-    let stars = Number(sessionStorage.getItem("mappo-stars"));
-    if (!Number.isFinite(stars) || sessionStorage.getItem("mappo-stars") === null) {
+    const KEY = "mappo-stars";
+    let n = Number(sessionStorage.getItem(KEY));
+    if (!Number.isFinite(n) || sessionStorage.getItem(KEY) === null) {
       const res = await fetch("https://api.github.com/repos/rameerez/mappo");
-      if (res.ok) {
-        stars = (await res.json()).stargazers_count;
-        sessionStorage.setItem("mappo-stars", String(stars));
-      }
+      if (!res.ok) return;
+      n = (await res.json()).stargazers_count;
+      sessionStorage.setItem(KEY, String(n));
     }
-    if (Number.isFinite(stars)) {
-      el.textContent = stars >= 1000 ? `${(stars / 1000).toFixed(1).replace(/\.0$/, "")}k` : String(stars);
-      el.hidden = false;
-    }
+    if (!Number.isFinite(n)) return;
+    const label = n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k` : String(n);
+    // The same count in every copy of the widget.
+    for (const c of document.querySelectorAll(".ghstar .count")) { c.querySelector("span").textContent = label; c.hidden = false; }
   } catch {}
+})();
+
+// Each panel is built inside a guard: a demo that throws should cost its own
+// panel, not the page.
+const panel = (name, fn) => { try { fn(); } catch (e) { console.warn(`[landing] ${name}`, e); } };
+
+
+// ── the hero globe, demonstrating the library on itself ─────────────────────
+// One card, one thing at a time, riding the sphere as it turns: the sequence
+// lives in assets/hero-tour.js. The copy is kept clear, so no subject is ever
+// chosen under the headline the globe runs behind.
+panel("hero", () => {
+  // The band paints over the sphere's lower half, so it is not free page.
+  heroTour($("hero"), { keepClear: [ document.querySelector(".hero-copy"), document.querySelector(".band") ] });
+});
+
+// ── the gallery and the reading list, from one list each ────────────────────
+const DEMOS = [
+  [ "region-earth", "Region: Earth" ], [ "worlds", "Other worlds" ],
+  [ "standby", "Standby clock" ], [ "analytics", "Geographic distribution" ],
+  [ "satellites", "Starlink, right now" ], [ "year", "Where the Earth is" ],
+  [ "mars-mission", "Mars transfer" ], [ "projections", "Projections" ],
+  [ "land", "Land styles" ], [ "perf", "Performance" ], [ "index", "All demos" ]
+];
+$("start-demos").innerHTML = DEMOS
+  .map(([ f, n ]) => `<a href="./demo/${f}.html">${n}</a>`).join("");
+const GH = "https://github.com/rameerez/mappo";
+const READ = [
+  [ `${GH}#readme`, "README" ], [ `${GH}#the-element`, "Every attribute" ], [ `${GH}#the-js-api`, "The JS API" ],
+  [ `${GH}#bodies`, "Your own world" ], [ `${GH}#projections`, "Projections" ], [ `${GH}#links-arcs-and-spikes--mappolinks`, "Arcs and spikes" ],
+  [ `${GH}/blob/main/docs/performance.md`, "Performance" ], [ `${GH}/blob/main/docs/precision.md`, "Precision" ],
+  [ `${GH}/blob/main/docs/roadmap.md`, "Roadmap" ], [ `${GH}/blob/main/CHANGELOG.md`, "Changelog" ],
+  [ "https://www.npmjs.com/package/mappo", "npm" ]
+];
+$("start-links").innerHTML = READ.map(([ href, n ]) => `<a href="${href}">${n}</a>`).join("");
+
+// ── standby: dots, and the night drawn over them ────────────────────────────
+panel("standby", () => {
+  // Every number here comes from demo/standby-face.js, which the full-screen
+  // demo reads too. They used to be two sets that drifted.
+  const el = document.createElement("mappo-world");
+  for (const [ k, v ] of Object.entries(faceAttrs(88))) el.setAttribute(k, v);
+  $("standby-map").appendChild(el);
+
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  $("sb-city").textContent = (tz.split("/").pop() || "Here").replace(/_/g, " ");
+  const hhmm = clockFor(tz);
+  const clock = $("sb-time");
+  clock.style.color = FACE.clock;
+
+  customElements.whenDefined("mappo-world").then(() => requestAnimationFrame(() => {
+    // addLayer: mappo keeps a canvas over the map and redraws it with every
+    // frame the map draws, so this cannot drift from the dots underneath.
+    el.map.addLayer((ctx, view) => paintFace(ctx, view.width, view.height, earthAt(new Date())));
+    const tick = () => { clock.textContent = hhmm(new Date()); };
+    tick();
+    setInterval(() => { tick(); el.map.render?.(); }, 30000);
+  }));
+});
+
+// ── the live globe: the demo itself, clipped to its sphere ──────────────────
+// One scene, one source. The card frames demo/live-globe.html running, so it
+// cannot drift from the full page the way a re-implementation did. Same origin,
+// so the demo's own chrome (header, note, pause toggle) is hidden by a stylesheet
+// injected from here, and the demo never learns it is being framed. The demo's
+// stage is 900 px; the sphere is 61% of it and sits 48 px below the top once
+// the header is gone, which is what the offsets below are computed from.
+panel("live", () => {
+  const frame = $("live-frame"), stage = frame.parentElement;
+  const STAGE = 900, TOP = 48;
+  const fit = () => {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    const s = (w / STAGE) * 1.2;   // the sphere fills most of the card
+    frame.style.transform = `scale(${s})`;
+    frame.style.left = `${(w - STAGE * s) / 2}px`;
+    frame.style.top = `${h / 2 - (TOP + STAGE / 2) * s}px`;
+  };
+  frame.addEventListener("load", () => {
+    try {
+      const doc = frame.contentDocument;
+      const style = doc.createElement("style");
+      // The demo fades the sphere's lower half into its own page; in a card the
+      // whole sphere shows, so the fade and the darkening overlay go too.
+      style.textContent = ".top,.note,.toggle-row,.wave{display:none!important}" +
+        "html,body{overflow:hidden!important;background:transparent!important}" +
+        ".globe-root{background:none!important;padding-top:48px!important}" +
+        ".globe-scene{mask-image:none!important;-webkit-mask-image:none!important;margin-bottom:0!important}" +
+        ".globe-scene:after{display:none!important}";
+      doc.head.appendChild(style);
+    } catch {}
+    fit();
+  });
+  new ResizeObserver(fit).observe(stage);
+  fit();
+});
+
+// ── the flat map, lying down: pins by name and arcs that travel ─────────────
+panel("skew", () => {
+  const PLACES = [ "Lisbon", "New York", "São Paulo", "Lagos", "Dubai", "Singapore", "Tokyo", "Sydney" ];
+  const el = document.createElement("mappo-world");
+  for (const [ k, v ] of Object.entries({
+    mode: "flat", cols: "170", "lat-min": -56, "lat-max": 78,
+    figure: "dots", "figure-color": "#d3dbe6", "dot-size": "0.55",
+    tilt: "36", perspective: "1100", background: "none", interactive: "false",
+    places: PLACES.join(", "),
+    "marker-color": "var(--pin)", "marker-scale": "2.2", "marker-pulse": "true"
+  })) el.setAttribute(k, v);
+  const host = $("skew-map");
+  host.appendChild(el);
+  customElements.whenDefined("mappo-world").then(() => requestAnimationFrame(() => {
+    // The hero globe's arcs, on the flat map: the same layer, the same
+    // numbers and the same life, from ./assets/arc-flights.js.
+    const layer = links(el.map, { ...LAYER, color: "var(--arc)" });
+    // Only pairs whose short way stays on the page: an arc across the seam
+    // leaves one edge and comes back on the other, from nowhere.
+    const lon = (name) => resolvePlace(name, EARTH)?.lon ?? 0;
+    const fl = flights(layer, { places: PLACES, ok: (a, b) => Math.abs(lon(a) - lon(b)) <= 180 });
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { fl.settle(); return; }
+    // A flat map never redraws on its own, so the arcs need a loop; it runs
+    // only while the card is on screen.
+    let last = null, raf = null, on = false;
+    const frame = (now) => {
+      raf = null;
+      const dt = last == null ? 0 : Math.min(0.1, (now - last) / 1000);
+      last = now;
+      fl.step(now, dt);
+      layer.redraw();
+      if (on) raf = requestAnimationFrame(frame);
+    };
+    new IntersectionObserver(([ e ]) => {
+      on = e.isIntersecting;
+      if (on && !raf) { last = null; raf = requestAnimationFrame(frame); }
+    }, { rootMargin: "80px" }).observe(host);
+  }));
+});
+
+// ── a world that does not exist: one function, land or sea, and a button ────
+// Every press writes a new body: a noise field with its own continent size,
+// roughness, sea level and ice line, registered under a fresh id so the live
+// map adopts it, and a look to go with it: a hue, dots or tiles or outlines,
+// a lattice, a tilt, a spin. The sphere behind it is CSS in the same hue, the
+// way github.com lights its globe with gradients rather than textures.
+panel("nowhere", () => {
+  const RAD = Math.PI / 180;
+  const el = document.createElement("mappo-world");
+  const mini = document.createElement("mappo-world");   // the flat minimap, same body
+  const planet = $("planet"), btn = $("gen");
+  // mulberry32: a small deterministic generator, so a seed is a whole planet.
+  const prng = (seed) => () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const hsl = (h, s, l) => `hsl(${Math.round(h)} ${Math.round(s)}% ${Math.round(l)}%)`;
+  let count = 0;
+
+  function generate(seed) {
+    const r = prng(seed);
+    const range = (a, b) => a + r() * (b - a), pick = (a) => a[Math.floor(r() * a.length)];
+
+    // The world. Sampled on a circle in longitude so the seam at 180° never
+    // shows as it turns; latitude bends the circle so bands do not repeat.
+    const freq = range(1.1, 2.6), rough = range(0.14, 0.4), sea = range(-0.05, 0.28), ice = range(68, 90);
+    const ox = r() * 100, oy = r() * 100;
+    const land = (lat, lon) => {
+      const a = lon * RAD, c = Math.cos(a) * freq, s = Math.sin(a) * freq, z = lat / 30;
+      const v = noise2(c + 0.9 * z + ox, s - 0.7 * z + oy) * (0.7 - rough)
+              + noise2(2.4 * c + 1.6 * z + ox + 17, 2.4 * s - 1.2 * z + oy + 9) * rough
+              + noise2(5.1 * c + 3.2 * z + ox + 3, 5.1 * s + 2.5 * z + oy + 41) * 0.1;
+      return v > sea && Math.abs(lat) < ice;
+    };
+    const id = `nowhere-${++count}`;
+    registerBody({ id, name: `Nowhere ${count}`, latRange: [ -90, 90 ], terms: { figure: "land", ground: "sea" }, figure: land });
+
+    // The look.
+    const hue = r() * 360, style = pick([ "dots", "dots", "tiles", "outline" ]);
+    const dots = hsl(hue, range(55, 90), range(62, 78));
+    planet.style.setProperty("--dots", dots);
+    planet.style.setProperty("--glow", hsl((hue + range(20, 60)) % 360, 70, 45));
+    planet.style.setProperty("--deep", hsl(hue, 40, 10));
+    const attrs = {
+      mode: "globe", body: id, "lat-min": -90, "lat-max": 90,
+      cols: style === "outline" ? "180" : String(Math.round(range(230, 330))),
+      distribution: style === "outline" ? "grid" : "uniform",
+      figure: style === "outline" ? "solid outline" : "dots",
+      "dot-shape": style === "tiles" ? "tile" : "circle",
+      "dot-size": style === "tiles" ? "0.42" : range(0.42, 0.55).toFixed(2),
+      "figure-color": style === "outline" ? hsl(hue, 60, 65) + "55" : dots,
+      "figure-stroke": hsl(hue, 70, 72), "figure-stroke-width": "0.7",
+      distance: style === "tiles" ? "2.6" : "8.8", fog: style === "tiles" ? "-0.6 1.0" : null,
+      background: "none", "globe-ring": "false", interactive: "true",
+      "rotate-speed": range(1.2, 3).toFixed(1), tilt: String(Math.round(range(-25, 25))), roll: String(Math.round(range(-16, 16))),
+      graticule: r() < 0.5 ? "" : null, meridians: "24", parallels: "23", "graticule-width": "0.5",
+      "graticule-color": dots, "graticule-opacity": "0.12", "equator-color": dots, "equator-opacity": "0.2"
+    };
+    for (const [ k, v ] of Object.entries(attrs)) v == null ? el.removeAttribute(k) : el.setAttribute(k, String(v));
+
+    // The minimap: the flat renderer on the same body, in the same colours,
+    // the whole sphere unrolled two to one.
+    const flat = {
+      mode: "flat", body: id, "lat-min": -90, "lat-max": 90, cols: style === "outline" ? "120" : "150",
+      figure: style === "outline" ? "solid outline" : "dots",
+      "dot-shape": style === "tiles" ? "square" : "circle", "dot-size": "0.55",
+      "figure-color": attrs["figure-color"], "figure-stroke": attrs["figure-stroke"], "figure-stroke-width": "0.6",
+      background: "none", interactive: "false"
+    };
+    for (const [ k, v ] of Object.entries(flat)) mini.setAttribute(k, String(v));
+  }
+
+  $("nowhere-map").appendChild(el);
+  $("minimap").appendChild(mini);
+  generate(7);
+  btn.addEventListener("click", () => generate((Date.now() ^ (count * 7919)) >>> 0));
+});
+
+// ── landing charts: a flat map of a world, its landing sites pinned ─────────
+// The sites come from each pack's own gazetteer. The pins are overlays, not
+// mappo markers: a marker snaps to the dot grid so it replaces a dot, which is
+// right for a hero and up to half a cell off for a landing site. An overlay
+// sits on the coordinate itself, and the name rides in the same element, so
+// pin and label cannot disagree. `sites` maps a name to the side its label
+// sits on (w: to the west, s: below), chosen so none runs into a neighbour or
+// off the frame's edge.
+function landingChart(host, body, attrs, sites) {
+  const el = document.createElement("mappo-world");
+  for (const [ k, v ] of Object.entries(attrs)) el.setAttribute(k, String(v));
+  for (const [ name, side ] of Object.entries(sites)) {
+    const p = resolvePlace(name, body);
+    if (!p) continue;
+    const site = document.createElement("span");
+    site.className = `site ${side}`;
+    site.dataset.lat = p.lat;
+    site.dataset.lon = p.lon;
+    site.innerHTML = `<b></b><i>${name}</i>`;
+    el.appendChild(site);
+  }
+  $(host).appendChild(el);
+}
+// Mars: the lowlands are the figure (MOLA, the lowest third of the surface),
+// the highlands the ground; Equal Earth keeps areas honest across the planet.
+panel("mars", () => landingChart("mars-map", MARS, {
+  mode: "flat", body: "mars", projection: "equal-earth", "lat-min": -90, "lat-max": 90, cols: 200,
+  figure: "solid outline", "figure-source": "vector", "figure-color": "#b4522c66", "figure-stroke": "#e8804a",
+  "figure-stroke-width": 0.7, "ground-color": "#6b3421", "dot-size": 0.55,
+  background: "none", interactive: "false",
+  graticule: "", meridians: 12, parallels: 5,
+  "graticule-color": "#f0a070", "graticule-opacity": 0.16, "equator-color": "#f0a070", "equator-opacity": 0.3
+}, { "Viking 1": "w", "Viking 2": "", Pathfinder: "s", Spirit: "w", Opportunity: "", Phoenix: "", Curiosity: "w s", InSight: "w", Perseverance: "w s", Zhurong: "" }));
+// The Moon: the maria are the figure (Clementine), the highlands the ground.
+// A globe to turn, opening on the near side, and the same Moon unrolled in the
+// corner, from the same function with the same sites, so the two agree.
+panel("moon", () => {
+  const LOOK = {
+    body: "moon", "lat-min": -90, "lat-max": 90,
+    // Dots, not a fill: on the globe a filled figure comes from the raster mask
+    // and reads as blocks; the maria as brighter dots under the exact outline
+    // stay crisp at any size, and the minimap wears the same look.
+    figure: "dots outline", "figure-source": "vector", "figure-color": "#aeb8c6", "figure-stroke": "#dbe4f0",
+    "ground-color": "#3b434f", "dot-size": 0.55, background: "none"
+  };
+  const SITES = { "Apollo 11": "", "Apollo 12": "w", "Apollo 14": "w s", "Apollo 15": "w", "Apollo 16": "s", "Apollo 17": "", "Luna 9": "", "Chang'e 4": "w", "Chang'e 6": "" };
+  landingChart("moon-map", MOON, {
+    ...LOOK, mode: "globe", cols: 190, "figure-stroke-width": 0.7, "rotate-speed": 1.1, tilt: 10, focus: "8,15", interactive: "true",
+    graticule: "", meridians: 12, parallels: 5, "graticule-color": "#c3cdd9", "graticule-opacity": 0.12, "equator-color": "#c3cdd9", "equator-opacity": 0.2
+  }, SITES);
+  landingChart("moon-mini", MOON, { ...LOOK, mode: "flat", cols: 120, "figure-stroke-width": 0.6, interactive: "false" }, SITES);
+});
+
+// ── copy: the close's one line, and every code block in the steps ───────────
+panel("copy", () => {
+  const bind = (btn, text) => btn.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(text()); btn.textContent = "Copied"; } catch { btn.textContent = "Select it"; }
+    setTimeout(() => { btn.textContent = "Copy"; }, 1600);
+  });
+  bind($("copy"), () => $("cdn").textContent);
+  for (const pre of document.querySelectorAll(".code")) {
+    const btn = Object.assign(document.createElement("button"), { className: "cp", type: "button", textContent: "Copy" });
+    btn.setAttribute("aria-label", "Copy this code");
+    // The comment is for reading, not for pasting.
+    bind(btn, () => pre.querySelector("code").textContent.replace(/\s*\/\/.*$/gm, "").trim());
+    pre.appendChild(btn);
+  }
+});
+
+// ── worlds: three bodies, true relative size ────────────────────────────────
+panel("worlds", () => {
+  // Radii: Earth 6371, Mars 3389.5, Moon 1737.4 km. The widths are the ratio.
+  const BODIES = [
+    { body: "earth", w: 100, color: "#5b9ae0" },
+    { body: "mars", w: 53.2, color: "#d1743f" },
+    { body: "moon", w: 27.3, color: "#9aa6b4" }
+  ];
+  const row = $("worlds-row");
+  for (const b of BODIES) {
+    const box = document.createElement("div");
+    box.style.width = `${b.w}%`;
+    const el = document.createElement("mappo-world");
+    for (const [ k, v ] of Object.entries({
+      mode: "globe", body: b.body, cols: "130", "lat-min": -90, "lat-max": 90,
+      figure: "solid outline", "figure-source": "vector",
+      "figure-color": b.color + "44", "figure-stroke": b.color,
+      "figure-stroke-width": "0.55", background: "none",
+      "rotate-speed": "1.2", interactive: "false", "globe-ring": "true"
+    })) el.setAttribute(k, v);
+    box.appendChild(el);
+    row.appendChild(box);
+  }
+});
+
+// ── analytics: the choropleth, from the module the full demo draws with ─────
+// The same three layers as demo/analytics.html: mappo's land in the no-data
+// tone, one SVG path per country from the shared data and ramp, and mappo's
+// borders on top. No numbers or colours live here; change them once, there.
+panel("analytics", () => {
+  document.head.append(Object.assign(document.createElement("style"), { textContent: FILL_CSS }));
+  const fig = $("analytics-map");
+  const land = document.createElement("mappo-world");
+  for (const [ k, v ] of Object.entries(landAttrs())) land.setAttribute(k, String(v));
+  const fills = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  fills.setAttribute("class", "fills");
+  fills.setAttribute("viewBox", "0 0 1000 1000");
+  fills.setAttribute("preserveAspectRatio", "none");
+  fills.setAttribute("aria-hidden", "true");
+  const seamsWrap = document.createElement("div");
+  seamsWrap.className = "seams";
+  const seams = document.createElement("mappo-world");
+  for (const [ k, v ] of Object.entries(seamsAttrs())) seams.setAttribute(k, String(v));
+  seamsWrap.append(seams);
+  const marks = document.createElement("div");
+  marks.className = "marks";
+  fig.append(land, fills, seamsWrap, marks);
+  const proj = resolveProjection("equirectangular", { latRange: FLAT.band, centerLon: 0 });
+  fillCountries(fills, regions(), proj, FLAT.band);
+  markUnshaped(marks, proj, FLAT.band);
+});
 </script>
-</body>
-</html>

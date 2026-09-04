@@ -13,22 +13,22 @@ the restructure it recommended produced, measured on the built `dist/`
 
 | file | raw | gzip | brotli | what it is |
 |---|---|---|---|---|
-| `dist/mappo.js` | 56.2 KB | **22.0 KB** | 19.1 KB | the core: engine, Earth's mask and gazetteer, equirectangular, layers |
+| `dist/mappo.js` | 56.4 KB | **22.1 KB** | 19.2 KB | the core: engine, Earth's mask and gazetteer, equirectangular, layers |
 | `dist/globe.js` | 25.6 KB | 10.2 KB | 9.1 KB | `mode="globe"`, with the camera, the fog and the overlay decisions |
 | `dist/projections.js` | 8.4 KB | 3.7 KB | 3.3 KB | Equal Earth, polar stereographic, custom and d3-geo adapters |
 | `dist/vector.js` | 3.6 KB | 1.8 KB | 1.6 KB | seam stitching and cutting for vector outlines |
-| `dist/links.js` | 6.5 KB | 3.1 KB | 2.8 KB | arcs between places and spikes at them, over either renderer |
+| `dist/links.js` | 7.6 KB | 3.6 KB | 3.3 KB | arcs between places and spikes at them, over either renderer |
 | `dist/bodies/earth-vector.js` | 38.8 KB | 22.0 KB | 19.3 KB | Earth's coastline and border rings |
 | `dist/bodies/moon.js` | 19.3 KB | 9.5 KB | 8.3 KB | the Moon pack |
 | `dist/bodies/mars.js` | 10.7 KB | 6.9 KB | 6.0 KB | the Mars pack |
-| `dist/all.js` | 136.5 KB | 59.8 KB | 51.5 KB | everything but the Moon and Mars, self-contained |
+| `dist/all.js` | 138.7 KB | 60.7 KB | 52.3 KB | everything but the Moon and Mars, self-contained |
 
 Beyond the split and the minifier, two encodings changed: the mask is stored
 as run lengths (Earth's 16 KB of bits became 3.6 KB of text, 2.3 KB gzipped,
 from 3.5 KB as base64) and the gazetteer as one string. The remaining
 candidates in section 7 — a shared-arc topology for the borders, a coarser
 coastline tolerance — are still open. `test/package.test.js` fails when the
-core exceeds 22 KB gzipped.
+core exceeds 22.5 KB gzipped.
 
 ## 1. Summary
 

@@ -233,9 +233,15 @@ export function projectRings(rings, projection) {
       } else {
         edge.push(frame);
         if (closure === "pole") {
+          // Up the seam to the pole, along the pole, back down the other seam.
+          // The two seam legs run along the frame's own edge, which Equal
+          // Earth bends, so they take the same latitude steps the seam closure
+          // does rather than one chord each: a chord from 45° to the pole cut
+          // a straight false edge across the whole top corner of Mars.
           const pole = meanLat(pts) >= 0 ? 90 : -90;
           const last = pts[pts.length - 1], first = pts[0];
-          const closureFrame = toFrame([ [ pole, last[1] ], [ pole, first[1] ] ]);
+          const up = [ pole, last[1] ], down = [ pole, first[1] ];
+          const closureFrame = toFrame([ ...seamClosure(last, up), up, down, ...seamClosure(down, first) ]);
           if (closureFrame) fill.push({ points: [ ...frame, ...closureFrame ], complement: false });
         } else {
           const boundary = toFrame(seamClosure(pts[pts.length - 1], pts[0]));

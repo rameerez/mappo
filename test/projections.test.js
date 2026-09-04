@@ -222,6 +222,39 @@ test("projecting rings: cylindrical maps cut at their own seam, polar maps never
   for (const piece of shifted.fill) for (const [ x ] of piece.points) assert.ok(x >= -1e-9 && x <= 1 + 1e-9);
 });
 
+test("a pole-encircling ring on Equal Earth closes along the curved seam, not with a chord", () => {
+  // Mars's northern lowlands wind the north pole; cut at the seam, the piece
+  // is closed up one seam to the pole and down the other. Equal Earth bends
+  // the seam, so a single straight leg from 45° to the pole would slice a
+  // false edge across the map. Every closure vertex must invert back onto
+  // the seam or the pole; a chord's midpoints invert to interior longitudes.
+  const stitched = stitchRings(MARS.outlines());
+  const eq = resolveProjection("equal-earth", { latRange: FULL });
+  const { fill, edge } = projectRings(stitched, eq);
+  assert.equal(fill.length, edge.length);
+  let checked = 0;
+  for (let i = 0; i < fill.length; i++) {
+    const closure = fill[i].points.slice(edge[i].length);
+    if (!closure.some(([ , y ]) => y < 1e-6)) continue;          // only the piece that reaches the north pole
+    const last = edge[i][edge[i].length - 1];
+    const path = [ last, ...closure ].map(([ x, y ]) => {
+      const back = eq.inverse(x, y);
+      assert.ok(back, "a closure vertex lies on the world");
+      assert.ok(Math.abs(Math.abs(back.lon) - 180) < 1e-6 || Math.abs(back.lat - 90) < 1e-6,
+        `closure vertex (${x.toFixed(4)}, ${y.toFixed(4)}) is on the seam or the pole, not at lon ${back.lon.toFixed(2)}`);
+      return back;
+    });
+    // Steps of at most two degrees along each seam leg: a single leg from the
+    // ring's last vertex straight to the pole is the chord this test exists for.
+    for (let k = 1; k < path.length; k++) {
+      assert.ok(Math.abs(path[k].lat - path[k - 1].lat) <= 2 + 1e-6,
+        `closure steps ${Math.abs(path[k].lat - path[k - 1].lat).toFixed(1)}° in one leg`);
+    }
+    checked++;
+  }
+  assert.ok(checked >= 1, "the lowlands produce a pole-closing piece");
+});
+
 test("graticule lines project and break at the seam and the edge of the world", () => {
   const parallel = [];
   for (let lon = -180; lon <= 180; lon += 3) parallel.push([ 30, lon ]);

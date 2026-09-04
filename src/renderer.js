@@ -167,6 +167,10 @@ export const DEFAULTS = {
   // drawn too, and everything fades from opaque at near to gone at far. null
   // keeps the opaque globe with its built-in facing fade.
   fog: null,
+  // How far a layer canvas (addLayer, mappo/links) reaches past the map's box,
+  // as a fraction of the box on every side. 0 stops at the edge; 0.15 lets an
+  // arc's apex rise above a globe and still be drawn.
+  layerBleed: 0,
   // The fog's colour. null fades what is in the fog to transparent; a colour
   // MIXES toward it at full alpha instead, the way a WebGL fog does — on a
   // light page over a dark fog the far side darkens rather than pales.
@@ -414,11 +418,23 @@ export class Mappo {
   #mountLayers() {
     if (!this._layers?.length || typeof document === "undefined") return;
     const c = this._layerCanvas ??= Object.assign(document.createElement("canvas"), { className: "mappo-layer" });
-    c.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none";
+    this.#reachLayers(c);
     if (getComputedStyle(this.container).position === "static") this.container.style.position = "relative";
     const overlay = this._overlayLayer ?? this._renderer?._overlayLayer ?? null;
     if (c.parentNode !== this.container || c.nextSibling !== overlay) this.container.insertBefore(c, overlay);
     if (this._renderer) this._renderer.onDraw = () => this.#drawLayers();
+  }
+
+  // The canvas covers the box, and past it by `layerBleed` of the box on every
+  // side, so what a layer draws above a globe's limb — an arc's apex — is seen
+  // rather than cut at the element's edge. Re-applied whenever the option
+  // moves; layers themselves keep drawing in the box's own coordinates.
+  #reachLayers(c) {
+    const b = Math.max(0, this.options.layerBleed) || 0;
+    if (c._bleed === b) return;
+    c._bleed = b;
+    const p = 100 * b;
+    c.style.cssText = `position:absolute;left:-${p}%;top:-${p}%;width:${100 + 2 * p}%;height:${100 + 2 * p}%;pointer-events:none`;
   }
 
   // A renderer with frames of its own repaints the layers in its next one;
@@ -430,15 +446,20 @@ export class Mappo {
   }
 
   #drawLayers() {
-    const c = this._layerCanvas, w = c?.clientWidth, h = c?.clientHeight;
-    if (!c?.isConnected || !w || !h) return;
+    const c = this._layerCanvas;
+    if (!c?.isConnected) return;
+    this.#reachLayers(c);
+    const cw = c.clientWidth, ch = c.clientHeight;
+    if (!cw || !ch) return;
     const dpr = Math.min(globalThis.devicePixelRatio || 1, this.options.maxDpr ?? 2);
-    const W = Math.round(w * dpr), H = Math.round(h * dpr);
+    const W = Math.round(cw * dpr), H = Math.round(ch * dpr);
     if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
     const ctx = c.getContext("2d");
     if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
+    // The box is the canvas less its bleed; the origin stays at the box's corner.
+    const k = 1 + 2 * c._bleed, w = cw / k, h = ch / k, ox = (cw - w) / 2, oy = (ch - h) / 2;
+    ctx.setTransform(dpr, 0, 0, dpr, ox * dpr, oy * dpr);
+    ctx.clearRect(-ox, -oy, cw, ch);
     const view = { width: w, height: h, dpr, map: this };
     for (const layer of this._layers) { ctx.save(); layer.draw(ctx, view); ctx.restore(); }
   }
@@ -734,7 +755,7 @@ export class Mappo {
     // One parse for the whole scene — the fast path for full builds.
     const [ markup, buildMs ] = span("wm:build-markup", () =>
       this.#defsMarkup(o, this.grid) + this.#backdropMarkup(this.grid) + this.#graticuleMarkup(this.grid, o) +
-      (parseFigureStyle(o.figure).dots ? this.#dotsMarkup(this.grid) : this.#figureMarkup(this.grid, o)) +
+      (parseFigureStyle(o.figure).dots ? this.#dotsMarkup(this.grid, o) : this.#figureMarkup(this.grid, o)) +
       this.#markersMarkup(this.grid, o));
     const [ , parseMs ] = span("wm:parse-innerHTML", () => { svg.innerHTML = markup; });
     this.#applyStyle(this.#css(o));
@@ -1024,8 +1045,13 @@ export class Mappo {
   // shapes and animation all live elsewhere — so the markup string caches
   // perfectly per resolution. Both animation phases ship on every dot (~30
   // bytes each): that's what makes animation a style-only knob.
-  #dotsMarkup(grid) {
-    const key = `${grid.projection.key}|${grid.cols}`;
+  // A highlight on a dot map recolours the dots inside the rings, the way the
+  // globe's does. The ray cast runs once per build, not per frame, and the
+  // rings join the cache key: two maps of the same size with different regions
+  // lit are two different pictures, and the markup must not be shared.
+  #dotsMarkup(grid, o) {
+    const rings = o.highlightPolygon?.length ? normalizeRings(o.highlightPolygon) : null;
+    const key = `${grid.projection.key}|${grid.cols}|${rings ? JSON.stringify(o.highlightPolygon) : ""}`;
     const cached = this._dotsCache.get(key);
     if (cached) { dbg(`dots cache HIT ${key}`); this._dotCount = cached.dots; return cached.markup; }
     dbg(`dots cache MISS ${key} — computing`);
@@ -1055,9 +1081,10 @@ export class Mappo {
         // SVG transforms are main-thread, and 8k continuous animators melt
         // frames; a baked checkerboard subset reads identically at density.
         const density = `${(col + row) % 2 === 0 ? " mappo-h" : ""}${(2 * col + 3 * row) % 3 === 0 ? " mappo-t" : ""}`;
+        const lit = rings && pointInRings(c.lat, c.lon, rings) ? " mappo-dot-highlight" : "";
         parts.push(
           `<g class="mappo-pos" transform="translate(${col * CELL + CELL / 2} ${row * CELL + CELL / 2})" data-col="${col}" data-row="${row}">` +
-          `<use class="mappo-dot${density}" href="#${shape}" style="--mappo-pw:${pw};--mappo-pn:${pn};--mappo-pr:${pr};--mappo-ps:${ps};--mappo-pk:${pk};--mappo-a:${a}"/></g>`
+          `<use class="mappo-dot${density}${lit}" href="#${shape}" style="--mappo-pw:${pw};--mappo-pn:${pn};--mappo-pr:${pr};--mappo-ps:${ps};--mappo-pk:${pk};--mappo-a:${a}"/></g>`
         );
       }
     }
@@ -1181,7 +1208,7 @@ export class Mappo {
         fill: none; stroke: ${o.bordersColor ?? stroke};
         stroke-width: ${o.bordersWidth}; stroke-linejoin: round; stroke-linecap: round; opacity: ${o.bordersOpacity};
       }
-      .mappo-figure-highlight { fill: ${o.highlightColor}; }
+      .mappo-figure-highlight, .mappo-dot-highlight { fill: ${o.highlightColor}; }
       .mappo-graticule { fill: none; stroke: ${graticule}; stroke-width: ${0.6 * o.graticuleWidth}; opacity: ${o.graticuleOpacity}; pointer-events: none; }
       .mappo-equator { fill: none; stroke: ${o.equatorColor ?? graticule}; stroke-width: ${0.6 * o.graticuleWidth}; opacity: ${o.equatorOpacity}; pointer-events: none; }
       .mappo-marker {
