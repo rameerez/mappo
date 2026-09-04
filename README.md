@@ -64,7 +64,7 @@ holds them all.
 
 | demo | what it shows |
 |---|---|
-| [Live Globe](https://rameerez.github.io/mappo/demo/live-globe.html) | github.com/globe rebuilt on mappo: arcs drawing in and erasing, spikes rising with a data window, a hover card |
+| [Live Globe](https://rameerez.github.io/mappo/demo/github-globe.html) | github.com/globe rebuilt on mappo: arcs drawing in and erasing, spikes rising with a data window, a hover card |
 | [Region: Earth](https://rameerez.github.io/mappo/demo/region-earth.html) | the glass globe: a perspective camera, fog, a uniform lattice and tiles, all four together |
 | [Starlink, right now](https://rameerez.github.io/mappo/demo/satellites.html) | ten thousand `locate()` calls a frame, from an SGP4 propagator the page carries itself |
 | [Where the Earth is](https://rameerez.github.io/mappo/demo/year.html) | the planet's place in its orbit, and the terminator that follows from it |
@@ -864,7 +864,7 @@ would show off the globe — its `height` plus the bulge of the sphere under it,
 in proportion to its chord — so a hero map's arcs rise off it the way the
 globe's do and land on their pins; a spike stands out of the plane by `height`
 in the map's own radii. The module is 3.7 KB gzipped and registers nothing;
-[the Live Globe demo](https://rameerez.github.io/mappo/demo/live-globe.html)
+[the Live Globe demo](https://rameerez.github.io/mappo/demo/github-globe.html)
 is a few hundred of these, sending and landing.
 
 ## Animation
