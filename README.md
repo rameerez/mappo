@@ -6,10 +6,17 @@
 
 **Maps of any world as a zero-dependency web component.** A dot field or
 vector outlines, flat SVG or a rotating canvas globe, places by name, your own
-HTML positioned on the sphere. The core is **22.0 KB gzipped with the whole
+HTML positioned on the sphere. The core is **22.1 KB gzipped with the whole
 Earth inside**; the globe, the other projections, real coastlines and other
 worlds are opt-in modules that register themselves. No build step, no
 dependencies, MIT.
+
+<p align="center">
+  <img src="assets/readme/globe.webp" alt="A dotted Earth on a glass globe, with a graticule and city markers" width="49%">
+  <img src="assets/readme/globe-dark.webp" alt="The same globe on a dark page, in the page's own colours" width="49%">
+</p>
+
+<p align="center"><em>One element, twice. Every colour is a CSS variable, so the theme toggle is the page's, not the map's.</em></p>
 
 ```html
 <script type="module" src="https://unpkg.com/mappo"></script>
@@ -49,6 +56,25 @@ land and the ground is ocean; on the Moon, maria on highlands; on Mars, the
 northern lowlands on the southern highlands; on the planet in your game,
 whatever you say. Same options, same renderers, same events.
 
+## Demos
+
+Every demo is one page you can read: no build, no framework, the library and
+the page's own code. [**The gallery**](https://rameerez.github.io/mappo/demo/)
+holds them all.
+
+| demo | what it shows |
+|---|---|
+| [Live Globe](https://rameerez.github.io/mappo/demo/live-globe.html) | github.com/globe rebuilt on mappo: arcs drawing in and erasing, spikes rising with a data window, a hover card |
+| [Region: Earth](https://rameerez.github.io/mappo/demo/region-earth.html) | the glass globe: a perspective camera, fog, a uniform lattice and tiles, all four together |
+| [Starlink, right now](https://rameerez.github.io/mappo/demo/satellites.html) | ten thousand `locate()` calls a frame, from an SGP4 propagator the page carries itself |
+| [Where the Earth is](https://rameerez.github.io/mappo/demo/year.html) | the planet's place in its orbit, and the terminator that follows from it |
+| [Other worlds](https://rameerez.github.io/mappo/demo/worlds.html) | the Moon and Mars packs, their figures and their gazetteers |
+| [Projections](https://rameerez.github.io/mappo/demo/projections.html) | every projection, including one of your own and a d3-geo one |
+| [Geographic distribution](https://rameerez.github.io/mappo/demo/analytics.html) | a choropleth dashboard: regions, counts, a legend |
+| [Standby](https://rameerez.github.io/mappo/demo/standby.html) | a clock that knows where the sun is |
+| [Land styles](https://rameerez.github.io/mappo/demo/land.html), [orbit](https://rameerez.github.io/mappo/demo/orbit.html), [Mars transfer](https://rameerez.github.io/mappo/demo/mars-mission.html) | the figure styles side by side, an Earth in orbit, a Hohmann transfer |
+| [Performance](https://rameerez.github.io/mappo/demo/perf.html) | the scripted abuse the budgets are measured against |
+
 ## Install
 
 ```bash
@@ -70,20 +96,20 @@ registers itself, so order does not matter and nothing is downloaded twice.
 
 | import | adds | gzipped | brotli |
 |---|---|---|---|
-| `mappo` | the core, with the whole Earth inside | **22.0 KB** | 19.1 KB |
+| `mappo` | the core, with the whole Earth inside | **22.1 KB** | 19.2 KB |
 | `mappo/globe` | `mode="globe"` | 10.2 KB | 9.1 KB |
 | `mappo/projections` | `projection="equal-earth"`, the polar pair, your own or d3-geo projections | 3.7 KB | 3.3 KB |
 | `mappo/vector` | `figure-source="vector"` and `borders` for bodies that carry rings (the Moon and Mars packs do) | 1.8 KB | 1.6 KB |
-| `mappo/links` | `links(map)`: arcs between places and spikes at them, over the globe or the flat map | 3.1 KB | 2.8 KB |
+| `mappo/links` | `links(map)`: arcs between places and spikes at them, over the globe or the flat map | 3.7 KB | 3.3 KB |
 | `mappo/bodies/earth-vector` | Earth's coastline and border rings; implies `mappo/vector` | 22.0 KB | 19.3 KB |
 | `mappo/bodies/moon`, `mappo/bodies/mars` | other worlds, as packs you register | 9.5 KB, 6.9 KB | 8.3 KB, 6.0 KB |
-| `mappo/all` | everything above except the Moon and Mars, in one self-contained file | 59.8 KB | 51.5 KB |
+| `mappo/all` | everything above except the Moon and Mars, in one self-contained file | 60.6 KB | 52.3 KB |
 
 A map that asks for something whose module has not loaded **waits**: it draws
 nothing (grid contours, for the vector features), warns once after two seconds
 if the module never arrives, and draws the moment it registers. The numbers are
 measured by `npm run weight` and held by the test suite: the core cannot grow
-past 22 KB gzipped without a test failing.
+past 22.5 KB gzipped without a test failing.
 
 **From a CDN**, the simplest is one file: `https://unpkg.com/mappo` for the
 core, or `https://unpkg.com/mappo@0.7.0/dist/all.js` for everything. To load
@@ -176,6 +202,12 @@ Every option that styles the figure starts with `figure-`; the ground has
 would say them. `filled` and `stroke` are accepted as synonyms; order and case
 do not matter.
 
+<p align="center">
+  <img src="assets/readme/styles.webp" alt="The same world as dots, as a coastline, and as filled land with borders" width="100%">
+</p>
+
+<p align="center"><em>One body, three figures: <code>dots</code>, <code>outline</code> with <code>figure-source="vector"</code>, and <code>solid outline</code> with <code>borders</code>.</em></p>
+
 | Option | Default | What it paints |
 |---|---|---|
 | `figure-color` | `#d3dce6` | the figure — the dots, or the fill |
@@ -257,6 +289,13 @@ registerBody(MARS);
 <mappo-mars figure="outline" figure-source="vector" places="Curiosity, Perseverance"></mappo-mars>
 <mappo-earth></mappo-earth>   <!-- ships with the bundle -->
 ```
+
+<p align="center">
+  <img src="assets/readme/moon.webp" alt="The Moon as a globe of dots, its maria the figure, with Apollo 11 and Shackleton marked" width="49%">
+  <img src="assets/readme/mars.webp" alt="Mars as a globe of dots, its northern lowlands the figure" width="49%">
+</p>
+
+<p align="center"><em>The Moon's figure is its maria; Mars's is the lowlands of the crustal dichotomy. Same renderer, same options, a different answer to one question.</em></p>
 
 **Order does not matter.** mappo defines its elements as it loads, which
 upgrades every `<mappo-world body="moon">` on the page before your own first
@@ -368,6 +407,12 @@ something. mappo lets you choose the lie. Four projections ship:
 | `equal-earth` | pseudocylindrical, equal-area | area, everywhere | 2.05 : 1 for the whole sphere; the corners are off the world |
 | `stereographic-north` | azimuthal, conformal | shape; the north pole at the centre | a square holding a disc |
 | `stereographic-south` | azimuthal, conformal | shape; the south pole at the centre | a square holding a disc |
+
+<p align="center">
+  <img src="assets/readme/equal-earth.webp" alt="The world in the Equal Earth projection, with coastlines, borders and a graticule" width="100%">
+</p>
+
+<p align="center"><em>Equal Earth, drawn from the vector pack with <code>borders</code> and a graticule. The equator carries its own colour.</em></p>
 
 Equal Earth is the equal-area projection of Šavrič, Patterson and Jenny
 (*International Journal of Geographical Information Science*, 2019), the
@@ -539,14 +584,23 @@ Three attributes turn the globe from a decoration into a *"here"*:
 - **`marker-shape="pin"`** — the map-pin silhouette (round head, punched hole,
   anchored at the TIP — the point is the place, the head floats above it).
   Draws on both renderers; `marker-pulse` pings at the anchor.
-- **`highlight-polygon`** + **`highlight-color`** — every figure dot inside the
+- **`highlight-polygon`** + **`highlight-color`** — the region inside the
   polygon draws in the highlight colour: the whole country or state glows, not
   just the pin. The value is JSON rings of `[lat, lon]` pairs (one ring or an
   array of rings — islands welcome). **mappo ships no per-region boundary
   data** on purpose: you supply the shape (Natural Earth's public-domain admin
   polygons compact beautifully — a country is typically 1–3 KB at the
   resolution a dot grid can even resolve). Rings crossing the antimeridian are
-  normalized automatically. Works on both renderers.
+  normalized automatically. On the globe it recolours the dots themselves; on
+  the flat map it paints **figure cells**, which exist only where the figure is
+  drawn as a shape, so a flat map needs `figure="solid"` or
+  `figure="solid outline"` for the highlight to appear at all.
+
+<p align="center">
+  <img src="assets/readme/highlight.webp" alt="A world map of filled land with the United States lit in a second colour" width="100%">
+</p>
+
+<p align="center"><em><code>highlight-polygon</code> with the rings of one country, on a <code>figure="solid"</code> flat map.</em></p>
 
 The highlight test runs once per geometry build, not per frame: flags parallel
 the point buffer index-for-index (the same discipline as the animation phase
@@ -716,7 +770,7 @@ width or a marker drawn there can grow the way the dots do. On the flat map
 `front` is always true, the answer follows the map's projection and central
 meridian, it is `null` for a point the projection has no place for, and the
 box is the untransformed layout box — `tilt`/`rotate`/`perspective` are a CSS
-transform applied on top of it.
+transform applied on top of it (`mappo/links` folds that transform in itself).
 
 [The Starlink demo](https://rameerez.github.io/mappo/demo/satellites.html) is
 ten thousand of these calls a frame.
@@ -740,6 +794,12 @@ map's box (`view` is `{ width, height, dpr, map }`), on a cleared canvas that
 ignores the pointer and sits under the DOM overlays. A parked globe asked to
 `redraw()` repaints the layers alone, not its dots. `mappo/links` is built on
 exactly this and nothing else.
+
+The canvas stops at the element's edge, and a globe's disc is 0.4 of its side,
+so an arc rising more than a quarter radius above the limb would be cut.
+`layer-bleed="0.15"` lets the canvas reach 15% of the box past every edge
+(`layerBleed` in JS); layers still draw in the box's own coordinates, and what
+falls outside it is simply seen.
 
 ## Links: arcs and spikes — `mappo/links`
 
@@ -772,17 +832,222 @@ the fog), `range` as `[a, b]` fractions of the length, `tip` (a radius, or
 `{ radius, color }`) for a dot at the far end, and `data` for whatever the
 link means to you.
 
+<p align="center">
+  <img src="assets/readme/links.webp" alt="Arcs standing off a globe between London, New York, Lagos and Bogotá" width="49%">
+  <img src="assets/readme/flat.webp" alt="The same kind of arcs bowed across a flat dotted world map" width="49%">
+</p>
+
+<p align="center"><em>The same module on both renderers: great circles standing off the sphere, bows across the page.</em></p>
+
 On the globe the far side is cut where the body is in the way, widths grow
 toward a perspective camera, and every vertex is one `locate()`: a link costs
-what it looks like. On the flat map an arc is a bow rather than that same great
-circle: the true line from Lisbon to Tokyo passes over Siberia, and unrolled it
-climbs out of the top of the box, which reads as a bug rather than as geography.
-So a flat arc takes the short way between the two places and `height` pushes it
-off that chord at right angles on the page, a fraction of the chord's own
-length. The seam is still cut the way the graticule's is. If you want the true
-line, pass it: `points: arcPoints(from, to, { height: 0 })`. The module is 3.1 KB gzipped and registers nothing;
-[the GitHub globe demo](https://rameerez.github.io/mappo/demo/github-globe.html)
-is a few hundred of these, opening and merging.
+what it looks like.
+
+On the flat map an arc is a **bow**, not that same great circle unrolled. The
+true line from Lisbon to Tokyo passes over Siberia, and flattened it climbs out
+of the top of the box: correct geography that reads as a bug. So a flat arc
+takes the short way between the two places, and `height` pushes it off that
+chord at right angles **on the page**, by a fraction of the chord's own length —
+short hops stay nearly straight, long ones bow in proportion, and both stay in
+the box. The seam is still cut the way the graticule's is. If you want the true
+line, pass it: `points: arcPoints(from, to, { height: 0 })`.
+
+A place given by name ends on the map's marker for it. The flat map snaps a
+marker to the centre of the nearest figure cell (`snapToFigure`, so a marker
+replaces a dot rather than floating between two), and a named end takes the
+same snap, so an arc lands on its pin to the pixel; `[lat, lon]` ends are your
+own and stay exact.
+
+On a flat map with `tilt`, the layer applies the map's lean, turn and
+perspective itself, and there an arc stands up out of the plane by the sag it
+would show off the globe — its `height` plus the bulge of the sphere under it,
+in proportion to its chord — so a hero map's arcs rise off it the way the
+globe's do and land on their pins; a spike stands out of the plane by `height`
+in the map's own radii. The module is 3.7 KB gzipped and registers nothing;
+[the Live Globe demo](https://rameerez.github.io/mappo/demo/live-globe.html)
+is a few hundred of these, sending and landing.
+
+## Animation
+
+The dot field can move. Animation is **opt-in** — the default map is
+completely static, and a static map costs nothing per frame:
+
+```html
+<mappo-world animation="wave" animation-period="6"
+             animation-height="0.8" animation-width="0.13"></mappo-world>
+```
+
+| `animation` | what moves |
+|---|---|
+| `none` (default) | nothing; the map is drawn once |
+| `wave` | a crest crossing the grid on the diagonal |
+| `noise` | a soft field, each dot on its own phase |
+| `ripple` | rings out of the middle of the map |
+| `sweep` | a front crossing left to right |
+| `sparkle` | dots scale up and down in place instead of lifting |
+
+Three knobs shape any of them. `animation-period` is seconds for a full cycle
+(bigger is slower, default `6`); `animation-height` is the crest's height in
+**grid cells**, so it scales with `cols` rather than with pixels (default
+`0.8`); `animation-width` is how much of the cycle the crest occupies, as a
+fraction (default `0.13` — smaller is a thinner, sharper front).
+
+On the flat map animation runs as CSS keyframes: compositor-eligible, browser
+scheduled, and switched off for you under `prefers-reduced-motion`. On the
+globe the same phase fields lift each dot radially off the surface, and
+`sparkle` scales it in place. Above roughly 4 500 dots a load gate animates a
+baked subset rather than every dot, which is why an animated hero should stay
+near `cols ≤ 180` — see *Performance*.
+
+
+## Interaction and events
+
+Every map is interactive unless told otherwise, and both renderers answer the
+same way: the flat map through real DOM nodes, the globe through
+inverse-projection hit-testing on canvas.
+
+```js
+map.addEventListener("mappo:placeclick", (e) => e.detail.name);
+```
+
+| event | fires when | `detail` |
+|---|---|---|
+| `mappo:placeclick` | a marker is clicked | `{ name, lat, lon, kind?, element }` |
+| `mappo:placeenter` | the pointer enters a marker | the same |
+| `mappo:dotclick` | a figure dot is clicked | `{ lat, lon, col, row, element }` |
+| `mappo:dotenter` | the pointer enters a dot | the same |
+
+All four bubble, and each has an option form: `onPlaceClick`, `onPlaceEnter`,
+`onDotClick`, `onDotEnter`. Changing a callback costs nothing — they are read
+at dispatch time, never baked into geometry.
+
+| option | default | what it does |
+|---|---|---|
+| `interactive` | `true` | `false` turns off hover, clicks and drag-to-spin, and drops the cursor styling with them |
+| `cursor` | `default` | the cursor over the map (the globe overrides it with `grab`/`grabbing` while it is spinnable) |
+| `marker-cursor` | `pointer` | the cursor over a marker |
+| `dot-hover-color` | auto | the colour a hovered dot takes; unset, a contrast-aware shade of `figure-color` |
+| `dot-hover-scale` | `2.6` | how much a hovered dot grows |
+| `marker-hover-scale` | `1.8` | the same for a marker (JS option; no attribute) |
+
+The globe is **grabbable**: drag to spin it, flick it for momentum, and the
+spin eases back to `rotate-speed` on its own. A drag never fires a click: a
+pointer that moved more than four pixels is a drag, not a tap.
+
+
+## Every attribute
+
+The whole vocabulary, in one table. Every attribute maps to one option of the
+same name in camel case (`dot-shape` is `dotShape`), and everything here works
+in both `new Mappo(el, options)` and as HTML. `DEFAULTS` is exported, so the
+authoritative copy of this table is always `import { DEFAULTS } from "mappo"`.
+
+**The world**
+
+| attribute | default | what it does |
+|---|---|---|
+| `mode` | `flat` | `flat` (SVG) or `globe` (canvas, needs `mappo/globe`); other renderers register their own names |
+| `body` | Earth | which world: a registered id (`moon`, `mars`, your own) or, in JS, a body object |
+| `cols` | auto | dots across 360° of longitude: the resolution. Auto is 120 flat, 170 globe; the flat renderer caps at 260 |
+| `lat-min`, `lat-max` | the body's own framing | the latitude band drawn. Earth's default crops Antarctica and the empty Arctic; the Moon and Mars show their poles |
+| `projection` | `equirectangular` | flat only: `equal-earth`, `stereographic-north`, `stereographic-south` (with `mappo/projections`), or your own object / d3-geo projection in JS |
+| `center-lon` | `0` | flat only: the central meridian in degrees east. Cylindrical maps move their seam with it; polar maps rotate |
+| `distribution` | `grid` | globe only: `grid` follows the lat/lon grid; `uniform` is a Fibonacci lattice with equal area per dot |
+
+**Figure and ground**
+
+| attribute | default | what it does |
+|---|---|---|
+| `figure` | `dots` | a token list: `dots`, `solid`, `outline`, or `solid outline`. `filled` and `stroke` are synonyms |
+| `figure-color` | `#d3dce6` | the figure: the dots, or the fill |
+| `figure-stroke` | `figure-color` | the edge (Earth's coastline) |
+| `figure-stroke-width` | `1` | the edge's weight |
+| `figure-source` | `grid` | `grid` traces contours from the dot grid; `vector` uses the body's own outlines (needs `mappo/vector` and a body that carries rings) |
+| `ground-color` | `none` | everything that is not figure, as smaller filler dots |
+| `background` | `none` | a uniform fill behind everything: the rectangle on a flat map, the disc on a globe |
+| `borders` | off | the body's region boundaries (Earth's countries), vector only |
+| `borders-color` | the figure stroke | their colour |
+| `borders-width` | `0.5` | their weight |
+| `borders-opacity` | `0.55` | their opacity |
+
+**Dots**
+
+| attribute | default | what it does |
+|---|---|---|
+| `dot-shape` | `circle` | `circle`, `square`, `triangle`, `tile` (a square lying on the surface), or an SVG path string in a 24×24 box (flat only; canvas falls back to squares) |
+| `dot-size` | `0.55` | the fraction of a grid cell a dot fills |
+| `dot-hover-color` | auto | see *Interaction and events* |
+| `dot-hover-scale` | `2.6` | how much a hovered dot grows |
+
+**Places and markers**
+
+| attribute | default | what it does |
+|---|---|---|
+| `places` | none | comma-separated gazetteer names of the body being drawn |
+| `markers` | none | coordinates, semicolon-separated: `HQ@41.4,2.2; 48.2,16.4` |
+| `marker-shape` | `circle` | `circle`, `square`, `triangle` or `pin` (anchored at its tip) |
+| `marker-color` | `#2262fe` | their colour |
+| `marker-scale` | `1.5` | their size, relative to a dot |
+| `marker-pulse` | off | a radar ping at the anchor (flat only) |
+| `marker-cursor` | `pointer` | the cursor over a marker |
+| `highlight-polygon` | none | JSON rings of `[lat, lon]`: the region to light up. See the note below |
+| `highlight-color` | `#8fb0d8` | the colour it lights up in |
+
+**The globe**
+
+| attribute | default | what it does |
+|---|---|---|
+| `rotate-speed` | `4` | degrees a second; `0` parks it |
+| `focus` | none | `"lat,lon"` the globe faces; with `rotate-speed="0"` it holds there |
+| `roll` | `0` | the lean in the plane of the screen, in degrees |
+| `globe-ring` | off | a hairline halo on the sphere's disc |
+| `distance` | `Infinity` | the camera's distance in body radii. Infinity is orthographic; 2 to 4 reads as a globe seen from close by |
+| `fog` | none | `"near far"` in radii from the centre plane: the globe becomes glass and the far side shows through |
+| `fog-color` | none | unset, the fog fades to transparent; set, it mixes toward that colour at full alpha |
+| `max-dpr` | `2` | caps the canvas backing store. A 3× device buys no visible detail on a dot field and pays full fill rate for it |
+
+**The graticule**
+
+| attribute | default | what it does |
+|---|---|---|
+| `graticule` | off | draw the meridian and parallel grid |
+| `meridians` | `12` | evenly spaced longitudes |
+| `parallels` | `11` | evenly spaced latitudes; the equator is drawn separately, and a parallel landing within 5° of it is dropped |
+| `graticule-color` | `figure-color` | the grid's colour |
+| `equator-color` | `graticule-color` | the equator's own colour |
+| `graticule-opacity` | `0.28` | the grid's opacity |
+| `equator-opacity` | `0.36` | the equator's opacity |
+| `graticule-width` | `1` | line width: CSS pixels on the globe, a multiplier of the hairline on the flat map |
+
+**Your DOM over the map**
+
+| attribute | default | what it does |
+|---|---|---|
+| `overlays` | `true` | position child elements carrying `data-lat`/`data-lon` |
+| `overlay-horizon` | none | globe only: `"appear vanish"` facings with hysteresis for `data-mappo-behind` (one number sets both) |
+| `overlay-still` | none | globe only: the spin in °/s above which every overlay carries `data-mappo-moving` |
+| `layer-bleed` | `0` | how far a layer canvas (`addLayer`, `mappo/links`) may draw past the box, as a fraction of it on every side |
+
+**Motion and the hero look**
+
+| attribute | default | what it does |
+|---|---|---|
+| `tilt` | `0` | the flat map's lean away from the viewer, in degrees; on the globe, the axial tilt |
+| `rotate` | `0` | flat only: turn in the plane of the page |
+| `perspective` | `1000` | flat only: the CSS perspective the tilt is seen through |
+| `animation` | `none` | `wave`, `noise`, `ripple`, `sweep` or `sparkle` |
+| `animation-period` | `6` | seconds per cycle |
+| `animation-height` | `0.8` | the crest's height, in grid cells |
+| `animation-width` | `0.13` | the crest's width, as a fraction of the cycle |
+| `cursor` | `default` | the cursor over the map |
+| `interactive` | `true` | `false` turns interaction off entirely |
+
+Two options have no attribute because they are functions or records:
+`onDotClick`, `onDotEnter`, `onPlaceClick`, `onPlaceEnter` (callbacks) and
+`markerHoverScale`. In JavaScript, `places` also takes
+`{ name, lat, lon, color?, kind? }` records, `latRange: [min, max]` replaces
+the two bounds, and `projection` takes an object.
+
 
 ## The JS API
 
@@ -914,6 +1179,48 @@ pictures. The bounds that matter, with the derivations, live in
 For exact points, compute them yourself and place them with overlays or
 `locate()`; never read a position off the figure.
 
+## Sharp edges
+
+Everything here is deliberate, and every one of them has cost somebody an
+afternoon.
+
+- **A flat highlight paints the figure, not the dots.** On the globe,
+  `highlight-polygon` recolours every dot inside the rings. On the flat map it
+  paints *figure cells*, which exist only when the figure is drawn as a shape:
+  `figure="solid"` or `figure="solid outline"`. A flat map left on the default
+  `figure="dots"` draws no highlight at all.
+- **A body pack registers nothing by importing it.** `import "mappo/bodies/moon"`
+  is not enough: take the export and register it, `registerBody(MOON)`. A map
+  asking for an unregistered body draws nothing and warns after two seconds.
+- **A place must be in the body's gazetteer.** `places="Tycho"` on the Moon
+  warns and is skipped, because the Moon pack lists landing sites and Artemis
+  regions rather than craters. Anything else goes in `markers`, or in `places`
+  as a `{ name, lat, lon }` record.
+- **Load the core by the URL the modules resolve.** A core loaded as
+  `https://unpkg.com/mappo` and the `./mappo.js` a module imports beside itself
+  are two URLs and therefore two cores, with two registries: the globe
+  registers with one and your element waits on the other, forever.
+- **`locate()` answers in the untransformed box.** `tilt`, `rotate` and
+  `perspective` are a CSS transform on top of the map, so a layer of your own
+  has to apply the same transform (`mappo/links` does it for you).
+- **The visible horizon is not zero depth under a perspective camera.** With
+  `distance="2.42"` the limb sits at `z = 1 / 2.42 = 0.41`, not 0, so "about to
+  come over the horizon" means `z` just under that, not just under zero.
+- **Never call `map.update()` inside a layer's draw.** It redraws
+  synchronously, which re-enters the frame you are in. Queue it for your own
+  rAF tick.
+- **A stride over the `uniform` distribution is not a coarser grid.** It is a
+  Fibonacci lattice, so taking every fourth sample gives a different spiral,
+  scattered rather than thinned.
+- **A flat arc is a bow, not an unrolled great circle** — see *Links*. If you
+  want the true line, pass it as `points`.
+- **Colours resolve against the root element.** `var(--x)` is read from
+  `document.documentElement`, not from the map's own subtree, and re-resolves
+  when `class`, `style` or `data-theme` changes there. A layer you draw
+  yourself has to redraw on that change; the map's own repaint will not do it
+  for you.
+
+
 ## Design notes
 
 ### Two renderers, on purpose
@@ -1028,6 +1335,21 @@ surface classification, its outlines, its regions and its places — nothing in
 the seam knows about time, orbits or ephemerides, and that is what keeps the
 seam small enough to survive the next body.
 
+## Where the rest of the documentation lives
+
+This README is the reference. Everything below it is the evidence.
+
+| document | what is in it |
+|---|---|
+| [CHANGELOG.md](CHANGELOG.md) | every release, and what broke in it |
+| [docs/weight.md](docs/weight.md) | where the bytes are: per module, per Earth literal, and what each one buys |
+| [docs/performance.md](docs/performance.md) | the cost model, how it was measured, and the road to more |
+| [docs/precision.md](docs/precision.md) | what mappo computes exactly, what it generalises, and by how much |
+| [docs/roadmap.md](docs/roadmap.md) | what comes next, each item with its evidence |
+| [docs/teardown-cloudflare-globe.md](docs/teardown-cloudflare-globe.md) | how the hero globe genre works, taken apart |
+| [demo/](demo/) | every demo, each one a single page you can read |
+
+
 ## Roadmap
 
 What comes next — the performance work with its measured gains, the precision
@@ -1048,7 +1370,8 @@ npm run weight                  # where the bytes are, per module and per Earth 
 npm run serve                   # the repo on http://localhost:8099 — the demos, and what the two harnesses below drive
 node scripts/review-pages.mjs http://localhost:8099 /tmp/review index.html demo/worlds.html   # real-time review: errors, per-map frame cost, screenshots
 node scripts/drag-harness.mjs http://localhost:8099/demo/worlds.html 'mappo-moon[mode="globe"]' # a real pointer drag on a globe, sampled to rest
-node scripts/shot.mjs http://localhost:8099/demo/github-globe.html /tmp/globe.png 14000 '#stage'  # one element, after 14 s of real time
+node scripts/shot.mjs http://localhost:8099/demo/live-globe.html /tmp/globe.png 14000 '#stage'  # one element, after 14 s of real time
+node scripts/readme-images.mjs  # this README's pictures, from scripts/readme-poster.html, into assets/readme/
 
 npm run generate                # regenerate every body pack from the pinned sources
 npm run generate:earth          # or one at a time; sources are cached in .cache/

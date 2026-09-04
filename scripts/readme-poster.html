@@ -1,0 +1,113 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>README poster (scratch)</title>
+<!-- The scenes the README is illustrated with. Every map is
+     still (rotate-speed 0) with a fixed focus, so a screenshot is the same
+     picture every time. Each box matches its map's own aspect, or the renderer
+     letterboxes inside it. Shot tile by tile by scripts/readme-images.mjs. -->
+<style>
+  :root{--bg:#fdfaf3;--ink:#16181d;--accent:#c2410c;--line:#e8e2d8;--dot:#c2410c;--grid:#e2d9cb}
+  :root[data-theme="dark"]{--bg:#0b0c0e;--ink:#f4f1ea;--accent:#f97316;--line:#23262c;--dot:#f97316;--grid:#252a31}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.4 -apple-system,system-ui,sans-serif}
+  .wrap{display:flex;flex-direction:column;gap:40px;padding:40px;align-items:flex-start}
+  figure{margin:0;background:var(--bg);position:relative;overflow:hidden}
+  mappo-world{display:block;width:100%}
+</style>
+
+<div class="wrap">
+  <figure id="t-globe" style="width:680px;height:680px"></figure>
+  <figure id="t-links" style="width:680px;height:680px"></figure>
+  <figure id="t-flat" style="width:1000px;height:390px"></figure>
+  <figure id="t-equal" style="width:1000px;height:530px"></figure>
+  <figure id="t-polar" style="width:680px;height:680px"></figure>
+  <figure id="t-moon" style="width:560px;height:560px"></figure>
+  <figure id="t-mars" style="width:560px;height:560px"></figure>
+  <figure id="t-highlight" style="width:1000px;height:390px"></figure>
+  <figure id="t-styles" style="width:1220px;height:180px;display:flex;gap:20px;align-items:center">
+    <div id="y1" style="flex:1"></div><div id="y2" style="flex:1"></div><div id="y3" style="flex:1"></div>
+  </figure>
+</div>
+
+<script type="module">
+import { registerBody } from "../dist/all.js";
+import "../dist/bodies/earth-vector.js";
+import { MOON } from "../dist/bodies/moon.js";
+import { MARS } from "../dist/bodies/mars.js";
+import { links } from "../dist/links.js";
+import { region } from "../demo/countries.js";
+registerBody(MOON);
+registerBody(MARS);
+
+const make = (host, attrs) => {
+  const el = document.createElement("mappo-world");
+  for (const [ k, v ] of Object.entries(attrs)) el.setAttribute(k, String(v));
+  document.getElementById(host).appendChild(el);
+  return el;
+};
+const ready = () => customElements.whenDefined("mappo-world").then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+const GLOBE = { mode: "globe", "dot-shape": "tile", "dot-size": 0.5, "figure-color": "var(--dot)",
+  background: "none", "globe-ring": "", "rotate-speed": 0, distance: 2.6, fog: "-0.55 1.05" };
+const GRID = { graticule: "", meridians: 24, parallels: 17,
+  "graticule-color": "var(--grid)", "equator-color": "var(--grid)" };
+const FLAT = { mode: "flat", "lat-min": -58, "lat-max": 80, "dot-shape": "tile", "dot-size": 0.5,
+  "figure-color": "var(--dot)", background: "none", interactive: "false" };
+
+// The globe: glass, a graticule, cities by name.
+make("t-globe", { ...GLOBE, ...GRID, cols: 230, tilt: 14, focus: "24,20",
+  places: "London, Cairo, Lagos, Delhi, Moscow", "marker-color": "var(--accent)", "marker-scale": 1.5 });
+
+// The same globe with arcs standing off it, over the Atlantic.
+const arcs = make("t-links", { ...GLOBE, ...GRID, cols: 230, tilt: 12, focus: "26,-40",
+  places: "London, New York, Lagos, Bogotá", "marker-color": "var(--accent)", "marker-scale": 1.5 });
+
+// The flat map: dots, cities, and the same links bowed between them.
+const flat = make("t-flat", { ...FLAT, cols: 190,
+  places: "Lisbon, New York, Tokyo, Nairobi, Sydney, Santiago",
+  "marker-color": "var(--accent)", "marker-scale": 1.5 });
+
+// Equal Earth, from the vector pack, with a graticule to show the projection.
+make("t-equal", { mode: "flat", projection: "equal-earth", "lat-min": -90, "lat-max": 90,
+  "figure-source": "vector", figure: "solid outline",
+  "figure-color": "var(--grid)", "figure-stroke": "var(--ink)", "figure-stroke-width": 0.7,
+  borders: "", "borders-color": "var(--ink)", "borders-opacity": 0.3,
+  graticule: "", meridians: 12, parallels: 7, "graticule-color": "var(--line)", "equator-color": "var(--accent)",
+  background: "none", interactive: "false" });
+
+// The pole, where a cylindrical map is useless.
+make("t-polar", { mode: "flat", projection: "stereographic-north", cols: 200, "dot-shape": "tile", "dot-size": 0.55,
+  "figure-color": "var(--dot)", background: "none", graticule: "", meridians: 12, parallels: 6,
+  "graticule-color": "var(--grid)", interactive: "false" });
+
+// Other worlds, from their own packs, with their own gazetteers.
+make("t-moon", { ...GLOBE, body: "moon", cols: 200, "figure-color": "var(--ink)", distance: 2.8, tilt: 10, focus: "6,-24",
+  places: "Apollo 11, Shackleton", "marker-color": "var(--accent)", "marker-scale": 1.3 });
+make("t-mars", { ...GLOBE, body: "mars", cols: 200, "figure-color": "var(--accent)", distance: 2.8, tilt: 10, focus: "6,60" });
+
+// A region highlighted from rings the page supplies; mappo ships no boundaries.
+make("t-highlight", { mode: "flat", "lat-min": -58, "lat-max": 80, cols: 190, figure: "solid",
+  "figure-color": "var(--grid)", background: "none", interactive: "false",
+  "highlight-polygon": JSON.stringify(region("US").rings), "highlight-color": "var(--accent)" });
+
+// One world, three looks: the dot grid, the coastline, filled land with borders.
+make("y1", { ...FLAT, cols: 110 });
+make("y2", { mode: "flat", "lat-min": -58, "lat-max": 80, "figure-source": "vector", figure: "outline",
+  "figure-stroke": "var(--ink)", "figure-stroke-width": 0.8, background: "none", interactive: "false" });
+make("y3", { mode: "flat", "lat-min": -58, "lat-max": 80, "figure-source": "vector", figure: "solid outline",
+  "figure-color": "var(--grid)", "figure-stroke": "var(--ink)", "figure-stroke-width": 0.6,
+  borders: "", "borders-color": "var(--ink)", "borders-opacity": 0.35, background: "none", interactive: "false" });
+
+await ready();
+
+// Arcs: great circles standing off the globe, bows between the same places flat.
+const air = links(arcs.map, { color: "var(--accent)", width: 1.7, fade: true });
+for (const [ from, to ] of [ [ "London", "New York" ], [ "London", "Lagos" ], [ "New York", "Bogotá" ], [ "Lagos", "Bogotá" ] ])
+  air.add({ from, to, height: 0.12, tip: 2.4 });
+
+const sea = links(flat.map, { color: "var(--accent)", width: 1.5 });
+for (const [ from, to ] of [ [ "Lisbon", "New York" ], [ "Lisbon", "Nairobi" ], [ "Lisbon", "Tokyo" ] ])
+  sea.add({ from, to, height: 0.2, tip: 2 });
+
+document.documentElement.dataset.ready = "1";
+</script>
