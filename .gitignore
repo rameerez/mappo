@@ -4,3 +4,6 @@ TODO
 
 # source maps are built, not versioned; npm publish builds them fresh
 dist/**/*.map
+
+# a local cache; a symlink here once broke the Pages build
+.cache
