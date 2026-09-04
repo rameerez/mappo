@@ -155,45 +155,6 @@ test("a body pack arriving after upgrade: nothing is drawn, then the body is", (
   unmount(element);
 });
 
-test("a highlight lights the dots of a dot map, and the region it was given", () => {
-  // The globe recoloured its dots and the flat map only painted figure cells,
-  // so a dot map — the default — showed no highlight at all.
-  const box = [ [ [ 40, -20 ], [ 40, 20 ], [ 80, 20 ], [ 80, -20 ], [ 40, -20 ] ] ];
-  const element = mount("mappo-world", {
-    cols: 36, "lat-min": -90, "lat-max": 90,
-    "highlight-polygon": JSON.stringify(box), "highlight-color": "#ff0000"
-  });
-  const lit = [ ...element.querySelectorAll(".mappo-dot-highlight") ];
-  assert.ok(lit.length > 0, "the dots inside the rings are lit");
-  assert.ok(lit.length < element.querySelectorAll(".mappo-dot").length, "and only those");
-  assert.match(element.querySelector("style").textContent, /\.mappo-dot-highlight \{ fill: #ff0000/,
-    "the lit dots take the highlight colour");
-
-  // Every lit dot's own cell centre is inside the rings.
-  const grid = { cols: 36, rows: 18, latRange: [ -90, 90 ] };
-  for (const use of lit) {
-    const cell = use.parentElement;
-    const c = api.cellCenter(Number(cell.dataset.col), Number(cell.dataset.row), grid);
-    assert.ok(c.lat >= 40 && c.lat <= 80 && c.lon >= -20 && c.lon <= 20,
-      `a lit dot at ${c.lat.toFixed(1)}, ${c.lon.toFixed(1)} is inside the region`);
-  }
-
-  // The same size, a different region: the dot markup is cached by size, so
-  // this is the case that would have served one map another's highlight.
-  const other = mount("mappo-world", {
-    cols: 36, "lat-min": -90, "lat-max": 90,
-    "highlight-polygon": JSON.stringify([ [ [ -40, -70 ], [ -40, -30 ], [ -10, -30 ], [ -10, -70 ], [ -40, -70 ] ] ]),
-    "highlight-color": "#ff0000"
-  });
-  const elsewhere = [ ...other.querySelectorAll(".mappo-dot-highlight") ]
-    .map((u) => u.parentElement.dataset.col + "," + u.parentElement.dataset.row);
-  const here = lit.map((u) => u.parentElement.dataset.col + "," + u.parentElement.dataset.row);
-  assert.ok(elsewhere.length > 0, "the other region is lit too");
-  assert.ok(!elsewhere.some((k) => here.includes(k)), "and it is a different set of dots");
-  unmount(other);
-  unmount(element);
-});
-
 test("one invalid live range cannot poison late registration and can recover", () => {
   const id = "late-narrow-body";
   const element = mount("mappo-world", { body: id, cols: 24, "lat-min": 70 });

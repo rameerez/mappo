@@ -734,7 +734,7 @@ export class Mappo {
     // One parse for the whole scene — the fast path for full builds.
     const [ markup, buildMs ] = span("wm:build-markup", () =>
       this.#defsMarkup(o, this.grid) + this.#backdropMarkup(this.grid) + this.#graticuleMarkup(this.grid, o) +
-      (parseFigureStyle(o.figure).dots ? this.#dotsMarkup(this.grid, o) : this.#figureMarkup(this.grid, o)) +
+      (parseFigureStyle(o.figure).dots ? this.#dotsMarkup(this.grid) : this.#figureMarkup(this.grid, o)) +
       this.#markersMarkup(this.grid, o));
     const [ , parseMs ] = span("wm:parse-innerHTML", () => { svg.innerHTML = markup; });
     this.#applyStyle(this.#css(o));
@@ -1024,13 +1024,8 @@ export class Mappo {
   // shapes and animation all live elsewhere — so the markup string caches
   // perfectly per resolution. Both animation phases ship on every dot (~30
   // bytes each): that's what makes animation a style-only knob.
-  // A highlight on a dot map recolours the dots inside the rings, the way the
-  // globe's does. The ray cast runs once per build, not per frame, and the
-  // rings join the cache key: two maps of the same size with different regions
-  // lit are two different pictures, and the markup must not be shared.
-  #dotsMarkup(grid, o) {
-    const rings = o.highlightPolygon?.length ? normalizeRings(o.highlightPolygon) : null;
-    const key = `${grid.projection.key}|${grid.cols}|${rings ? JSON.stringify(o.highlightPolygon) : ""}`;
+  #dotsMarkup(grid) {
+    const key = `${grid.projection.key}|${grid.cols}`;
     const cached = this._dotsCache.get(key);
     if (cached) { dbg(`dots cache HIT ${key}`); this._dotCount = cached.dots; return cached.markup; }
     dbg(`dots cache MISS ${key} — computing`);
@@ -1060,10 +1055,9 @@ export class Mappo {
         // SVG transforms are main-thread, and 8k continuous animators melt
         // frames; a baked checkerboard subset reads identically at density.
         const density = `${(col + row) % 2 === 0 ? " mappo-h" : ""}${(2 * col + 3 * row) % 3 === 0 ? " mappo-t" : ""}`;
-        const lit = rings && pointInRings(c.lat, c.lon, rings) ? " mappo-dot-highlight" : "";
         parts.push(
           `<g class="mappo-pos" transform="translate(${col * CELL + CELL / 2} ${row * CELL + CELL / 2})" data-col="${col}" data-row="${row}">` +
-          `<use class="mappo-dot${density}${lit}" href="#${shape}" style="--mappo-pw:${pw};--mappo-pn:${pn};--mappo-pr:${pr};--mappo-ps:${ps};--mappo-pk:${pk};--mappo-a:${a}"/></g>`
+          `<use class="mappo-dot${density}" href="#${shape}" style="--mappo-pw:${pw};--mappo-pn:${pn};--mappo-pr:${pr};--mappo-ps:${ps};--mappo-pk:${pk};--mappo-a:${a}"/></g>`
         );
       }
     }
@@ -1187,7 +1181,7 @@ export class Mappo {
         fill: none; stroke: ${o.bordersColor ?? stroke};
         stroke-width: ${o.bordersWidth}; stroke-linejoin: round; stroke-linecap: round; opacity: ${o.bordersOpacity};
       }
-      .mappo-figure-highlight, .mappo-dot-highlight { fill: ${o.highlightColor}; }
+      .mappo-figure-highlight { fill: ${o.highlightColor}; }
       .mappo-graticule { fill: none; stroke: ${graticule}; stroke-width: ${0.6 * o.graticuleWidth}; opacity: ${o.graticuleOpacity}; pointer-events: none; }
       .mappo-equator { fill: none; stroke: ${o.equatorColor ?? graticule}; stroke-width: ${0.6 * o.graticuleWidth}; opacity: ${o.equatorOpacity}; pointer-events: none; }
       .mappo-marker {

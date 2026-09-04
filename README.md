@@ -6,7 +6,7 @@
 
 **Maps of any world as a zero-dependency web component.** A dot field or
 vector outlines, flat SVG or a rotating canvas globe, places by name, your own
-HTML positioned on the sphere. The core is **22.0 KB gzipped with the whole
+HTML positioned on the sphere. The core is **22.1 KB gzipped with the whole
 Earth inside**; the globe, the other projections, real coastlines and other
 worlds are opt-in modules that register themselves. No build step, no
 dependencies, MIT.
@@ -96,7 +96,7 @@ registers itself, so order does not matter and nothing is downloaded twice.
 
 | import | adds | gzipped | brotli |
 |---|---|---|---|
-| `mappo` | the core, with the whole Earth inside | **22.0 KB** | 19.2 KB |
+| `mappo` | the core, with the whole Earth inside | **22.1 KB** | 19.2 KB |
 | `mappo/globe` | `mode="globe"` | 10.2 KB | 9.1 KB |
 | `mappo/projections` | `projection="equal-earth"`, the polar pair, your own or d3-geo projections | 3.7 KB | 3.3 KB |
 | `mappo/vector` | `figure-source="vector"` and `borders` for bodies that carry rings (the Moon and Mars packs do) | 1.8 KB | 1.6 KB |
