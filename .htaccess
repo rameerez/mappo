@@ -1,0 +1,22 @@
+# mappojs.com on Apache. The pages are static; this is the little the server
+# needs to serve them well. Deployed with the site by deploy.sh.
+
+# Types Apache's default table lacks here: the landing's captures, and the
+# orbital-element files the satellite demos fetch as text.
+AddType image/webp .webp
+AddType text/plain .tle
+
+# Caching: pages revalidate every visit, so a deploy shows at once; the
+# library, demos' modules and images may sit for an hour.
+<IfModule mod_headers.c>
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+  <FilesMatch "\.(js|css|webp|png|svg|ico|tle|json)$">
+    Header set Cache-Control "public, max-age=3600"
+  </FilesMatch>
+</IfModule>
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json text/plain
+</IfModule>
