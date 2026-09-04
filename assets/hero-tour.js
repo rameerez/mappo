@@ -672,12 +672,15 @@ function start(el, options, ctl) {
     // page or onto a box kept clear. A fixed anchor sits still on the disc.
     // A fixed card sits on the disc's centre line, but on the page: pushed left
     // as far as it must to fit when the disc's centre is near the page's edge.
+    // The page is measured once per step (survey), not per frame: measured per
+    // frame, a scroll moved the box and the card slid along the globe to stay
+    // inside the viewport, which read as the card wandering off the globe.
     const fixedX = () => {
-      const b = el.getBoundingClientRect(), w = cardWidth(), want = disc.cx + (state.anchor.fx ?? 0) * disc.r;
+      const b = box ?? el.getBoundingClientRect(), w = cardWidth(), want = disc.cx + (state.anchor.fx ?? 0) * disc.r;
       return Math.max(w / 2 + 8 - b.left, Math.min(pageW() - 8 - w / 2 - b.left, want));
     };
     const fixedY = () => {
-      const b = el.getBoundingClientRect(), h = card.offsetHeight || 40, w = cardWidth();
+      const b = box ?? el.getBoundingClientRect(), h = card.offsetHeight || 40, w = cardWidth();
       const top = h / 2 + 10 - b.top, bottom = pageH() - 10 - h / 2 - b.top;
       let want = Math.max(top, Math.min(Math.max(top, bottom), disc.cy + (state.anchor.fy ?? 0) * disc.r));
       const x = b.left + fixedX();
@@ -703,7 +706,7 @@ function start(el, options, ctl) {
     if (q && !free && side !== "above" && side !== "below") {
       let left = state.anchor.side ? state.anchor.side === "left" : q.x > q.cx;
       if (!state.anchor.side) {
-        const b = el.getBoundingClientRect(), px = b.left + q.x, py = b.top + q.y, w = cardWidth();
+        const b = box ?? el.getBoundingClientRect(), px = b.left + q.x, py = b.top + q.y, w = cardWidth();
         if (!cardFits(px, py, left ? "left" : "right", w) && cardFits(px, py, left ? "right" : "left", w)) left = !left;
       }
       root.classList.toggle("left", left);
