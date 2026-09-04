@@ -25,6 +25,7 @@
 
 import { resolvePlace, normalizeRings, pointInRings } from "../dist/mappo.js";
 import { links } from "../dist/links.js";
+import { clamp01, ease, LAYER, VOYAGE, arcRange } from "./arc-flights.js";
 import { forEachSample, mixColor } from "../dist/globe.js";
 import { regions } from "../demo/countries.js";
 
@@ -95,7 +96,7 @@ export const STEPS = [
   // A little quicker under the first arc, so that Boston is over the horizon
   // the moment the second begins: the two arcs follow each other directly.
   { kind: "arc", text: "You can draw an arc between any two places", hold: 7, speed: 2.6, height: 0.12, from: "Rome", to: "Madrid", pairs: PAIRS },
-  { kind: "arc", text: "Or across an ocean, Madrid to Boston", hold: 6.5, speed: 2, height: 0.06, draw: 1.2, from: "Madrid", to: "Boston", pairs: PAIRS },
+  { kind: "arc", text: "Or across an ocean", hold: 6.5, speed: 2, height: 0.06, draw: 1.2, from: "Madrid", to: "New York", pairs: PAIRS },
   // Whatever main cities are on the page now: the Americas, and Europe's edge while it lasts.
   { kind: "pins", text: "You can place pins on the map", hold: 8, speed: 1.4, cities: MAJOR, count: 10, labels: true },
   // The United States, central, its dots extruded into low bars.
@@ -124,13 +125,12 @@ const BANDS = 6;         // shades between the two, one fill each
 const WAVE_DEG = 34;     // degrees of longitude between crests
 const WAVE_SECS = 2.6;   // seconds for a crest to travel from one to the next
 
-const clamp01 = (v) => Math.max(0, Math.min(1, v));
-const ease = (t) => 1 - (1 - clamp01(t)) ** 3;
 const RAD = Math.PI / 180;
 const CARD_W = 280;   // a card's width before it has been measured
 
 const CSS = `
 .mappo-tour,.mappo-tour-label{position:absolute;left:0;top:0;pointer-events:none;z-index:5;will-change:transform}
+.mappo-tour{z-index:7}
 .mappo-tour-card,.mappo-tour-label .in{display:flex;align-items:center;white-space:nowrap;
   font:600 12.5px/1 var(--sans,-apple-system,system-ui,sans-serif);letter-spacing:-.005em;color:var(--ink,#16181d);
   background:color-mix(in oklab,var(--bg,#fff) 84%,transparent);border:1px solid var(--line,#e8e2d8);border-radius:10px;
@@ -419,7 +419,8 @@ function start(el, options, ctl) {
         const A = place(a), B = place(b);
         if (!A || !B) return null;
         const qa = map.locate(A.lat, A.lon), qb = map.locate(B.lat, B.lon);
-        if (!qa?.front || !qb?.front || qa.depth < 0.15 || qb.depth < 0.15) return null;
+        const min = scripted ? 0.04 : 0.15;
+        if (!qa?.front || !qb?.front || qa.depth < min || qb.depth < min) return null;
         if (scripted) { if (!offCopy(qa) || !landing(qb)) return null; }
         else if (!allowed(qa, false) || !landing(qb)) return null;
         return { s: Math.min(score(qa), score(qb)), A, B, qa, qb };
@@ -611,8 +612,8 @@ function start(el, options, ctl) {
   // the horizon, when the arc erases from its tail and goes.
   const voyageArcs = (subject, now, dt, C) => {
     subject.nextArc -= dt;
-    if (subject.nextArc <= 0 && subject.arcs.length < 3) {
-      subject.nextArc = 1.5;
+    if (subject.nextArc <= 0 && subject.arcs.length < VOYAGE.atOnce) {
+      subject.nextArc = VOYAGE.every;
       const inUse = new Set(subject.arcs.flatMap((a) => [ a.a.name, a.b.name ]));
       const ok = (c) => c.q?.front && c.q.depth > 0.05 && !inUse.has(c.p.name) && (!box || box.left + c.q.x < pageW() - 12);
       const vis = subject.pins.map((p) => ({ p, q: map.locate(p.lat, p.lon) })).filter(ok);
@@ -628,17 +629,17 @@ function start(el, options, ctl) {
       }
       if (pair) {
         const [ A, B ] = pair[0].q.x < pair[1].q.x ? pair : [ pair[1], pair[0] ];
-        subject.arcs.push({ a: A.p, b: B.p, t0: now, tail: 0, link: arcs.add({ from: [ A.p.lat, A.p.lon ], to: [ B.p.lat, B.p.lon ], height: 0.1, range: [ 0, 0 ], tip: 2.5, width: 1.5 }) });
+        subject.arcs.push({ a: A.p, b: B.p, t0: now, tail: 0, link: arcs.add({ from: [ A.p.lat, A.p.lon ], to: [ B.p.lat, B.p.lon ], height: VOYAGE.height, range: [ 0, 0 ], tip: VOYAGE.tip, width: VOYAGE.width }) });
         debug("voyage arc:", A.p.name, "→", B.p.name);
       }
     }
     for (const a of [ ...subject.arcs ]) {
       const qa = map.locate(a.a.lat, a.a.lon), qb = map.locate(a.b.lat, a.b.lon);
-      const head = ease((now - a.t0) / 1);
+      const head = ease((now - a.t0) / VOYAGE.draw);
       if (!qa?.front && !qb?.front) a.tail = 1;
-      else if (!qa?.front || !qb?.front) a.tail = Math.min(1, a.tail + dt / 0.9);
+      else if (!qa?.front || !qb?.front) a.tail = Math.min(1, a.tail + dt / VOYAGE.erase);
       a.link.color = C.arc;
-      a.link.range = a.tail < head ? [ a.tail, head ] : [ 0, 0 ];
+      a.link.range = arcRange(a.tail, head);
       if (a.tail >= 1) { arcs.remove(a.link); subject.arcs.splice(subject.arcs.indexOf(a), 1); }
     }
   };
@@ -713,7 +714,7 @@ function start(el, options, ctl) {
 
     if (subject.kind === "arc" && state.arc) {
       const head = ease(age / (step.draw ?? 1.8)), tail = 1 - ease((total - age) / 1.4);
-      state.arc.range = tail < head ? [ tail, head ] : [ 0, 0 ];
+      state.arc.range = arcRange(tail, head);
       state.arc.color = C.arc;
       // The arc lands: a pin grows at the destination once the head arrives.
       if (head >= 0.999 && q?.front) { ctx.fillStyle = C.arc; ctx.strokeStyle = C.arc; drawPin(ctx, q, Math.min(ease((age - (step.draw ?? 1.8)) / 0.4), outK), 1); }
@@ -779,7 +780,7 @@ function start(el, options, ctl) {
   // The tour's layer first, so its ranges are set before the arcs' layer draws
   // them in the same frame.
   layer = map.addLayer(frame);
-  arcs = links(map, { fade: true, width: 1.6 });
+  arcs = links(map, LAYER);
 
   if (reduce) {
     // No motion: the first card, at the centre, and nothing else.
