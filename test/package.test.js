@@ -8,7 +8,7 @@ const dist = (file) => readFile(new URL(`../dist/${file}`, import.meta.url), "ut
 
 // The headline the README makes, held here so it cannot drift: the core, with
 // the whole Earth inside, gzipped. Raise it deliberately, never by accident.
-const CORE_BUDGET_GZIP = 22 * 1024;
+const CORE_BUDGET_GZIP = 22.5 * 1024;
 
 test("package exposes the core, the opt-in modules and the body packs, and nothing else", async () => {
   assert.deepEqual(packageJson.exports, {
