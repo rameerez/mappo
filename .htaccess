@@ -6,14 +6,16 @@
 AddType image/webp .webp
 AddType text/plain .tle
 
-# Caching: pages revalidate every visit, so a deploy shows at once; the
-# library, demos' modules and images may sit for an hour.
+# Caching: everything the site is made of revalidates on every visit (a 304
+# with an ETag is cheap, a stale module is not: a deploy must show at once,
+# and Cloudflare turned a one-hour max-age into four). Only images and the
+# orbital-element files, which change rarely, may sit for a day.
 <IfModule mod_headers.c>
-  <FilesMatch "\.html$">
+  <FilesMatch "\.(html|js|css|json)$">
     Header set Cache-Control "no-cache"
   </FilesMatch>
-  <FilesMatch "\.(js|css|webp|png|svg|ico|tle|json)$">
-    Header set Cache-Control "public, max-age=3600"
+  <FilesMatch "\.(webp|png|svg|ico|tle)$">
+    Header set Cache-Control "public, max-age=86400"
   </FilesMatch>
 </IfModule>
 
