@@ -59,21 +59,21 @@ whatever you say. Same options, same renderers, same events.
 ## Demos
 
 Every demo is one page you can read: no build, no framework, the library and
-the page's own code. [**The gallery**](https://rameerez.github.io/mappo/demo/)
+the page's own code. [**The gallery**](https://mappojs.com/demo/)
 holds them all.
 
 | demo | what it shows |
 |---|---|
-| [Live Globe](https://rameerez.github.io/mappo/demo/live-globe.html) | github.com/globe rebuilt on mappo: arcs drawing in and erasing, spikes rising with a data window, a hover card |
-| [Region: Earth](https://rameerez.github.io/mappo/demo/region-earth.html) | the glass globe: a perspective camera, fog, a uniform lattice and tiles, all four together |
-| [Starlink, right now](https://rameerez.github.io/mappo/demo/satellites.html) | ten thousand `locate()` calls a frame, from an SGP4 propagator the page carries itself |
-| [Where the Earth is](https://rameerez.github.io/mappo/demo/year.html) | the planet's place in its orbit, and the terminator that follows from it |
-| [Other worlds](https://rameerez.github.io/mappo/demo/worlds.html) | the Moon and Mars packs, their figures and their gazetteers |
-| [Projections](https://rameerez.github.io/mappo/demo/projections.html) | every projection, including one of your own and a d3-geo one |
-| [Geographic distribution](https://rameerez.github.io/mappo/demo/analytics.html) | a choropleth dashboard: regions, counts, a legend |
-| [Standby](https://rameerez.github.io/mappo/demo/standby.html) | a clock that knows where the sun is |
-| [Land styles](https://rameerez.github.io/mappo/demo/land.html), [orbit](https://rameerez.github.io/mappo/demo/orbit.html), [Mars transfer](https://rameerez.github.io/mappo/demo/mars-mission.html) | the figure styles side by side, an Earth in orbit, a Hohmann transfer |
-| [Performance](https://rameerez.github.io/mappo/demo/perf.html) | the scripted abuse the budgets are measured against |
+| [Live Globe](https://mappojs.com/demo/live-globe.html) | github.com/globe rebuilt on mappo: arcs drawing in and erasing, spikes rising with a data window, a hover card |
+| [Region: Earth](https://mappojs.com/demo/region-earth.html) | the glass globe: a perspective camera, fog, a uniform lattice and tiles, all four together |
+| [Starlink, right now](https://mappojs.com/demo/satellites.html) | ten thousand `locate()` calls a frame, from an SGP4 propagator the page carries itself |
+| [Where the Earth is](https://mappojs.com/demo/year.html) | the planet's place in its orbit, and the terminator that follows from it |
+| [Other worlds](https://mappojs.com/demo/worlds.html) | the Moon and Mars packs, their figures and their gazetteers |
+| [Projections](https://mappojs.com/demo/projections.html) | every projection, including one of your own and a d3-geo one |
+| [Geographic distribution](https://mappojs.com/demo/analytics.html) | a choropleth dashboard: regions, counts, a legend |
+| [Standby](https://mappojs.com/demo/standby.html) | a clock that knows where the sun is |
+| [Land styles](https://mappojs.com/demo/land.html), [orbit](https://mappojs.com/demo/orbit.html), [Mars transfer](https://mappojs.com/demo/mars-mission.html) | the figure styles side by side, an Earth in orbit, a Hohmann transfer |
+| [Performance](https://mappojs.com/demo/perf.html) | the scripted abuse the budgets are measured against |
 
 ## Install
 
@@ -559,7 +559,7 @@ the dots (both hemispheres are drawn); tiles cost about what squares do. A
 parked globe (`rotate-speed="0"`, nothing animating, no pointer) draws no
 frames at all, and an option change draws exactly one.
 
-[The Region: Earth demo](https://rameerez.github.io/mappo/demo/region-earth.html)
+[The Region: Earth demo](https://mappojs.com/demo/region-earth.html)
 is all four together.
 
 ## Pointing at places
@@ -772,7 +772,7 @@ meridian, it is `null` for a point the projection has no place for, and the
 box is the untransformed layout box — `tilt`/`rotate`/`perspective` are a CSS
 transform applied on top of it (`mappo/links` folds that transform in itself).
 
-[The Starlink demo](https://rameerez.github.io/mappo/demo/satellites.html) is
+[The Starlink demo](https://mappojs.com/demo/satellites.html) is
 ten thousand of these calls a frame.
 
 ### `addLayer()` — a canvas over the map, redrawn with it
@@ -864,7 +864,7 @@ would show off the globe — its `height` plus the bulge of the sphere under it,
 in proportion to its chord — so a hero map's arcs rise off it the way the
 globe's do and land on their pins; a spike stands out of the plane by `height`
 in the map's own radii. The module is 3.7 KB gzipped and registers nothing;
-[the Live Globe demo](https://rameerez.github.io/mappo/demo/live-globe.html)
+[the Live Globe demo](https://mappojs.com/demo/live-globe.html)
 is a few hundred of these, sending and landing.
 
 ## Animation

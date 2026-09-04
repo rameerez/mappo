@@ -7,3 +7,6 @@ dist/**/*.map
 
 # a local cache; a symlink here once broke the Pages build
 .cache
+
+# the private deploy script: it names the server
+deploy.sh
