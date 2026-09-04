@@ -447,20 +447,6 @@
         graticule meridians="24" parallels="23"
         graticule-color="var(--globe-grid)" equator-color="var(--globe-grid)"
         graticule-opacity="0.18" equator-opacity="0.18" graticule-width="0.5"></mappo-world>
-      <script>
-        // A phone gets a lighter globe, decided here, before the element
-        // upgrades, so it is built once: a quarter of the dots, no far side
-        // through the fog, a 1.5× backing store. Measured at phone size under
-        // a 4× CPU throttle: the full hero ran at 10 fps, this at 25.
-        window.mappoPhone = matchMedia("(max-width: 600px)").matches;
-        window.lightGlobe = (el, cols) => {
-          if (!window.mappoPhone || !el) return;
-          el.setAttribute("cols", String(cols));
-          el.removeAttribute("fog");
-          el.setAttribute("max-dpr", "1.5");
-        };
-        lightGlobe(document.getElementById("hero"), 220);
-      </script>
 
     </div>
     <div class="hero-copy">
@@ -475,7 +461,7 @@
 
   <div class="band">
     <div class="wrap">
-      <div><h3>22 KB, the whole Earth inside</h3><p>The core is <b>22.1&nbsp;KB gzipped</b>
+      <div><h3>22 KB, the whole Earth inside</h3><p>The core is <b>22.2&nbsp;KB gzipped</b>
         and carries the engine, Earth's land and 160 cities by name. The globe,
         coastlines, arcs and other worlds load <b>only if you use them</b>.</p></div>
       <div><h3>One line of HTML</h3><p>Drop <code>&lt;mappo-world&gt;</code> on any
@@ -770,7 +756,6 @@
         graticule meridians="24" parallels="23"
         graticule-color="var(--globe-grid)" equator-color="var(--globe-grid)"
         graticule-opacity="0.18" equator-opacity="0.18" graticule-width="0.5"></mappo-world>
-      <script>lightGlobe(document.getElementById("final-globe"), 200);</script>
     </div>
   </section>
 </main>
@@ -828,9 +813,6 @@ import { heroTour } from "./assets/hero-tour.js";
 import { bindThemeToggle } from "./assets/theme.js";
 
 const $ = (id) => document.getElementById(id);
-// The phone profile the inline scripts above chose for the two big globes;
-// the pieces built here follow it.
-const PHONE = !!window.mappoPhone;
 
 // ── theme ───────────────────────────────────────────────────────────────────
 // assets/theme.js owns the storage key, the data-theme attribute and the
@@ -891,7 +873,9 @@ const panel = (name, fn) => { try { fn(); } catch (e) { console.warn(`[landing] 
 // chosen under the headline the globe runs behind.
 panel("hero", () => {
   // The band paints over the sphere's lower half, so it is not free page.
-  heroTour($("hero"), { keepClear: [ document.querySelector(".hero-copy"), document.querySelector(".band") ] });
+  // reduceMotion false: the page does not honour the OS setting anywhere;
+  // the maps are decoration, and frozen decoration reads as broken.
+  heroTour($("hero"), { keepClear: [ document.querySelector(".hero-copy"), document.querySelector(".band") ], reduceMotion: false });
 });
 
 // ── the gallery and the reading list, from one list each ────────────────────
@@ -947,9 +931,6 @@ panel("standby", () => {
 // the header is gone, which is what the offsets below are computed from.
 panel("live", () => {
   const frame = $("live-frame"), stage = frame.parentElement;
-  // The demo has quality tiers of its own; a phone starts at the lowest
-  // rather than discovering it over its first fifty slow frames.
-  if (PHONE) frame.src = frame.getAttribute("src") + "?tier=1";
   const STAGE = 900, TOP = 48;
   const fit = () => {
     const w = stage.clientWidth, h = stage.clientHeight;
@@ -998,7 +979,6 @@ panel("skew", () => {
     // leaves one edge and comes back on the other, from nowhere.
     const lon = (name) => resolvePlace(name, EARTH)?.lon ?? 0;
     const fl = flights(layer, { places: PLACES, ok: (a, b) => Math.abs(lon(a) - lon(b)) <= 180 });
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { fl.settle(); return; }
     // A flat map never redraws on its own, so the arcs need a loop; it runs
     // only while the card is on screen.
     let last = null, raf = null, on = false;
@@ -1064,8 +1044,7 @@ panel("nowhere", () => {
     planet.style.setProperty("--deep", hsl(hue, 40, 10));
     const attrs = {
       mode: "globe", body: id, "lat-min": -90, "lat-max": 90,
-      // A phone gets fewer dots here too: the sphere is a third of the size and the budget a quarter.
-      cols: style === "outline" ? (PHONE ? "150" : "180") : String(Math.round(PHONE ? range(180, 220) : range(230, 330))),
+      cols: style === "outline" ? "180" : String(Math.round(range(230, 330))),
       distribution: style === "outline" ? "grid" : "uniform",
       figure: style === "outline" ? "solid outline" : "dots",
       "dot-shape": style === "tiles" ? "tile" : "circle",

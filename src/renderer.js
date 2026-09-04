@@ -156,6 +156,10 @@ export const DEFAULTS = {
   // Cap the canvas backing store. 3× devices buy no visible detail on a dot
   // field and pay full fill-rate for it.
   maxDpr: 2,
+  // Honour the OS "reduce motion" setting (static globe, no CSS animation on
+  // the flat map). Off by default: a frozen decoration reads as broken. Read
+  // when the map is built.
+  reducedMotion: false,
   // The globe's camera: its distance from the centre in body radii. Infinity
   // (the default) is the orthographic view; a finite value is a perspective
   // camera that far away — the near side grows, the far side shrinks and the
@@ -208,7 +212,7 @@ const STYLE_KEYS = new Set([
   "bordersColor", "bordersWidth", "bordersOpacity", "highlightColor",
   "graticuleColor", "equatorColor", "graticuleOpacity", "equatorOpacity", "graticuleWidth",
   "markerColor", "markerHoverScale", "tilt", "rotate", "perspective",
-  "animation", "animationPeriod", "animationHeight", "animationWidth", "cursor", "markerCursor",
+  "animation", "animationPeriod", "animationHeight", "animationWidth", "cursor", "markerCursor", "reducedMotion",
   // Backdrop knobs are pure stylesheet in flat mode: the bg shape and the
   // pattern-filled ground always exist; only their fills change.
   "background", "globeRing",
@@ -1330,10 +1334,10 @@ export class Mappo {
         };
         return modes[o.animation] ?? "";
       })() : ""}
-      @media (prefers-reduced-motion: reduce) {
+      ${o.reducedMotion ? `@media (prefers-reduced-motion: reduce) {
         .mappo-dot, .mappo-marker, .mappo-marker-ring { animation: none !important; transition: none !important; }
         .mappo-marker-ring { opacity: 0; }
-      }
+      }` : ""}
     `;
   }
 

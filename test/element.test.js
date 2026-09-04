@@ -669,10 +669,36 @@ test("perspective: a camera at `distance` keeps the limb on the disc and folds t
   unmount(el);
 });
 
+test("reduced motion is opt-in: the OS setting alone does not stop a globe; reduced-motion honours it", async () => {
+  // The harness pins prefers-reduced-motion on and gives no
+  // requestAnimationFrame, so globes here never loop. Give this one the
+  // window's rAF: with the setting on, only a map that asked to honour it stays still.
+  const savedRaf = globalThis.requestAnimationFrame, savedCaf = globalThis.cancelAnimationFrame;
+  globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
+  globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
+  const spinning = mount("mappo-world", { mode: "globe", cols: 24, "rotate-speed": 30 });
+  const honouring = mount("mappo-world", { mode: "globe", cols: 24, "rotate-speed": 30, "reduced-motion": "" });
+  const flat = mount("mappo-world", { cols: 24, animation: "wave" });
+  const flatHonouring = mount("mappo-world", { cols: 24, animation: "wave", "reduced-motion": "" });
+  try {
+    assert.equal(spinning.map._renderer._static, false, "by default the OS setting does not freeze the globe");
+    assert.ok(spinning.map._renderer._raf !== null, "and its loop is running");
+    assert.equal(honouring.map._renderer._static, true, "reduced-motion honours the setting: one static frame");
+    assert.equal(honouring.map._renderer._raf, null, "and no loop");
+    const css = (el) => el.querySelector("style").textContent;
+    assert.doesNotMatch(css(flat), /prefers-reduced-motion/, "the flat map's stylesheet leaves animation alone by default");
+    assert.match(css(flatHonouring), /prefers-reduced-motion/, "and switches it off under the setting when asked");
+  } finally {
+    for (const el of [ spinning, honouring, flat, flatHonouring ]) unmount(el);
+    if (savedRaf === undefined) delete globalThis.requestAnimationFrame; else globalThis.requestAnimationFrame = savedRaf;
+    if (savedCaf === undefined) delete globalThis.cancelAnimationFrame; else globalThis.cancelAnimationFrame = savedCaf;
+  }
+});
+
 test("a parked globe draws no frames; a spinning one does", async () => {
-  // The harness pins prefers-reduced-motion on, which means a globe never
-  // starts its frame loop. This test is about the loop, so it gets motion and
-  // the window's requestAnimationFrame for its duration.
+  // The harness gives no requestAnimationFrame, which means a globe never
+  // starts its frame loop. This test is about the loop, so it gets the
+  // window's requestAnimationFrame for its duration.
   const savedMatchMedia = globalThis.matchMedia, savedRaf = globalThis.requestAnimationFrame, savedCaf = globalThis.cancelAnimationFrame;
   globalThis.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);

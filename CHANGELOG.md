@@ -3,6 +3,20 @@
 mappo is pre-1.0. Minor versions may change the API; every change is listed
 here with what to write instead.
 
+## Unreleased
+
+- **`prefers-reduced-motion` is no longer honoured by default.** A map is
+  decoration, and a globe frozen by the OS setting read as broken to the many
+  people who have it on. Set `reduced-motion` on the element (`reducedMotion:
+  true` in JS) for the previous behaviour: one static frame on the globe, no
+  animation on the flat map.
+- `mappo/links`: on a flat map with `tilt` the layer draws through the map's
+  own lean and perspective, an arc stands off the plane by the sag it would
+  show off the globe, and a named end lands on the marker's dot.
+- `mappo/vector`: a pole-encircling ring on Equal Earth closes along the curved
+  seam rather than with a chord.
+- `layer-bleed`: a layer canvas can reach past the map's box.
+
 ## 0.7.0 — 2026-09-02
 
 The foundation release: mappo is a map of **any world**, not a map of Earth

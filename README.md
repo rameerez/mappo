@@ -6,7 +6,7 @@
 
 **Maps of any world as a zero-dependency web component.** A dot field or
 vector outlines, flat SVG or a rotating canvas globe, places by name, your own
-HTML positioned on the sphere. The core is **22.1 KB gzipped with the whole
+HTML positioned on the sphere. The core is **22.2 KB gzipped with the whole
 Earth inside**; the globe, the other projections, real coastlines and other
 worlds are opt-in modules that register themselves. No build step, no
 dependencies, MIT.
@@ -96,7 +96,7 @@ registers itself, so order does not matter and nothing is downloaded twice.
 
 | import | adds | gzipped | brotli |
 |---|---|---|---|
-| `mappo` | the core, with the whole Earth inside | **22.1 KB** | 19.2 KB |
+| `mappo` | the core, with the whole Earth inside | **22.2 KB** | 19.2 KB |
 | `mappo/globe` | `mode="globe"` | 10.2 KB | 9.1 KB |
 | `mappo/projections` | `projection="equal-earth"`, the polar pair, your own or d3-geo projections | 3.7 KB | 3.3 KB |
 | `mappo/vector` | `figure-source="vector"` and `borders` for bodies that carry rings (the Moon and Mars packs do) | 1.8 KB | 1.6 KB |
@@ -514,8 +514,10 @@ frame — that's not SVG work), so the flat renderer's guarantees change shape:
 dots shrink and fade toward the limb, the back hemisphere is culled, a
 hairline halo can ring the sphere, and `tilt` becomes the *axial* tilt.
 `rotate-speed` is degrees per second; `0` parks it. The loop pauses when the
-globe scrolls offscreen, and `prefers-reduced-motion` gets a single static
-frame instead of a spin.
+globe scrolls offscreen. The OS's "reduce motion" setting is honoured only when
+the map carries `reduced-motion`, and then as a single static frame instead of
+a spin; by default the globe turns regardless, because a map is decoration and
+a frozen one reads as broken to the many people who have that setting on.
 
 The animation modes work on the globe too — dots lift radially off the
 surface (sparkle scales instead), driven by the same phase fields as the flat
@@ -893,7 +895,8 @@ Three knobs shape any of them. `animation-period` is seconds for a full cycle
 fraction (default `0.13` — smaller is a thinner, sharper front).
 
 On the flat map animation runs as CSS keyframes: compositor-eligible, browser
-scheduled, and switched off for you under `prefers-reduced-motion`. On the
+scheduled, and switched off under the OS's reduce-motion setting when the map
+carries `reduced-motion`. On the
 globe the same phase fields lift each dot radially off the surface, and
 `sparkle` scales it in place. Above roughly 4 500 dots a load gate animates a
 baked subset rather than every dot, which is why an animated hero should stay
@@ -1005,6 +1008,7 @@ authoritative copy of this table is always `import { DEFAULTS } from "mappo"`.
 | `fog` | none | `"near far"` in radii from the centre plane: the globe becomes glass and the far side shows through |
 | `fog-color` | none | unset, the fog fades to transparent; set, it mixes toward that colour at full alpha |
 | `max-dpr` | `2` | caps the canvas backing store. A 3× device buys no visible detail on a dot field and pays full fill rate for it |
+| `reduced-motion` | off | honour the OS "reduce motion" setting: one static frame on the globe, no animation on the flat map (both modes). Off by default: a map is decoration, and a frozen one reads as broken |
 
 **The graticule**
 
@@ -1126,8 +1130,8 @@ has registered so far.
 The component renders into light DOM with plain classes (`.mappo-dot`,
 `.mappo-marker`, `.mappo-figure-fill`, `.mappo-figure-edge`, `.mappo-borders`,
 `.mappo-graticule`, `.mappo-equator`, `.mappo-svg`, `.mappo-tilt`) — your stylesheet wins. The built-in styles are defaults, not
-law, and they are scoped to each instance. `prefers-reduced-motion` disables
-all animation automatically.
+law, and they are scoped to each instance. With `reduced-motion` set, the OS's
+reduce-motion setting disables all animation.
 
 ## Coordinates and conventions
 
@@ -1241,7 +1245,7 @@ and neither should become the other.
    all the time; they re-render only when options change, which the
    differential update tiers make nearly free (style patches never touch
    geometry). Animations run as CSS keyframes: compositor-eligible,
-   browser-scheduled, `prefers-reduced-motion` handled for free.
+   browser-scheduled, the OS's reduce-motion setting honoured when asked (`reduced-motion`).
 3. **SVG only loses above ~7k animated nodes** — which is exactly the regime
    the density load gate and the cols cap already govern.
 

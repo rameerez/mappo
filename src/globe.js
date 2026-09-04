@@ -283,10 +283,13 @@ export class GlobeRenderer {
     this._watchTheme();
     this._rebuildData();
 
-    // Reduced motion: one static frame, no loop. Checked once at build —
-    // the OS-level setting rarely flips mid-visit.
-    this._static = typeof matchMedia === "function" &&
-      matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Motion. The loop runs unless the page asked to honour the OS "reduce
+    // motion" setting (reduced-motion) and it is on, or there is no
+    // requestAnimationFrame to run it on (a test, a server): then one static
+    // frame. Read once at build; the OS setting rarely flips mid-visit.
+    this._static = (!!this.o.reducedMotion && typeof matchMedia === "function" &&
+      matchMedia("(prefers-reduced-motion: reduce)").matches) ||
+      typeof requestAnimationFrame !== "function";
 
     // Offscreen globes must not burn frames — pause when scrolled away.
     this._visible = true;

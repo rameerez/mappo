@@ -450,12 +450,11 @@ function resizeWidths() {
 new ResizeObserver(resizeWidths).observe(stage);
 
 // ── state ────────────────────────────────────────────────────────────────────
-const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const st = {
   spin: 0, rotX: S.baseTiltX, targetX: 0, targetY: 0,
   mouse: { x: 0.5, y: 0.5 }, lastMouse: { x: 0.5, y: 0.5 }, dragging: false, downAt: null, moved: false,
   speedScalar: 1, speedScalarTarget: 1,
-  frozen: reduceMotion || params.has("still"), active: true, loaded: false,
+  frozen: params.has("still"), active: true, loaded: false,
   visibleIndex: S.maxIndexDistance, indexIncrementSpeed: S.indexIncrementSpeed,
   lineIndex: 0, animating: [], highlighted: null, hovered: null, dataItem: null
 };

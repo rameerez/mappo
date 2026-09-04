@@ -259,7 +259,7 @@ Already in place, so they need not be proposed again:
 - Fills and strokes are batched by depth band into a handful of `Path2D`
   objects: seven `fill()` calls for thousands of quads, not one each.
 - Colour resolution through `var()` is memoised until the theme changes.
-- Offscreen globes pause; `prefers-reduced-motion` draws one frame and stops.
+- Offscreen globes pause; with `reduced-motion` set, the OS's reduce-motion setting draws one frame and stops.
 - Flat updates are tiered (style, defs, markers, geometry) and geometry
   rebuilds are debounced to 8× the last measured frame cost.
 - `figure-color` and its siblings are stylesheet-tier; the geometry is never

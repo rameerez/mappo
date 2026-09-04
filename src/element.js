@@ -95,6 +95,10 @@ const ATTR_MAP = {
                         } ],
   "overlay-still":      [ "overlayStill", Number ],
   "max-dpr":            [ "maxDpr", Number ],
+  // Honour the OS "reduce motion" setting: one static frame on the globe, no
+  // animation on the flat map. Off by default: a map is decoration, and a
+  // frozen one reads as broken to the many people who have the setting on.
+  "reduced-motion":     [ "reducedMotion", flag ],
   // How far layers (addLayer, mappo/links) may draw past the box, as a fraction of it.
   "layer-bleed":        [ "layerBleed", Number ],
   // The globe's camera and atmosphere (the flat map ignores both): the camera's

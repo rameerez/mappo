@@ -13,7 +13,7 @@ the restructure it recommended produced, measured on the built `dist/`
 
 | file | raw | gzip | brotli | what it is |
 |---|---|---|---|---|
-| `dist/mappo.js` | 56.4 KB | **22.1 KB** | 19.2 KB | the core: engine, Earth's mask and gazetteer, equirectangular, layers |
+| `dist/mappo.js` | 56.7 KB | **22.2 KB** | 19.2 KB | the core: engine, Earth's mask and gazetteer, equirectangular, layers |
 | `dist/globe.js` | 25.6 KB | 10.2 KB | 9.1 KB | `mode="globe"`, with the camera, the fog and the overlay decisions |
 | `dist/projections.js` | 8.4 KB | 3.7 KB | 3.3 KB | Equal Earth, polar stereographic, custom and d3-geo adapters |
 | `dist/vector.js` | 3.6 KB | 1.8 KB | 1.6 KB | seam stitching and cutting for vector outlines |
