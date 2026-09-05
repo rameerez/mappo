@@ -147,6 +147,4 @@ cadence of its own. Neither is in sight; until then, simplicity wins.
 The local `TODO` file (not tracked) listed the v0.3–v0.5 arcs and a parked
 ideas section; everything still relevant from it is in tracks 2, 4 and 5
 above (`lonRange` → J5, leave events and animation hooks → F4, region masks →
-F1, custom registries → per-body `places`, canvas renderer → P8). The
-handoff at `docs/handoff-2026-09-01.md` is the historical record of the
-prototype and is not a roadmap.
+F1, custom registries → per-body `places`, canvas renderer → P8).
