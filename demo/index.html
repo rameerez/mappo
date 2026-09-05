@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>mappo — demos</title>
+<title>Mappo.js — demos</title>
 <link rel="shortcut icon" href="../favicon/favicon.ico" type="image/x-icon">
 <link rel="stylesheet" href="../assets/site.css">
 <style>
@@ -127,7 +127,7 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
 
 <header>
   <div>
-    <h1>mappo demos</h1>
+    <h1>Mappo.js demos</h1>
     <p class="lede">Everything on one page, live — the same build you would install. Each example carries
     the exact markup that produces it, so you can copy a card and get that picture.</p>
   </div>
@@ -155,7 +155,7 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
   <div>
     <h3 style="margin:0 0 6px;font-size:17px">Real coastlines, leaning, with your own labels</h3>
     <p style="color:var(--muted);margin:0 0 12px">Drag it. The labels are ordinary anchors in your markup —
-    mappo positions them every frame and publishes how far each has turned away, so they fade and hide
+    Mappo.js positions them every frame and publishes how far each has turned away, so they fade and hide
     at the horizon with plain CSS.</p>
     <pre><code>&lt;mappo-world mode="globe" rotate-speed="6"
   tilt="18" roll="-14.3"
@@ -220,7 +220,7 @@ html[data-theme="dark"] .lead > span{text-shadow:0 1px 6px rgb(0 0 0 / .9)}
     <div class="meta">
       <h3>The map is true right now, and it needs no data to be</h3>
       <p>The sun's position is fifteen lines of astronomy from <code>Date.now()</code> — no API, no key, nothing
-      to go stale. Everything else is mappo: the night is a polygon plotted through
+      to go stale. Everything else is Mappo.js: the night is a polygon plotted through
       <code>projectNormalized()</code>, and the city markers are your own DOM, positioned by
       <code>data-lat</code>/<code>data-lon</code>, told only whether the sun is up where they stand.</p>
       <span class="tag">projectNormalized()</span><span class="tag">figure-source="vector"</span><span class="tag">borders</span><span class="tag">ground-color</span><span class="tag">data-lat/data-lon</span><span class="tag">cols="300"</span>
@@ -258,11 +258,11 @@ label.classList.toggle("is-night", solarElevation(lat, lon, dec, sunLon) &lt; 0)
 <div class="card">
   <div class="meta">
     <h3><a href="./region-earth.html">Region: Earth →</a></h3>
-    <p>The see-through globe from cloudflare.com's home page, to the pixel where mappo can reach it:
+    <p>The see-through globe from cloudflare.com's home page, to the pixel where Mappo.js can reach it:
     fourteen thousand tiles lying on the surface of a Fibonacci lattice, a perspective camera 2.4 radii
     out, fog that lets the far side show through, the pins, the captions and the arcs — with the
-    original's exact points, copy and kinematics, and mappo's own coastline under it.</p>
-    <span class="tag">distribution="uniform"</span><span class="tag">dot-shape="tile"</span><span class="tag">distance="2.37"</span><span class="tag">fog="-0.67 1.01"</span><span class="tag">mappo/links</span><span class="tag">data-lat/data-lon</span>
+    original's exact points, copy and kinematics, and Mappo.js's own coastline under it.</p>
+    <span class="tag">distribution="uniform"</span><span class="tag">dot-shape="tile"</span><span class="tag">distance="2.37"</span><span class="tag">fog="-0.67 1.01"</span><span class="tag">Mappo.js/links</span><span class="tag">data-lat/data-lon</span>
     <pre><code>&lt;mappo-world mode="globe" cols="396" lat-min="-90" lat-max="90"
   distribution="uniform" dot-shape="tile" dot-size="0.38"
   distance="2.37" fog="-0.67 1.01" graticule meridians="24" parallels="23"&gt;&lt;/mappo-world&gt;</code></pre>
@@ -281,7 +281,7 @@ label.classList.toggle("is-night", solarElevation(lat, lon, dec, sunLon) &lt; 0)
     synthetic: two hundred and sixty messages between a hundred and sixty cities, weighted the way people are, so
     Asia and Africa carry most of it. The lights are three CSS gradients; the lines are <code>mappo/links</code> on a
     second, empty globe over them, so they stay unlit.</p>
-    <span class="tag">mappo/links</span><span class="tag">map.addLayer()</span><span class="tag">distribution="uniform"</span><span class="tag">distance="8.8"</span><span class="tag">locate().scale</span><span class="tag">two globes, one orientation</span>
+    <span class="tag">Mappo.js/links</span><span class="tag">map.addLayer()</span><span class="tag">distribution="uniform"</span><span class="tag">distance="8.8"</span><span class="tag">locate().scale</span><span class="tag">two globes, one orientation</span>
     <pre><code>import { links } from "mappo/links";
 const arcs = links(sky.map, { color: "#f46bbe", width: 1.75, blend: "lighter" });
 const arc = arcs.add({ points: bezier, range: [ 0, 0 ], data: message });
@@ -332,7 +332,7 @@ earth.setAttribute("tilt", dec);   // focus is live now, so this re-aims</code><
     <p>Lunar maria and Martian lowlands drawn by the very same flat and globe renderers,
     from opt-in body packs that ship apart from the bundle. Landing sites from each body's
     own gazetteer, and all three worlds at their true relative diameters.</p>
-    <span class="tag">body="moon"</span><span class="tag">&lt;mappo-mars&gt;</span><span class="tag">places="Apollo 11"</span><span class="tag">registerBody()</span>
+    <span class="tag">body="moon"</span><span class="tag">&lt;Mappo.js-mars&gt;</span><span class="tag">places="Apollo 11"</span><span class="tag">registerBody()</span>
   </div>
 </div>
 
@@ -359,7 +359,7 @@ earth.setAttribute("tilt", dec);   // focus is live now, so this re-aims</code><
   </div>
   <div class="meta">
     <h3>The carrier only translates</h3>
-    <p>That is the whole trick: mappo spins the planet on its own axis, and the container walks an ellipse.
+    <p>That is the whole trick: Mappo.js spins the planet on its own axis, and the container walks an ellipse.
     Because the container never counter-rotates, the tilt keeps pointing the same way all year — which is
     what gives a planet seasons.</p>
     <pre><code>&lt;div class="carrier"&gt;
@@ -466,7 +466,7 @@ carrier.style.transform =
   <div class="card"><div class="art">
     <mappo-world cols="120" figure-color="var(--coast)"></mappo-world>
   </div><div class="meta"><h3>The dot field</h3>
-    <p>What mappo is named for. Resolution is a runtime parameter.</p>
+    <p>What Mappo.js is named for. Resolution is a runtime parameter.</p>
     <pre><code>&lt;mappo-world cols="120"&gt;&lt;/mappo-world&gt;</code></pre></div></div>
 
   <div class="card"><div class="art">
@@ -493,7 +493,7 @@ carrier.style.transform =
       highlight-color="var(--accent)"
       highlight-polygon='[[[42.1,-8.2],[41.9,-6.2],[39.7,-7.0],[38.0,-7.0],[37.0,-7.4],[37.0,-8.9],[38.7,-9.5],[41.0,-8.9],[42.1,-8.2]]]'></mappo-world>
   </div><div class="meta"><h3>Highlight a region</h3>
-    <p>You supply the rings; mappo ships no boundary dataset for this on purpose.</p>
+    <p>You supply the rings; Mappo.js ships no boundary dataset for this on purpose.</p>
     <pre><code>highlight-polygon='[[[42.1,-8.2],…]]'
 highlight-color="#c2410c"</code></pre></div></div>
 
@@ -523,7 +523,7 @@ layer.add({ at: "Tokyo", height: 0.25, tip: 3 });</code></pre></div></div>
 </div>
 
 <!-- ───────────────────────── REFERENCE ───────────────────────── -->
-<p class="foot" style="margin:34px 0 0"><strong>One caveat, stated plainly:</strong> on the GLOBE a filled figure style draws from the 512×256 mask, not the vector outlines — clipping a vector polygon to the visible hemisphere needs an algorithm mappo does not have yet, and every shortcut for it was measured painting open ocean. Fill and coast therefore both come from the grid there, where they agree by construction. <code>figure="outline"</code> with <code>figure-source="vector"</code> is exact on the globe, and the flat map is exact in every combination.</p>
+<p class="foot" style="margin:34px 0 0"><strong>One caveat, stated plainly:</strong> on the GLOBE a filled figure style draws from the 512×256 mask, not the vector outlines — clipping a vector polygon to the visible hemisphere needs an algorithm Mappo.js does not have yet, and every shortcut for it was measured painting open ocean. Fill and coast therefore both come from the grid there, where they agree by construction. <code>figure="outline"</code> with <code>figure-source="vector"</code> is exact on the globe, and the flat map is exact in every combination.</p>
 
 <h2>Every option</h2>
 <div class="hero" style="grid-template-columns:1fr 1fr">

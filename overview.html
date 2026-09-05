@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>mappo — a world map web component · dots or coastlines, flat or globe</title>
+  <title>Mappo.js — a world map web component · dots or coastlines, flat or globe</title>
   <meta name="description" content="A world map as a single ES module. Dot field or real Natural Earth coastlines, flat SVG or a leaning canvas globe, country borders, a graticule, city markers by name, your own DOM positioned on the sphere. Zero dependencies, no build step, no network calls.">
   <link rel="canonical" href="https://mappojs.com/">
-  <meta property="og:title" content="mappo — a world map web component">
+  <meta property="og:title" content="Mappo.js — a world map web component">
   <meta property="og:description" content="Dots or real coastlines. Flat or globe. Borders, a graticule, city markers by name, and your own HTML positioned on the sphere — one ES module, no build step.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://mappojs.com/">
@@ -15,7 +15,7 @@
   {
     "@context": "https://schema.org",
     "@type": "SoftwareSourceCode",
-    "name": "mappo",
+    "name": "Mappo.js",
     "description": "A world map as a zero-dependency web component: a dot field or real Natural Earth coastlines, flat SVG or a rotating canvas globe, country borders, a graticule, a built-in city registry, and host DOM positioned on the sphere.",
     "codeRepository": "https://github.com/rameerez/mappo",
     "programmingLanguage": "JavaScript",
@@ -148,10 +148,10 @@
 <div class="wrap">
 
 <header class="masthead">
-  <img src="./assets/mappo-logo.webp" alt="mappo" width="440" height="68">
+  <img src="./assets/mappo-logo.webp" alt="Mappo.js" width="440" height="68">
   <nav class="nav">
     <a href="./demo/">Demos</a>
-    <a href="https://github.com/rameerez/mappo" aria-label="mappo on GitHub">
+    <a href="https://github.com/rameerez/mappo" aria-label="Mappo.js on GitHub">
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
       GitHub<span class="stars" id="stars" hidden></span>
     </a>
@@ -210,7 +210,7 @@
     </div>
     <div class="meta">
       <h3>The dot field, lying down</h3>
-      <p>The look mappo is named for: land as dots at whatever resolution you ask for,
+      <p>The look Mappo.js is named for: land as dots at whatever resolution you ask for,
       a surface wave that reads as height under tilt, places by name.</p>
       <pre><code>&lt;mappo-world tilt="34" animation="wave"
   places="London, Lagos, Singapore"&gt;</code></pre>
@@ -264,7 +264,7 @@
     <div class="meta">
       <h3>Pointing at one place</h3>
       <p>A globe that faces a country, drops a real map pin on it and lights up the
-      whole territory. You bring the rings; mappo ships no boundary data on purpose.</p>
+      whole territory. You bring the rings; Mappo.js ships no boundary data on purpose.</p>
       <pre><code>&lt;mappo-world focus="46.5,2.35" rotate-speed="0"
   marker-shape="pin" highlight-polygon="[…]"&gt;</code></pre>
     </div>
@@ -282,7 +282,7 @@ and an Earth in orbit — in the <a href="./demo/">demo gallery</a>.</p>
     <p style="font-size:14px;max-width:76ch">All 10,725 satellites in the constellation and
     the ISS, plotted where they actually are this second, on a full-screen globe. The
     element sets come from CelesTrak and the positions from an SGP4 propagator in the
-    page — the map is mappo, and every dot is placed by <code>locate()</code>.</p>
+    page — the map is Mappo.js, and every dot is placed by <code>locate()</code>.</p>
   </div>
 </div>
 <div class="card">
@@ -299,7 +299,7 @@ and an Earth in orbit — in the <a href="./demo/">demo gallery</a>.</p>
     <h3 style="font-size:17px"><a href="./demo/region-earth.html">Region: Earth →</a></h3>
     <p style="font-size:14px;max-width:76ch">cloudflare.com's glass globe, rebuilt: fourteen thousand tiles on a
     Fibonacci lattice, a perspective camera, fog that lets the far side show through, and the pins, captions
-    and arcs positioned by mappo — four attributes on one element.</p>
+    and arcs positioned by Mappo.js — four attributes on one element.</p>
   </div>
 </div>
 <div class="card">
@@ -471,10 +471,10 @@ import "mappo/projections";  // + Equal Earth, the poles, d3-geo</code></pre>
   </div>
   <div>
     <h3>Your DOM, on a sphere</h3>
-    <p>Put an <code>&lt;a data-lat data-lon&gt;</code> inside the element and mappo
+    <p>Put an <code>&lt;a data-lat data-lon&gt;</code> inside the element and Mappo.js
     positions it every frame, publishing how far it has turned away as
     <code>--mappo-depth</code> and marking it <code>data-mappo-behind</code> at the horizon.
-    Labels fade and hide with plain CSS — mappo never dictates how they look.</p>
+    Labels fade and hide with plain CSS — Mappo.js never dictates how they look.</p>
   </div>
   <div>
     <h3>Places by name, on any world</h3>
@@ -593,6 +593,7 @@ import "mappo/projections";  // + Equal Earth, the poles, d3-geo</code></pre>
 </p>
 
 <p class="foot">
+  <a href="https://mappojs.com/">World maps and globes by Mappo.js</a> ·
   MIT © <a href="https://github.com/rameerez">@rameerez</a> ·
   Land shapes derived from <a href="https://www.naturalearthdata.com">Natural Earth</a> (public domain) ·
   <a href="https://github.com/rameerez/mappo">Source &amp; issues</a>

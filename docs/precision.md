@@ -1,18 +1,20 @@
-# Precision, accuracy, and what mappo does not model
+<a id="precision-accuracy-and-what-mappo-does-not-model"></a>
 
-This document is for people who want to put real positions on a mappo map:
+# Precision, accuracy, and what Mappo.js does not model
+
+This document is for people who want to put real positions on a Mappo.js map:
 mission planners, orbit visualisers, researchers, educators. It states, with
-numbers, what mappo computes exactly, what it approximates and by how much,
+numbers, what Mappo.js computes exactly, what it approximates and by how much,
 and what it does not model at all. Every figure below is either derived from a
 formula in the source, from the IAU/WGS 84 body constants named in §5, or
 measured in the test suite; where a figure is measured, the method is stated.
 
-The one-sentence version: **mappo is an exact renderer of coarse, symbolic
+The one-sentence version: **Mappo.js is an exact renderer of coarse, symbolic
 worlds.** The projections and every coordinate it hands back are correct to
 double precision on a sphere. The surface data it carries is generalised to
 tens of kilometres, and two of its three shipped bodies are interpretations of
 pictures, not classifications of measurements. Positions you compute yourself
-are placed exactly; positions you read off mappo's own figure are not.
+are placed exactly; positions you read off Mappo.js's own figure are not.
 
 ## 1. Summary
 
@@ -47,15 +49,17 @@ are placed exactly; positions you read off mappo's own figure are not.
   Apollo site coordinates shipped in the pack use this frame.
 - **Mars**: IAU 2000 planetocentric latitude, east longitude. The MOLA source
   map runs 0–360°E from its left edge; the generator rolls it by exactly half
-  its width (1440 of 2880 pixels) into mappo's −180…180 convention, so no
+  its width (1440 of 2880 pixels) into Mappo.js's −180…180 convention, so no
   interpolation is involved. Landing-site coordinates in the pack are the
   published planetocentric values. Older Mars literature uses planetographic
   latitude and west longitude; convert before plotting (§5 gives the size of
   the latitude difference).
 - **Your own body**: whatever frame your `figure()` and `places` use is the
-  frame the map is in. Document it for your readers; mappo cannot know.
+  frame the map is in. Document it for your readers; Mappo.js cannot know.
 
-## 3. The geometry mappo computes
+<a id="3-the-geometry-mappo-computes"></a>
+
+## 3. The geometry Mappo.js computes
 
 ### 3.1 Formulas
 
@@ -288,7 +292,9 @@ then drawn at full alpha in the mixed colour. Over a flat page of the fog's own
 colour the mix and the fade are the same picture; they part on a gradient, an
 image, or a fog colour that is not the page's.
 
-## 4. The data mappo carries
+<a id="4-the-data-mappo-carries"></a>
+
+## 4. The data Mappo.js carries
 
 ### 4.1 Resolution of the figure
 
@@ -352,10 +358,10 @@ points, and supply your own coordinates when it matters.
 
 ## 5. Sphere versus ellipsoid
 
-mappo draws every body as a sphere of its mean radius. The bodies are
+Mappo.js draws every body as a sphere of its mean radius. The bodies are
 ellipsoids.
 
-| Body | Radius mappo uses | Equatorial | Polar | 1/f | True surface relative to the sphere |
+| Body | Radius Mappo.js uses | Equatorial | Polar | 1/f | True surface relative to the sphere |
 |---|---|---|---|---|---|
 | Earth (WGS 84) | 6371.0 km | 6378.137 | 6356.752 | 298.3 | +7.1 km at the equator, −14.2 km at the poles |
 | Moon (IAU) | 1737.4 km | 1738.1 | 1736.0 | 827.7 | +0.7 km, −1.4 km |
@@ -387,7 +393,9 @@ Two consequences:
    the ellipsoid's departure from the sphere at that latitude: up to 14.2 km on
    Earth, which is 2.6% of a 550 km orbit's altitude.
 
-## 6. What mappo does not model
+<a id="6-what-mappo-does-not-model"></a>
+
+## 6. What Mappo.js does not model
 
 - **Time.** No epochs, no clocks.
 - **Rotation.** No IAU rotational elements (pole direction, prime meridian

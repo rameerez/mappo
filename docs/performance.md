@@ -1,6 +1,6 @@
-# Performance: cost model, measured limits, and the road to more
+# Mappo.js: Performance: cost model, measured limits, and the road to more
 
-This document is for people who want to know what a mappo map costs, how many
+This document is for people who want to know what a Mappo.js map costs, how many
 of them a page can carry, where the limits are, which parameters to choose,
 and what it would take to go an order of magnitude further. Every number is
 measured; the method is in §9 so it can be re-run. Absolute milliseconds are
@@ -23,7 +23,7 @@ for. Nothing crashed at any size tried; degradation is graceful and linear.
 | Engine | Chrome 152 (headless, new mode), `devicePixelRatio` 1. Running with and without the GPU flag gave the same numbers: headless canvas rasterises on the CPU, so **canvas fills here are pessimistic** relative to a desktop browser with GPU rasterisation, and JavaScript costs are representative. |
 | Pure computation | Node 22.22, same V8 family |
 | Sizes | globes 500 px (single) and 300 px (grids of many); flat maps 800 px wide |
-| Date | 2026-09-02, mappo 0.7.0 at `5c639d5` |
+| Date | 2026-09-02, Mappo.js 0.7.0 at `5c639d5` |
 
 ## 2. The cost model
 
@@ -93,7 +93,7 @@ node under the rewritten stylesheet):
 A colour change on a dense flat map therefore costs about the same as a
 rebuild frame. The tiers save the JavaScript and the garbage, not the
 recalculation: at 16k nodes any stylesheet change is a 100 ms frame. This is
-the flat renderer's true ceiling, and it is the browser's, not mappo's.
+the flat renderer's true ceiling, and it is the browser's, not Mappo.js's.
 
 **Shape styles** are cheap on the flat map because they are a handful of nodes
 however many `cols`:
@@ -149,7 +149,7 @@ per-projection cut is memoised in the instance's figure cache.
 ## 4. Measured: one globe
 
 500 px canvas, `rotate-speed="30"`, Earth, default framing. Per-frame draw
-time is the time inside mappo's own frame routine; the frame interval is what
+time is the time inside Mappo.js's own frame routine; the frame interval is what
 the browser delivered.
 
 | `cols` | points | `dots` | `dots` + ground + graticule | `solid outline` (grid fill) | `outline` vector + borders + graticule |
@@ -312,7 +312,7 @@ In order of leverage, with the measured or estimated gain.
    `animation` is on shortens parse time proportionally (the node count, and
    so the layout cost, stays the same).
 9. **WebAssembly and Rust are not the bottleneck.** Every pure-JavaScript
-   computation mappo does is either one-time and small (25 ms to build cols
+   computation Mappo.js does is either one-time and small (25 ms to build cols
    1000) or already 0.2–0.3 µs per point in a JIT-compiled typed-array loop.
    A WASM port of that arithmetic might gain 1.5–3×, and SIMD perhaps 4×, on
    a cost that is not where the frame goes: the canvas draw calls are, and

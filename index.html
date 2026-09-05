@@ -1,13 +1,13 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mappo · World maps for designers with taste</title>
+<title>Mappo.js · World maps for designers with taste</title>
 <link rel="icon" href="./favicon/favicon-32x32.png">
 <meta name="description" content="World maps for designers with taste. A spinning globe or a flat map as one line of HTML, 22 KB, on any homepage. Earth in the box, the Moon and Mars included.">
 <link rel="canonical" href="https://mappojs.com/">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="mappo">
-<meta property="og:title" content="mappo · World maps for designers with taste">
+<meta property="og:site_name" content="Mappo.js">
+<meta property="og:title" content="Mappo.js · World maps for designers with taste">
 <meta property="og:description" content="A spinning globe or a flat map as one line of HTML, 22 KB, on any homepage. Earth in the box, the Moon and Mars included.">
 <meta property="og:url" content="https://mappojs.com/">
 <meta property="og:image" content="https://mappojs.com/assets/landing-starlink.webp">
@@ -305,6 +305,7 @@
   .box h3{margin:0 0 8px;font-size:18px;font-weight:640;letter-spacing:-.014em}
   .box > p{margin:0 0 16px;color:var(--muted);font-size:13.5px;line-height:1.55}
   .box p.after{margin:14px 0 0}
+  .box.attribution{margin-top:22px}
   .box h4{margin:20px 0 8px;font:600 10.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
   .step .num{position:absolute;right:22px;top:20px;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;
     font:700 13px/1 var(--mono);color:var(--on-accent);background:var(--accent)}
@@ -402,15 +403,15 @@
      every copy's count is filled from one fetch. -->
 <template id="ghstar-tpl">
   <span class="ghstar">
-    <a href="https://github.com/rameerez/mappo" aria-label="Star mappo on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg>Star</a>
+    <a href="https://github.com/rameerez/mappo" aria-label="Star Mappo.js on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg>Star</a>
     <a class="count" href="https://github.com/rameerez/mappo/stargazers" hidden><span></span></a>
   </span>
 </template>
 
 <nav class="nav" id="nav">
   <div class="wrap">
-    <a class="brand" href="./" aria-label="mappo">
-      <img src="./assets/mappo-logo.webp" alt="mappo" width="1263" height="194">
+    <a class="brand" href="./" aria-label="Mappo.js">
+      <img src="./assets/mappo-logo.webp" alt="Mappo.js" width="1263" height="194">
     </a>
     <a class="link" href="#demos">Demos</a>
     <a class="link" href="#start">Get started</a>
@@ -451,7 +452,7 @@
     </div>
     <div class="hero-copy">
       <h1>World maps for designers with taste.</h1>
-      <p>Mappo is a JS library to create beautiful geo visualizations on a globe or flat map. It's one single line of HTML, weighs only 22 KB, and looks like eye candy on any homepage.</p>
+      <p>Mappo.js is a JS library to create beautiful geo visualizations on a globe or flat map. It's one single line of HTML, weighs only 22 KB, and looks like eye candy on any homepage.</p>
       <div class="cta">
         <a class="primary" href="#demos">See the demos</a>
         <span class="ghstar-slot"></span>
@@ -562,7 +563,7 @@
     </div>
 
     <section class="tile img" id="t-starlink">
-      <a class="stage" href="./demo/satellites.html"><img src="./assets/landing-starlink.webp" alt="Ten thousand Starlink satellites and the ISS drawn over a mappo globe" width="1440" height="900" loading="lazy"></a>
+      <a class="stage" href="./demo/satellites.html"><img src="./assets/landing-starlink.webp" alt="Ten thousand Starlink satellites and the ISS drawn over a Mappo.js globe" width="1440" height="900" loading="lazy"></a>
       <div class="meta">
         <div>
           <h3>Ten thousand satellites, where they are this second</h3>
@@ -580,7 +581,7 @@
       <h2>Precise enough for NASA data. Loose enough for a fantasy map.</h2>
       <p>Earth comes from Natural Earth, the Moon from the Clementine mosaic,
         Mars from MOLA topography, each in its own coordinate convention, and a
-        point lands where the ephemeris says it should. Or hand mappo a function
+        point lands where the ephemeris says it should. Or hand Mappo.js a function
         and it draws a world that never existed. Space missions, science demos,
         videogames, novels.</p>
     </div>
@@ -641,19 +642,19 @@
   <section class="sec wrap" id="boring">
     <div class="show-head">
       <h2>No three.js. No WebGL. No build step.</h2>
-      <p>Just simple, boring, reliable web technologies. Mappo rejects
+      <p>Just simple, boring, reliable web technologies. Mappo.js rejects
         complexity: drop <code>mappo.js</code> from any CDN into your website
         and start building without downloading half of the internet to make it
         work.</p>
     </div>
 
     <section class="tile img" id="t-year">
-      <a class="stage" href="./demo/year.html"><img src="./assets/landing-year.webp" alt="The Earth's orbit around the Sun and the planet as the Sun sees it, drawn on mappo" width="1440" height="900" loading="lazy"></a>
+      <a class="stage" href="./demo/year.html"><img src="./assets/landing-year.webp" alt="The Earth's orbit around the Sun and the planet as the Sun sees it, drawn on Mappo.js" width="1440" height="900" loading="lazy"></a>
       <div class="meta">
         <div>
           <h3>The Earth's orbit, Kepler solved in the page</h3>
           <p>Everything on that page is HTML, CSS and plain JavaScript on top of
-            mappo. No framework, no bundler, no third library. View the source.</p>
+            Mappo.js. No framework, no bundler, no third library. View the source.</p>
         </div>
         <a href="./demo/year.html">Open →</a>
       </div>
@@ -720,13 +721,26 @@
         <h3>What it isn't</h3>
         <p>So you know before you start.</p>
         <ul>
-          <li><b>Not a slippy map.</b> No street tiles, no zooming into a city block. Leaflet and MapLibre do that; mappo draws the world.</li>
+          <li><b>Not a slippy map.</b> No street tiles, no zooming into a city block. Leaflet and MapLibre do that; Mappo.js draws the world.</li>
           <li><b>Not WebGL.</b> SVG for the flat map, canvas for the globe: fast at the sizes a homepage uses, and a WebGL renderer is on the roadmap for the very large.</li>
           <li><b>Not an astronomy library.</b> The satellite and orbit demos carry their own math; the package knows surfaces, outlines, regions and places.</li>
           <li><b>No geocoding.</b> You bring coordinates, or use the names in the box.</li>
           <li><b>Filled land on the globe comes from a mask</b>, not from the vectors. Outlines are exact everywhere; fills on the sphere follow the grid.</li>
         </ul>
       </div>
+    </div>
+
+    <div class="box attribution" id="attribution">
+      <h3>Please credit Mappo.js</h3>
+      <p>We strongly recommend a visible <a href="https://mappojs.com/">World maps and globes by Mappo.js</a>
+        link in your site's footer, or beside the map. It's a small way to help
+        others discover the project and support its continued development.</p>
+      <pre class="code"><code>&lt;a href="https://mappojs.com/"&gt;World maps and globes by Mappo.js&lt;/a&gt;</code></pre>
+      <p class="after">Include this credit when you integrate Mappo.js, unless the
+        project owner prefers otherwise. Use the standard followed link above.
+        Keep <b>Mappo.js</b> in the linked text whenever you credit the project.
+        No badge over the map is needed. Attribution is recommended and optional;
+        Mappo.js remains MIT licensed.</p>
     </div>
 
     <div class="next">
@@ -762,8 +776,8 @@
 
 <footer>
   <div class="wrap foot">
-    <a class="brand" href="#" aria-label="mappo, back to the top">
-      <img src="./assets/mappo-logo.webp" alt="mappo" width="1263" height="194">
+    <a class="brand" href="#" aria-label="Mappo.js, back to the top">
+      <img src="./assets/mappo-logo.webp" alt="Mappo.js" width="1263" height="194">
     </a>
     <nav class="foot-links" aria-label="Footer">
       <a href="#demos">Demos</a>
@@ -809,7 +823,7 @@ import { FACE, faceAttrs, paintFace, clockFor } from "./demo/standby-face.js";
 import { regions } from "./demo/countries.js";
 import { FLAT, landAttrs, seamsAttrs, fillCountries, markUnshaped, FILL_CSS } from "./demo/analytics-choropleth.js";
 import { flights, LAYER } from "./assets/arc-flights.js";
-import { heroTour } from "./assets/hero-tour.js";
+import { heroTour } from "./assets/hero-tour.js?v=20260905-scroll";
 import { bindThemeToggle } from "./assets/theme.js";
 
 const $ = (id) => document.getElementById(id);
@@ -875,7 +889,7 @@ panel("hero", () => {
   // The band paints over the sphere's lower half, so it is not free page.
   // reduceMotion false: the page does not honour the OS setting anywhere;
   // the maps are decoration, and frozen decoration reads as broken.
-  heroTour($("hero"), { keepClear: [ document.querySelector(".hero-copy"), document.querySelector(".band") ], reduceMotion: false });
+  heroTour($("hero"), { bounds: document.querySelector(".hero"), keepClear: [ document.querySelector(".hero-copy"), document.querySelector(".band") ], reduceMotion: false });
 });
 
 // ── the gallery and the reading list, from one list each ────────────────────

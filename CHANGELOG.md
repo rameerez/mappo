@@ -1,6 +1,6 @@
-# Changelog
+# Mappo.js: Changelog
 
-mappo is pre-1.0. Minor versions may change the API; every change is listed
+Mappo.js is pre-1.0. Minor versions may change the API; every change is listed
 here with what to write instead.
 
 ## Unreleased
@@ -19,7 +19,7 @@ here with what to write instead.
 
 ## 0.7.0 — 2026-09-02
 
-The foundation release: mappo is a map of **any world**, not a map of Earth
+The foundation release: Mappo.js is a map of **any world**, not a map of Earth
 with a body parameter bolted on. Earth is now one body among others, the
 vocabulary is body-neutral, and every body is produced by one pipeline from
 pinned public data.
@@ -193,7 +193,7 @@ borders, highlights and the graticule use the forward mapping. Exported:
 - d3 projections use `projection.stream`, so rotation, antimeridian and
   small-circle clipping, Cartesian clipping, interrupted outlines and adaptive
   resampling match d3 itself. The streamed world is the frame instead of a
-  sampled rectangle. Mutable d3 state invalidates Mappo's geometry cache.
+  sampled rectangle. Mutable d3 state invalidates Mappo.js's geometry cache.
 - Projection latitude ranges cannot leave the physical `[-90, 90]` domain;
   custom aspects must be positive and finite. Dots are clipped to curved
   frames, and snapped markers can no longer land in an off-world corner cell.
@@ -232,7 +232,7 @@ Five opt-in options; the defaults draw exactly what they drew.
   and `buildGlobePhases` take a trailing `distribution`.
 
 `demo/region-earth.html` is why these exist: cloudflare.com's "Region: Earth"
-section rebuilt on mappo, to the pixel where mappo can reach it.
+section rebuilt on Mappo.js, to the pixel where Mappo.js can reach it.
 
 ### Fixed: the globe
 
@@ -290,7 +290,7 @@ Earth-specific modules are gone from the API; Earth is a body like the others.
   map's dot shape and size. Every id now carries the instance id.
 - Overlay children (`data-lat`/`data-lon`) were lost when switching the globe
   back to flat, and when an element was moved or re-connected in the DOM.
-  Mappo now owns them and hands them back untouched on `destroy()`.
+  Mappo.js now owns them and hands them back untouched on `destroy()`.
 - Any attribute change on a globe with `focus` set snapped the rotation back
   to the focus longitude (the element re-parsed a fresh object every time).
   Options now compare structurally.

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Geographic distribution · mappo</title>
-<meta name="description" content="The geographic-distribution card of an analytics dashboard, drawn by mappo: a country choropleth with the ranked table beside it, as a flat map or a globe, solid or dotted, in any of mappo's projections.">
+<title>Geographic distribution · Mappo.js</title>
+<meta name="description" content="The geographic-distribution card of an analytics dashboard, drawn by Mappo.js: a country choropleth with the ranked table beside it, as a flat map or a globe, solid or dotted, in any of Mappo.js's projections.">
 <link rel="icon" href="../favicon/favicon-32x32.png">
 <style>
   /* The geographic-distribution card an analytics dashboard has, in Tailwind's
@@ -191,19 +191,19 @@
   </section>
 
   <div class="note">
-    <p>The geographic-distribution card an analytics dashboard has, drawn by mappo. mappo
+    <p>The geographic-distribution card an analytics dashboard has, drawn by Mappo.js. Mappo.js
     draws the land, the borders and the sphere and hands out the projection; the per-country
     fills come from <code>demo/countries.js</code>: 228 countries keyed by ISO code,
-    24&nbsp;KB gzipped, cut from the same pinned Natural Earth data as mappo's borders with the
+    24&nbsp;KB gzipped, cut from the same pinned Natural Earth data as Mappo.js's borders with the
     same simplifier, so they register with them vertex for vertex. The library does not ship
     keyed regions yet. It has country borders as one flat list of anonymous rings, which is
     enough to draw Brazil's edge and not enough to fill it in.</p>
     <p>Hover a country for its number, or hover <em>Other</em> to see where the long tail is.
     A country too small to have a shape at this scale is a dot on its anchor. The controls
-    redraw the same data as a globe, as a dot field, or in any of mappo's flat projections:
-    on the flat map the fills are SVG over mappo's frame, and on the globe they are drawn
-    through <code>locate()</code> cell by cell, the way mappo fills its own globe, with
-    mappo's borders stroked over them the same way. <a href="./">More demos</a>.</p>
+    redraw the same data as a globe, as a dot field, or in any of Mappo.js's flat projections:
+    on the flat map the fills are SVG over Mappo.js's frame, and on the globe they are drawn
+    through <code>locate()</code> cell by cell, the way Mappo.js fills its own globe, with
+    Mappo.js's borders stroked over them the same way. <a href="./">More demos</a>.</p>
   </div>
 </main>
 

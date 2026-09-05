@@ -1,7 +1,7 @@
 {
   "name": "mappo",
   "version": "0.7.0",
-  "description": "Maps of any world as a zero-dependency web component: Earth in the box, the Moon and Mars as opt-in packs, your own worlds through a small body interface. A dot field or vector outlines, flat SVG or a rotating canvas globe.",
+  "description": "Mappo.js: maps of any world as a zero-dependency web component: Earth in the box, the Moon and Mars as opt-in packs, your own worlds through a small body interface. A dot field or vector outlines, flat SVG or a rotating canvas globe.",
   "type": "module",
   "main": "dist/mappo.js",
   "exports": {
@@ -24,6 +24,7 @@
   "scripts": {
     "build": "node scripts/build.js",
     "test": "node --test",
+    "test:tour": "node scripts/check-tour.mjs",
     "generate": "npm run generate:earth && npm run generate:moon && npm run generate:mars",
     "generate:earth": "node scripts/generate-earth.js",
     "generate:moon": "node scripts/generate-moon.js",
@@ -34,6 +35,8 @@
   },
   "keywords": [
     "mappo",
+    "mappo.js",
+    "mappojs",
     "world-map",
     "dotted-map",
     "dot-map",
@@ -82,6 +85,7 @@
     "esbuild": "0.25.5",
     "jpeg-js": "0.4.4",
     "jsdom": "30.0.1",
+    "playwright": "1.63.0",
     "pngjs": "7.0.0"
   }
 }

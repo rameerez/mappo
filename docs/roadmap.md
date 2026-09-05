@@ -1,4 +1,4 @@
-# Roadmap
+# Mappo.js: Roadmap
 
 What comes after 0.7.0, in six tracks, each item with why, the evidence it
 rests on, its first concrete step and a size. Sizes: **S** an afternoon, **M**
@@ -80,7 +80,7 @@ What remains:
 
 | # | Item | Why | First step | Size |
 |---|---|---|---|---|
-| J6 | **More built-ins**: Web Mercator (EPSG:3857) so a mappo layer can register to tile maps; Lambert azimuthal equal-area for area-true polar maps (the [NSIDC EASE-Grid 2.0](https://nsidc.org/data/user-resources/help-center/guide-ease-grids) polar products); Mollweide and Robinson for the classic global look; orthographic as a *flat* projection, for a fixed hemisphere without the globe's canvas | each is a page of closed-form or well-known series mathematics with a known inverse ([Snyder 1987](https://pubs.usgs.gov/pp/1395/report.pdf); Robinson has no closed form and is interpolated from its table, as [d3-geo-projection](https://github.com/d3/d3-geo-projection) does) | add to `BUILTINS` with `kind` and `defaultLatRange`; the test file's round-trip and frame checks are generic and pick new ids up automatically | S each |
+| J6 | **More built-ins**: Web Mercator (EPSG:3857) so a Mappo.js layer can register to tile maps; Lambert azimuthal equal-area for area-true polar maps (the [NSIDC EASE-Grid 2.0](https://nsidc.org/data/user-resources/help-center/guide-ease-grids) polar products); Mollweide and Robinson for the classic global look; orthographic as a *flat* projection, for a fixed hemisphere without the globe's canvas | each is a page of closed-form or well-known series mathematics with a known inverse ([Snyder 1987](https://pubs.usgs.gov/pp/1395/report.pdf); Robinson has no closed form and is interpolated from its table, as [d3-geo-projection](https://github.com/d3/d3-geo-projection) does) | add to `BUILTINS` with `kind` and `defaultLatRange`; the test file's round-trip and frame checks are generic and pick new ids up automatically | S each |
 | J8 | **Graticule labels** (latitude and longitude values along the frame or the equator) | a scientific map without labelled coordinates is a picture | positions come from `projectPolyline` today; the renderer would add `<text>` at the frame intersections, style-tier | S |
 | J9 | **Cells per frame under a projection.** `cols` is cells across the frame, so a polar map at `cols="120"` samples 120 × 120 = 14,400 cells for a hemisphere where an equirectangular map samples 120 × 60; the cost model in [docs/performance.md §3](performance.md) is per cell | make the trade explicit in the docs (done) and consider a `cells` budget option that picks `cols` from the aspect | S |
 
@@ -101,7 +101,7 @@ a map projection, and the rotation is the point.
 
 ## 6. Packaging track: one package, and the `@mappo` organisation
 
-**Decided 2026-09-02.** mappo is one npm package, `mappo`, with subpath
+**Decided 2026-09-02.** Mappo.js is one npm package, `mappo`, with subpath
 exports: the core (22.1 KB gzipped, the whole Earth inside) and the opt-in
 modules `mappo/globe`, `mappo/projections`, `mappo/vector`,
 `mappo/bodies/earth-vector`, `mappo/bodies/moon`, `mappo/bodies/mars` and

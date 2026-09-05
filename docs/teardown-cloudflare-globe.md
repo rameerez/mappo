@@ -1,11 +1,11 @@
-# Teardown: the Cloudflare "Region: Earth" globe
+# Mappo.js: Teardown: the Cloudflare "Region: Earth" globe
 
 **Subject:** `#home-region-earth` on cloudflare.com, component `RegionEarth`
 from `/_astro/_globe.1L8qjYxV.js`, engine in `/_astro/_poi.GfvrsH0c.js`.
 **Inspected:** 2026-08-31, static bundle analysis + live DOM/JS introspection.
-**Purpose:** decide what mappo should learn from it. This is an inventory of
-*techniques and parameters*, written so mappo can implement them in its own
-idiom. No Cloudflare code is copied — mappo ships MIT and their bundle is
+**Purpose:** decide what Mappo.js should learn from it. This is an inventory of
+*techniques and parameters*, written so Mappo.js can implement them in its own
+idiom. No Cloudflare code is copied — Mappo.js ships MIT and their bundle is
 theirs; the ideas below (tilt, graticules, DOM overlays, arc reveals) are
 cartographic and DOM technique, not ownable expression.
 
@@ -23,9 +23,9 @@ cartographic and DOM technique, not ownable expression.
 | Arcs | `TubeGeometry` + `setDrawRange` |
 | Bundle | `_poi.js` is **912 KB** |
 
-mappo's premise is the opposite: one ESM file, zero dependencies, no build
+Mappo.js's premise is the opposite: one ESM file, zero dependencies, no build
 step, a ~22 KB packed mask, SVG for flat and canvas-2D for the globe. Adopting
-three.js would not improve mappo, it would replace it. **Everything below is
+three.js would not improve Mappo.js, it would replace it. **Everything below is
 therefore a re-implementation target for the canvas globe, not a port.**
 
 What is explicitly out of scope: three.js, WebGL, GLSL, fog, perspective
@@ -58,7 +58,7 @@ camera, orbit controls, tube geometry.
   not an axial tilt of the sphere. The globe *leans*, the spin axis stays
   vertical in world space.
 - **`minPolarAngle === maxPolarAngle === π/2`** locks the orbit to the
-  equatorial plane: dragging changes longitude only, never latitude. mappo's
+  equatorial plane: dragging changes longitude only, never latitude. Mappo.js's
   drag-to-spin already behaves this way; this confirms the choice.
 - **`autoRotateSpeed`: 0.3 desktop, 0.15 mobile.** Half speed on small screens.
 - **Graticule: 24 meridians, 23 parallels.**
@@ -127,7 +127,7 @@ Accessibility: the interactive wrapper takes `role="button"`, `tabIndex={0}` and
 Enter/Space handlers; the decorative inner is `aria-hidden`.
 
 **This is independent convergence on the overlay design already proposed for
-mappo v0.5** (host owns the markup, mappo owns the geometry) — and it is what
+Mappo.js v0.5** (host owns the markup, Mappo.js owns the geometry) — and it is what
 lets their labels be real, translatable, focusable DOM instead of canvas paint.
 
 ---
@@ -167,9 +167,9 @@ matching alpha — no library needed.
 They also probe with `failIfMajorPerformanceCaveat: true` first and retry
 without it, which distinguishes "no WebGL" from "WebGL but software".
 
-The equivalent for mappo's canvas globe is cheaper — there is no WebGL to
+The equivalent for Mappo.js's canvas globe is cheaper — there is no WebGL to
 probe — but the *shape* is worth keeping: a declared static fallback and a
-`prefers-reduced-motion` still frame (mappo already does the latter).
+`prefers-reduced-motion` still frame (Mappo.js already does the latter).
 
 ---
 
@@ -190,9 +190,11 @@ forever.
 
 ---
 
-## 8. What mappo should take
+<a id="8-what-mappo-should-take"></a>
 
-| # | Idea | Where it lands in mappo |
+## 8. What Mappo.js should take
+
+| # | Idea | Where it lands in Mappo.js |
 |---|---|---|
 | 1 | Graticule: meridians + parallels + separately-styled equator, ±5° skip | new `graticule.js`, both renderers |
 | 2 | Colours from live CSS custom properties | option resolver in `renderer.js` / `globe.js` |

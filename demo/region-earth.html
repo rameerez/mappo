@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Region: Earth · mappo</title>
-<meta name="description" content="Cloudflare's “Region: Earth” section, rebuilt on mappo: a glass globe of uniform tiles under fog, seen through a perspective camera, with DOM pins, captions and arcs positioned by the library.">
+<title>Region: Earth · Mappo.js</title>
+<meta name="description" content="Cloudflare's “Region: Earth” section, rebuilt on Mappo.js: a glass globe of uniform tiles under fog, seen through a perspective camera, with DOM pins, captions and arcs positioned by the library.">
 <link rel="icon" href="../favicon/favicon-32x32.png">
 <style>
   /* ── the tokens, as cloudflare.com names them ──────────────────────────
@@ -215,15 +215,15 @@
 </section>
 
 <div class="note">
-  <p>A rebuild of the <em>Region: Earth</em> section of cloudflare.com, to the pixel where mappo can reach it.
+  <p>A rebuild of the <em>Region: Earth</em> section of cloudflare.com, to the pixel where Mappo.js can reach it.
   Theirs is three.js: 16,098 land points sampled from a texture on a 50,000-point Fibonacci lattice, drawn as
   squares tangent to a sphere, no sphere behind them, a fog toward the page background, a 45° camera and
   OrbitControls locked to the equator. Here the same picture is four attributes on one element:
   <code>distribution="uniform"</code>, <code>dot-shape="tile"</code>, <code>distance="2.37"</code> and
-  <code>fog="-0.67 1.01"</code>, with the land coming from mappo's own Natural Earth mask instead of a picture.</p>
-  <p>The pins and captions are ordinary DOM inside the element, positioned by mappo; the arcs are
+  <code>fog="-0.67 1.01"</code>, with the land coming from Mappo.js's own Natural Earth mask instead of a picture.</p>
+  <p>The pins and captions are ordinary DOM inside the element, positioned by Mappo.js; the arcs are
   <code>mappo/links</code>, fed the original's curve and faded by the fog at every depth. The spin is the original's: the camera orbits the screen's vertical while
-  the globe leans 14.3°, so the pole slowly wanders. That motion is decomposed each frame into mappo's
+  the globe leans 14.3°, so the pole slowly wanders. That motion is decomposed each frame into Mappo.js's
   <code>focus</code>, <code>tilt</code> and <code>roll</code>. Drag the globe: the pointer feeds the same damped rotation OrbitControls uses
   (a twentieth of what is pending, each frame), so the globe eases after the hand and glides to a stop.
   <a href="./">More demos</a>.</p>

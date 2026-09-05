@@ -1,4 +1,6 @@
-# Where the weight is, and how small mappo can be to embed
+<a id="where-the-weight-is-and-how-small-mappo-can-be-to-embed"></a>
+
+# Where the weight is, and how small Mappo.js can be to embed
 
 Measured on the working tree of 2026-09-02 (0.7.0 with the projection, glass
 globe and d3 stream-adapter work), Node 22.22, esbuild 0.25.5 for the minified

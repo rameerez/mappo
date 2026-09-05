@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Projections — mappo</title>
+<title>Projections — Mappo.js</title>
 <meta name="description" content="The same world, flattened four ways: equirectangular, Equal Earth, polar stereographic north and south, plus a central meridian of your choosing and a projection of your own.">
 <link rel="shortcut icon" href="../favicon/favicon.ico" type="image/x-icon">
 <style>
@@ -55,15 +55,15 @@
 
 <h1>Projections</h1>
 <p class="lede">A sphere does not fit on a rectangle, and every way of forcing it lies about
-something: shape, area, or distance. mappo now lets you choose the lie. Four projections
+something: shape, area, or distance. Mappo.js now lets you choose the lie. Four projections
 ship, any central meridian, and a seam for your own — and every one of them gets the whole
 toolkit for free: the dot field, contours, vector coastlines, borders, places, overlays,
 <code>locate()</code> and the graticule are one code path with a projection plugged in.</p>
-<p class="by">A prototype · <a href="../index.html">mappo</a> ·
+<p class="by">A prototype · <a href="../index.html">Mappo.js</a> ·
 <a href="./index.html">more demos</a> · <a href="./worlds.html">other worlds</a></p>
 
 <h2>Two ways to flatten the world</h2>
-<p class="note">Left, the equirectangular map every version of mappo has drawn: latitude and
+<p class="note">Left, the equirectangular map every version of Mappo.js has drawn: latitude and
 longitude as straight lines, areas stretched toward the poles (Greenland looks the size of
 Africa; it is a fourteenth). Right, Equal Earth (Šavrič, Patterson &amp; Jenny, 2019): areas
 are true everywhere, the meridians curve, and the corners of the frame are simply not part of
@@ -115,7 +115,7 @@ both aspects, so 0° points down on a north map and up on a south one, the way N
 print them. Sites arrive as ordinary <code>data-lat</code>/<code>data-lon</code> children.</p>
 <div class="row three">
   <div class="card">
-    <h3>&lt;mappo-moon projection="stereographic-south" lat-max="-80"&gt;</h3>
+    <h3>&lt;Mappo.js-moon projection="stereographic-south" lat-max="-80"&gt;</h3>
     <p>The last ten degrees to the lunar south pole: highland almost entirely, so the disc is
     regolith, and what this map is for is where things are — Shackleton at the centre, the Artemis
     candidate regions around it, each an ordinary overlay child. On an equirectangular map all of
@@ -136,7 +136,7 @@ print them. Sites arrive as ordinary <code>data-lat</code>/<code>data-lon</code>
     </div>
   </div>
   <div class="card">
-    <h3>&lt;mappo-world projection="stereographic-north" lat-min="45"&gt;</h3>
+    <h3>&lt;Mappo.js-world projection="stereographic-north" lat-min="45"&gt;</h3>
     <p>The Arctic as one ocean, the way it is: Greenland, Svalbard and the Siberian coast around it, borders included.
     Places come from the gazetteer or as <code>{ name, lat, lon }</code> records.</p>
     <div class="disc">
@@ -147,7 +147,7 @@ print them. Sites arrive as ordinary <code>data-lat</code>/<code>data-lon</code>
     </div>
   </div>
   <div class="card">
-    <h3>&lt;mappo-mars projection="stereographic-north" lat-min="55"&gt;</h3>
+    <h3>&lt;Mappo.js-mars projection="stereographic-north" lat-min="55"&gt;</h3>
     <p>Mars from above the north pole: the lowlands of Vastitas Borealis as one basin, whole across the 180° meridian.</p>
     <div class="disc">
       <mappo-mars cols="120" projection="stereographic-north" lat-min="55" figure="solid outline" figure-source="vector"
@@ -172,12 +172,12 @@ the unit frame (or <code>null</code>), <code>inverse(x, y)</code> back to a coor
 <code>outline()</code> for the clip. The dot field, the contours and the highlights come from
 the inverse alone. A custom projection is antimeridian-cut by default; set
 <code>seam: false</code> only when it has no cylindrical seam. Below, a sinusoidal projection
-written in eight lines. A d3-geo projection works unchanged: mappo uses its stream, including
+written in eight lines. A d3-geo projection works unchanged: Mappo.js uses its stream, including
 rotation, clipping and adaptive resampling.</p>
 <div class="row">
   <div class="card">
     <h3>a { forward, inverse } object — sinusoidal</h3>
-    <p>Equal-area, straight parallels, meridians as sine curves. Nothing in mappo knows its name.</p>
+    <p>Equal-area, straight parallels, meridians as sine curves. Nothing in Mappo.js knows its name.</p>
     <mappo-world id="custom" cols="150" lat-min="-90" lat-max="90" figure="solid outline" figure-source="vector"
                  figure-color="var(--land)" figure-stroke="var(--edge)" figure-stroke-width="0.6" background="var(--sea)"
                  graticule graticule-color="#6f8196" graticule-opacity=".35" equator-color="var(--accent)" equator-opacity=".7"></mappo-world>
