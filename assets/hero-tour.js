@@ -2,7 +2,7 @@
 // order as the globe turns. Two lines wire it:
 //
 //   import { heroTour } from "./assets/hero-tour.js";
-//   heroTour(document.getElementById("hero"), { keepClear: [ copyElement ] });
+//   heroTour(document.getElementById("hero"), { bounds: heroSection, keepClear: [ copyElement ] });
 //
 // The element is a <mappo-world mode="globe">. Nothing else on the page needs
 // to know: the card and the labels are children the tour positions with
@@ -92,7 +92,7 @@ const REGIONS = [ [ "US", 39, -98 ], [ "BR", -10, -53 ], [ "MX", 23, -102 ], [ "
 // fast and easing out. `speed` is the spin while the step plays. The voyage
 // runs until the globe is back where the next lap needs it.
 export const STEPS = [
-  { kind: "label", style: "title", text: "This is a mappo globe", hold: 4, speed: 1.4 },
+  { kind: "label", style: "title", text: "This is a Mappo globe", hold: 4, speed: 1.4 },
   // A little quicker under the first arc, so that Boston is over the horizon
   // the moment the second begins: the two arcs follow each other directly.
   { kind: "arc", text: "You can draw an arc between any two places", hold: 7, speed: 2.6, height: 0.12, from: "Rome", to: "Madrid", pairs: PAIRS },
@@ -247,22 +247,36 @@ function start(el, options, ctl) {
   // What is in view, off the boxes to keep clear, and on the page for the whole
   // step: the spin carries a subject `drift` pixels during a step, so the edge
   // things move toward gets that much more margin.
-  let box = null, clear = [], drift = 0;
+  let box = null, clear = [], drift = 0, page = null;
+  const bounds = options.bounds ?? el;
+  const documentBox = (node) => {
+    const r = node.getBoundingClientRect(), x = window.scrollX, y = window.scrollY;
+    return { left: r.left + x, right: r.right + x, top: r.top + y, bottom: r.bottom + y, width: r.width, height: r.height };
+  };
   const survey = (step) => {
-    box = el.getBoundingClientRect();
-    clear = (options.keepClear ?? []).filter(Boolean).map((n) => n.getBoundingClientRect());
+    const w = document.documentElement.clientWidth || innerWidth;
+    // Fit the composition, not the portion currently on screen. All measured
+    // boxes share document coordinates, so scroll cancels even between steps.
+    // In particular, Safari's changing viewport height is NOT a placement
+    // boundary: on a short screen the globe may start below the fold entirely.
+    const area = documentBox(bounds);
+    page = { width: w, top: area.top, bottom: area.bottom,
+      mapWidth: el.clientWidth, mapHeight: el.clientHeight,
+      boundsWidth: bounds.clientWidth, boundsHeight: bounds.clientHeight };
+    box = documentBox(el);
+    clear = (options.keepClear ?? []).filter(Boolean).map(documentBox);
     // At the step's own speed, and at the scale the camera gives the front of
     // the globe, which is where the subjects are.
     const front = map.locate(0, 0), scale = front?.scale ?? front?.r ?? box.width * 0.4;
     drift = Math.abs(step?.speed ?? baseSpeed) * RAD * (step?.hold ?? 8) * scale;
   };
-  const pageW = () => document.documentElement.clientWidth || innerWidth;
-  const pageH = () => document.documentElement.clientHeight || innerHeight;
+  const pageW = () => page.width;
+  const pageBottom = () => page.bottom;
   const allowed = (q, withDrift = true) => {
     if (!q?.front || !box) return !!q?.front;
     const x = box.left + q.x, y = box.top + q.y, m = 24, d = withDrift ? drift : 0;
     const right = m + (eastward ? d : 0), left = m + (eastward ? 0 : d);
-    if (x < left || x > pageW() - right || y < m || y > pageH() - m) return false;
+    if (x < left || x > pageW() - right || y < page.top + m || y > pageBottom() - m) return false;
     return clear.every((r) => x < r.left - (eastward ? d : 0) - m || x > r.right + (eastward ? 0 : d) + m || y < r.top - m || y > r.bottom + m);
   };
   // The front meridian: the longitude squarely facing us right now.
@@ -396,7 +410,7 @@ function start(el, options, ctl) {
     const chosen = have.map((p) => ({ p, q: map.locate(p.lat, p.lon) })).filter((c) => c.q);
     const seen = (step.cities ?? WORLD).map(place).filter(Boolean).filter((p) => !names.has(p.name))
       .map((p) => ({ p, q: map.locate(p.lat, p.lon) }))
-      .filter((c) => c.q && c.q.z > zh - 0.3 && c.q.z < zh + 0.08 + risen && (c.q.x < c.q.cx) === eastward && box && box.left + c.q.x > 24 && box.top + c.q.y > 56 && box.top + c.q.y < Math.min(pageH() - 40, box.bottom - 22) &&
+      .filter((c) => c.q && c.q.z > zh - 0.3 && c.q.z < zh + 0.08 + risen && (c.q.x < c.q.cx) === eastward && box && box.left + c.q.x > 24 && box.top + c.q.y > page.top + 56 && box.top + c.q.y < Math.min(pageBottom() - 40, box.bottom - 22) &&
         clear.every((r) => box.left + c.q.x > r.right + 8 || box.left + c.q.x < r.left - 8 || box.top + c.q.y < r.top - 8 || box.top + c.q.y > r.bottom + 8))
       .sort((x, y) => y.q.z - x.q.z);
     const out = [];
@@ -654,6 +668,9 @@ function start(el, options, ctl) {
     const now = performance.now() / 1000;
     const dt = state.lastNow ? Math.min(0.1, now - state.lastNow) : 0;
     state.lastNow = now;
+    // ResizeObserver redraws the globe's layers at their new size. Refresh
+    // placement in that same frame, including during a held/long-running step.
+    if (page && (page.mapWidth !== el.clientWidth || page.mapHeight !== el.clientHeight || page.width !== document.documentElement.clientWidth || page.boundsWidth !== bounds.clientWidth || page.boundsHeight !== bounds.clientHeight)) survey(state.step);
     if (state.held) { state.t0 += dt; }   // the clock waits with the hand
     const disc = map.locate(0, 0);
     if (disc && !reset.hidden) reset.style.transform = `translate3d(${disc.cx.toFixed(1)}px, ${(disc.cy + disc.r - 30).toFixed(1)}px, 0) translate(-50%, -50%)`;
@@ -672,16 +689,15 @@ function start(el, options, ctl) {
     // page or onto a box kept clear. A fixed anchor sits still on the disc.
     // A fixed card sits on the disc's centre line, but on the page: pushed left
     // as far as it must to fit when the disc's centre is near the page's edge.
-    // The page is measured once per step (survey), not per frame: measured per
-    // frame, a scroll moved the box and the card slid along the globe to stay
-    // inside the viewport, which read as the card wandering off the globe.
+    // The survey uses document coordinates: neither a scroll nor Safari's
+    // expanding toolbar can slide a card along the globe, even between steps.
     const fixedX = () => {
-      const b = box ?? el.getBoundingClientRect(), w = cardWidth(), want = disc.cx + (state.anchor.fx ?? 0) * disc.r;
+      const b = box, w = cardWidth(), want = disc.cx + (state.anchor.fx ?? 0) * disc.r;
       return Math.max(w / 2 + 8 - b.left, Math.min(pageW() - 8 - w / 2 - b.left, want));
     };
     const fixedY = () => {
-      const b = box ?? el.getBoundingClientRect(), h = card.offsetHeight || 40, w = cardWidth();
-      const top = h / 2 + 10 - b.top, bottom = pageH() - 10 - h / 2 - b.top;
+      const b = box, h = card.offsetHeight || 40, w = cardWidth();
+      const top = page.top + h / 2 + 10 - b.top, bottom = pageBottom() - 10 - h / 2 - b.top;
       let want = Math.max(top, Math.min(Math.max(top, bottom), disc.cy + (state.anchor.fy ?? 0) * disc.r));
       const x = b.left + fixedX();
       for (const r of clear) {
@@ -706,7 +722,7 @@ function start(el, options, ctl) {
     if (q && !free && side !== "above" && side !== "below") {
       let left = state.anchor.side ? state.anchor.side === "left" : q.x > q.cx;
       if (!state.anchor.side) {
-        const b = box ?? el.getBoundingClientRect(), px = b.left + q.x, py = b.top + q.y, w = cardWidth();
+        const b = box, px = b.left + q.x, py = b.top + q.y, w = cardWidth();
         if (!cardFits(px, py, left ? "left" : "right", w) && cardFits(px, py, left ? "right" : "left", w)) left = !left;
       }
       root.classList.toggle("left", left);
