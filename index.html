@@ -809,7 +809,7 @@ import { FACE, faceAttrs, paintFace, clockFor } from "./demo/standby-face.js";
 import { regions } from "./demo/countries.js";
 import { FLAT, landAttrs, seamsAttrs, fillCountries, markUnshaped, FILL_CSS } from "./demo/analytics-choropleth.js";
 import { flights, LAYER } from "./assets/arc-flights.js";
-import { heroTour } from "./assets/hero-tour.js";
+import { heroTour } from "./assets/hero-tour.js?v=20260905-scroll";
 import { bindThemeToggle } from "./assets/theme.js";
 
 const $ = (id) => document.getElementById(id);
@@ -875,7 +875,7 @@ panel("hero", () => {
   // The band paints over the sphere's lower half, so it is not free page.
   // reduceMotion false: the page does not honour the OS setting anywhere;
   // the maps are decoration, and frozen decoration reads as broken.
-  heroTour($("hero"), { keepClear: [ document.querySelector(".hero-copy"), document.querySelector(".band") ], reduceMotion: false });
+  heroTour($("hero"), { bounds: document.querySelector(".hero"), keepClear: [ document.querySelector(".hero-copy"), document.querySelector(".band") ], reduceMotion: false });
 });
 
 // ── the gallery and the reading list, from one list each ────────────────────
