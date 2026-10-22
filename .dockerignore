@@ -1,0 +1,30 @@
+# Only the site's public files go into the image (it is the docroot).
+# Repo tooling and notes:
+.git
+**/.DS_Store
+**/*.sh
+Dockerfile
+.dockerignore
+config/
+.kamal/
+README.md
+**/.gitignore
+.github/
+**/.vscode/
+**/.idea/
+**/node_modules
+# Never ship secrets, keys, databases, dumps or archives, even if committed:
+**/.env*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.db
+**/*.sqlite*
+**/*.sql
+**/*.sql.gz
+**/*.bak
+**/*.tar
+**/*.tar.gz
+**/*.tgz
+# From this repo's old deploy.sh excludes:
+**/*.map

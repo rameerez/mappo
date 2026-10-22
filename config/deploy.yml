@@ -1,0 +1,64 @@
+# Kamal config for mappojs.com (PHP/static site, code baked into the image).
+# Deploy: `kamal deploy` from this repo, like the Rails apps.
+# Runtime image, server, decisions and sources: https://github.com/rameerez/php-hosting
+# (docs/DECISIONS.md; D-numbers below refer to it).
+
+service: mappojs
+image: rameerez/mappojs
+
+# D2. php-hosting box. D22. Small sites idle at ~75 MB; 256 MB is plenty.
+servers:
+  web:
+    hosts:
+      - 46.224.36.63
+    options:
+      memory: 256m
+
+# D9. Cloudflare (Full strict) -> kamal-proxy with this site's Origin CA cert
+# -> Apache on 8080. D11. forward_headers lets Apache find the real visitor IP.
+# D12. www -> apex is a Cloudflare redirect rule (piercesterling.com is the
+# reverse: its host here is www.piercesterling.com).
+proxy:
+  host: mappojs.com
+  app_port: 8080
+  forward_headers: true
+  ssl:
+    certificate_pem: TLS_CERTIFICATE_PEM
+    private_key_pem: TLS_PRIVATE_KEY_PEM
+  healthcheck:
+    path: /healthcheck
+
+registry:
+  server: 441443170551.dkr.ecr.us-east-1.amazonaws.com
+  username: AWS
+  password:
+    - AWS_ECR_PASSWORD
+
+builder:
+  arch: amd64
+  local: false
+  remote: ssh://docker@46.224.36.63
+
+# Only for sites whose PHP writes files (latentsoftware's SQLite, buildforluck's
+# rate-limit files, nft.rameerez's log): a host folder, owner 33:33, plus a
+# files-backup accessory (copy it from templates/wordpress). Delete otherwise.
+# volumes:
+#   - /srv/php-hosting/mappojs.com/data:/var/www/html/data
+
+# D14. Only if the site sends mail (MAIL_FROM must be allowed by the SES policy).
+# env:
+#   clear:
+#     MAIL_FROM: hello@mappojs.com
+#   secret:
+#     - SES_SMTP_USERNAME
+#     - SES_SMTP_PASSWORD
+
+ssh:
+  user: docker
+  keys: ["~/.ssh/agent"]
+  keys_only: true
+
+logging:
+  driver: journald
+  options:
+    tag: "{{.Name}}"
