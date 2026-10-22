@@ -1,0 +1,4 @@
+# sops creation rules (php-hosting docs/SECRETS-PLAN.md). Public recipient only.
+creation_rules:
+  - path_regex: ^config/secrets\.sops\.yaml$
+    age: age1e8th8zk769pqasffnzhenn3zx5urzfjvsvwpgpj6kpzv655kw4zsxnjrgv

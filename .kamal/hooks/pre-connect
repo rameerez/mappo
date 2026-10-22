@@ -1,0 +1,6 @@
+#!/bin/sh
+# Fail closed before Kamal touches any host (docs/SECRETS-PLAN.md §1): every
+# secret Kamal loaded from .kamal/secrets must be present and match its class.
+# Kamal ignores a failing $(...) and would deploy an empty value otherwise.
+# Never bypass with --skip-hooks.
+exec ruby "${PHP_HOSTING_DIR:-$HOME/GitHub/php-hosting}/bin/secret" --check-kamal "$(dirname "$0")/../secrets"

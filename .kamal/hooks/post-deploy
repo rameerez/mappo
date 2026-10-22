@@ -1,0 +1,5 @@
+#!/bin/sh
+# After a successful deploy or rollback: check the site from the origin and
+# promote the running image to recovery-current (docs/SECRETS-PLAN.md A1).
+# A failure here means the site is deployed but its recovery tag was not moved.
+exec "${PHP_HOSTING_DIR:-$HOME/GitHub/php-hosting}/bin/promote-recovery" "$KAMAL_SERVICE"

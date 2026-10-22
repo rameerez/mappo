@@ -28,3 +28,6 @@ README.md
 **/*.tgz
 # From this repo's old deploy.sh excludes:
 **/*.map
+# sops rules and encrypted secrets never go into the image
+.sops.yaml
+config/
