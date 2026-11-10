@@ -57,9 +57,9 @@
 //   untransformed so consumer getBoundingClientRect math keeps working.
 
 import { resolveBody, resolvePlaces, bodyLatRange, trackMap, untrackMap, rerenderLive, warnIfStillPending } from "./body.js";
-import { project, cellCenter } from "./projection.js";
+import { project, cellCenter, cellPoint } from "./projection.js";
 import { resolveProjection, hasProjection, projectionDefaultRange, projectPolyline, signedArea } from "./projections.js";
-import { normalizeRings, pointInRings } from "./highlight.js";
+import { normalizeRings, pointInRings, cellTouchesRings } from "./highlight.js";
 import { buildFigure, parseFigureStyle, figureOutlines, figureBorders, vectorFeature } from "./figure.js";
 import { buildGraticule } from "./graticule.js";
 import { noise2 } from "./noise.js";
@@ -123,6 +123,7 @@ export const DEFAULTS = {
   focus: null,                // { lat, lon } the globe faces (rotate-speed 0 holds it)
   highlightPolygon: null,     // rings of [lat, lon] — figure cells inside draw in highlightColor
   highlightColor: "#8fb0d8",
+  highlightCoverage: "center", // "center": a cell lights when its centre is inside; "touch": when any of it is
   markerShape: "circle",
   markerColor: "#2262fe",
   markerScale: 1.5,           // relative to a dot
@@ -1027,6 +1028,13 @@ export class Mappo {
       `<path class="mappo-equator" d="${draw([ g.equator ])}"/></g>`;
   }
 
+  // Is this cell part of the highlighted region? By its centre (the default),
+  // or, with highlight-coverage="touch", by any part of it (highlight.js).
+  #cellLit(col, row, grid, normalized, o, center = cellCenter(col, row, grid)) {
+    if (o.highlightCoverage === "touch") return cellTouchesRings((fx, fy) => cellPoint(col, row, fx, fy, grid), normalized);
+    return !!center && pointInRings(center.lat, center.lon, normalized);
+  }
+
   // The highlight polygon in FLAT mode — the same ray-cast highlight.js does
   // for the globe. A highlight is a FILL, so it paints the figure cells inside
   // the region rather than tracing them: it reads as a lit area, and it reuses
@@ -1037,8 +1045,7 @@ export class Mappo {
     const { cells } = buildFigure(grid, { body: this._body });
     const parts = [];
     for (const [ col, row ] of cells) {
-      const c = cellCenter(col, row, grid);
-      if (!c || !pointInRings(c.lat, c.lon, normalized)) continue;
+      if (!this.#cellLit(col, row, grid, normalized, o)) continue;
       parts.push(`M${col * CELL} ${row * CELL}h${CELL}v${CELL}h-${CELL}Z`);
     }
     if (!parts.length) return "";
@@ -1055,7 +1062,7 @@ export class Mappo {
   // lit are two different pictures, and the markup must not be shared.
   #dotsMarkup(grid, o) {
     const rings = o.highlightPolygon?.length ? normalizeRings(o.highlightPolygon) : null;
-    const key = `${grid.projection.key}|${grid.cols}|${rings ? JSON.stringify(o.highlightPolygon) : ""}`;
+    const key = `${grid.projection.key}|${grid.cols}|${rings ? `${o.highlightCoverage}|${JSON.stringify(o.highlightPolygon)}` : ""}`;
     const cached = this._dotsCache.get(key);
     if (cached) { dbg(`dots cache HIT ${key}`); this._dotCount = cached.dots; return cached.markup; }
     dbg(`dots cache MISS ${key} — computing`);
@@ -1085,7 +1092,7 @@ export class Mappo {
         // SVG transforms are main-thread, and 8k continuous animators melt
         // frames; a baked checkerboard subset reads identically at density.
         const density = `${(col + row) % 2 === 0 ? " mappo-h" : ""}${(2 * col + 3 * row) % 3 === 0 ? " mappo-t" : ""}`;
-        const lit = rings && pointInRings(c.lat, c.lon, rings) ? " mappo-dot-highlight" : "";
+        const lit = rings && this.#cellLit(col, row, grid, rings, o, c) ? " mappo-dot-highlight" : "";
         parts.push(
           `<g class="mappo-pos" transform="translate(${col * CELL + CELL / 2} ${row * CELL + CELL / 2})" data-col="${col}" data-row="${row}">` +
           `<use class="mappo-dot${density}${lit}" href="#${shape}" style="--mappo-pw:${pw};--mappo-pn:${pn};--mappo-pr:${pr};--mappo-ps:${ps};--mappo-pk:${pk};--mappo-a:${a}"/></g>`

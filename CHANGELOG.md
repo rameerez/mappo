@@ -17,6 +17,15 @@ here with what to write instead.
   seam rather than with a chord.
 - `layer-bleed`: a layer canvas can reach past the map's box.
 
+## Unreleased
+
+- **`highlight-coverage="touch"`** (option `highlightCoverage`): a flat map's
+  region highlight lights every cell the rings overlap, not only cells whose
+  centre is inside. At world scale a small country holds no cell centre
+  (Luxembourg, the Netherlands and Switzerland lit nothing at 170 columns) and
+  a mid-sized one lit a ragged few. The default stays `center`. Built for
+  VehiclesDB's "where it's been spotted" maps, which fill each country.
+
 ## 0.7.0 — 2026-09-02
 
 The foundation release: Mappo.js is a map of **any world**, not a map of Earth

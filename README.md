@@ -23,7 +23,7 @@ See [naming and attribution](docs/branding.md) for the full convention.
 
 **Maps of any world as a zero-dependency web component.** A dot field or
 vector outlines, flat SVG or a rotating canvas globe, places by name, your own
-HTML positioned on the sphere. The core is **22.2 KB gzipped with the whole
+HTML positioned on the sphere. The core is **22.4 KB gzipped with the whole
 Earth inside**; the globe, the other projections, real coastlines and other
 worlds are opt-in modules that register themselves. No build step, no
 dependencies, MIT.
@@ -1012,6 +1012,7 @@ authoritative copy of this table is always `import { DEFAULTS } from "mappo"`.
 | `marker-cursor` | `pointer` | the cursor over a marker |
 | `highlight-polygon` | none | JSON rings of `[lat, lon]`: the region to light up. See the note below |
 | `highlight-color` | `#8fb0d8` | the colour it lights up in |
+| `highlight-coverage` | `center` | `touch` lights every cell the region overlaps, not only cells whose centre is inside, so small countries show at world scale (flat map) |
 
 **The globe**
 

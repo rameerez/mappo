@@ -73,6 +73,9 @@ const ATTR_MAP = {
                           } catch { return null; }
                         } ],
   "highlight-color":    [ "highlightColor", String ],
+  // "center" (default) or "touch": light every cell the region overlaps, so
+  // small countries show at world scale.
+  "highlight-coverage": [ "highlightCoverage", String ],
   // The globe
   "rotate-speed":       [ "rotateSpeed", Number ],
   "roll":               [ "roll", Number ],
