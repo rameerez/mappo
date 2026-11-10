@@ -49,6 +49,19 @@ export function cellCenter(col, row, grid) {
   };
 }
 
+// The lat/lon of a point INSIDE a cell, at fractions (fx, fy) of its width and
+// height from the top-left corner: cellCenter is (0.5, 0.5). The region
+// highlight's "touch" coverage samples cells with it.
+export function cellPoint(col, row, fx, fy, grid) {
+  if (!validGrid(grid)) return null;
+  if (grid.projection) return grid.projection.inverse((col + fx) / grid.cols, (row + fy) / grid.rows);
+  const [ latMin, latMax ] = grid.latRange;
+  return {
+    lat: latMax - ((row + fy) / grid.rows) * (latMax - latMin),
+    lon: -180 + ((col + fx) / grid.cols) * 360
+  };
+}
+
 // The lat/lon of a grid CORNER — where cell boundaries live, and therefore
 // where contour geometry lives. Same mapping as cellCenter, no +0.5 offset.
 export function cellCorner(col, row, grid) {

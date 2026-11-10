@@ -137,7 +137,7 @@ test("DEFAULTS carry every option an attribute can set", () => {
                       "groundColor", "background", "borders", "bordersColor", "bordersWidth", "bordersOpacity",
                       "graticule", "meridians", "parallels", "graticuleColor",
                       "equatorColor", "graticuleOpacity", "equatorOpacity",
-                      "roll", "overlays", "maxDpr", "places", "focus", "highlightPolygon", "highlightColor" ]) {
+                      "roll", "overlays", "maxDpr", "places", "focus", "highlightPolygon", "highlightColor", "highlightCoverage" ]) {
     assert.ok(key in DEFAULTS, `DEFAULTS is missing "${key}" — removing its attribute would not reset it`);
   }
 });

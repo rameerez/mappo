@@ -194,6 +194,30 @@ test("a highlight lights the dots of a dot map, and the region it was given", ()
   unmount(element);
 });
 
+test("highlight-coverage=touch lights a region too small to hold a cell centre", () => {
+  // A 1.5° box at 36 columns (10° cells) holds no cell centre: the default
+  // lights nothing, "touch" lights the land cell it sits in. Luxembourg at
+  // world scale, in miniature.
+  const tiny = [ [ [ 46, 6 ], [ 46, 7.5 ], [ 47.5, 7.5 ], [ 47.5, 6 ], [ 46, 6 ] ] ];
+  const centre = mount("mappo-world", { cols: 36, "lat-min": -90, "lat-max": 90, "highlight-polygon": JSON.stringify(tiny) });
+  assert.equal(centre.querySelectorAll(".mappo-dot-highlight").length, 0, "by centre, nothing lights");
+  const touch = mount("mappo-world", { cols: 36, "lat-min": -90, "lat-max": 90, "highlight-polygon": JSON.stringify(tiny), "highlight-coverage": "touch" });
+  const lit = [ ...touch.querySelectorAll(".mappo-dot-highlight") ];
+  assert.equal(lit.length, 1, "by touch, the one cell it sits in lights");
+  const grid = { cols: 36, rows: 18, latRange: [ -90, 90 ] };
+  const c = api.cellCenter(Number(lit[0].parentElement.dataset.col), Number(lit[0].parentElement.dataset.row), grid);
+  assert.ok(Math.abs(c.lat - 45) <= 5 && Math.abs(c.lon - 5) <= 5, "and it is the cell around the region");
+
+  // A large region lights at least what the centre rule lights.
+  const box = [ [ [ 40, -20 ], [ 40, 20 ], [ 80, 20 ], [ 80, -20 ], [ 40, -20 ] ] ];
+  const a = mount("mappo-world", { cols: 36, "lat-min": -90, "lat-max": 90, "highlight-polygon": JSON.stringify(box) });
+  const b = mount("mappo-world", { cols: 36, "lat-min": -90, "lat-max": 90, "highlight-polygon": JSON.stringify(box), "highlight-coverage": "touch" });
+  const keys = (el) => [ ...el.querySelectorAll(".mappo-dot-highlight") ].map((u) => u.parentElement.dataset.col + "," + u.parentElement.dataset.row);
+  assert.ok(keys(a).every((k) => keys(b).includes(k)), "touch is a superset of centre");
+  assert.ok(keys(b).length > keys(a).length, "and lights the edge cells too");
+  [ centre, touch, a, b ].forEach(unmount);
+});
+
 test("one invalid live range cannot poison late registration and can recover", () => {
   const id = "late-narrow-body";
   const element = mount("mappo-world", { body: id, cols: 24, "lat-min": 70 });
